@@ -14,12 +14,15 @@ import { moneyField, percentField, qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
 import { nextNumber } from '../lib/series.ts';
-import { parse } from '../lib/validate.ts';
+import { assertGstRates } from '../lib/rates.ts';
+import { calcTds, cancelDeduction, insertDeduction } from '../lib/tds.ts';
+import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { checkIndentLink, fulfilIndent, reverseFulfilment } from './indents.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 
 const lineBody = z.object({
@@ -32,11 +35,13 @@ const lineBody = z.object({
 const createBody = z.object({
   locationId: z.uuid(),
   partyId: z.uuid(),
-  billDate: dateField.optional(),
+  billDate: docDate.optional(),
   supplierInvoiceNo: optionalText(40),
-  supplierInvoiceDate: dateField.optional(),
+  supplierInvoiceDate: docDate.optional(),
   notes: optionalText(1000),
   indentId: z.uuid().nullable().optional(),
+  tdsSectionId: z.uuid().nullable().optional(),
+  reverseCharge: z.boolean().optional(),
   lines: z.array(lineBody).min(1, 'Add at least one line').max(200, 'At most 200 lines'),
 });
 const cancelBody = z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) });
@@ -74,14 +79,31 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
     return { item, qty: l.qty, rate: l.rate ?? item.purchase_price, discountPct: l.discountPct ?? 0, description: l.description ?? item.name };
   });
 
+  await assertGstRates(tx, billDate, lines.map((l, idx) => ({
+    rate: l.item.gst_rate, hsn: l.item.hsn_code, field: `lines.${idx}.itemId`, label: `${l.item.name} (line ${idx + 1})`,
+  })));
+
   // Input tax: supplier's state against the receiving location's state.
   const supplierState = party.state_code ?? location.state_code;
   const gst = computeGst(location.state_code, supplierState, lines.map((l) => ({
     qty: l.qty, rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate,
   })));
+  // Tax deducted at source: the party's default section unless the request names one (or null for none).
+  const sectionId = body.tdsSectionId !== undefined ? body.tdsSectionId : party.tds_section_id;
+  const tds = sectionId
+    ? await calcTds(tx, ctx.companyId, { partyId: party.id, sectionId, date: billDate, gross: gst.subtotal })
+    : null;
+  // Reverse charge: the supplier charges no GST, so the total leaves the tax out (rounded on the taxable value alone).
+  const reverseCharge = body.reverseCharge ?? false;
+  const total = reverseCharge ? Math.round(gst.subtotal) : gst.total;
+  const roundOff = reverseCharge ? round2(total - gst.subtotal) : gst.roundOff;
+  const tdsAmount = tds?.amount ?? 0;
+  const msme = party.msme_category === 'micro' || party.msme_category === 'small';
+  const msmeDueDate = msme ? addDays(billDate, party.credit_days > 0 ? Math.min(party.credit_days, 45) : 15) : null;
   return {
     location, party, billDate, dueDate: addDays(billDate, party.credit_days), fy: financialYear(billDate),
-    placeOfSupply: location.state_code, lines, gst,
+    placeOfSupply: location.state_code, lines, gst, tds, reverseCharge, total, roundOff, tdsAmount,
+    netPayable: round2(total - tdsAmount), msmeDueDate,
   };
 }
 
@@ -94,7 +116,10 @@ function preparedJson(ctx: RequestContext, p: Prepared, body: CreateBody) {
     supplierInvoiceNo: body.supplierInvoiceNo ?? null, supplierInvoiceDate: body.supplierInvoiceDate ?? null,
     indentId: body.indentId ?? null, fy: p.fy, billDate: p.billDate, dueDate: p.dueDate, placeOfSupply: p.placeOfSupply, supplyType: p.gst.supplyType,
     status: 'posted', subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst,
-    taxTotal: p.gst.taxTotal, roundOff: p.gst.roundOff, total: p.gst.total, ...paymentInfo(p.gst.total, 0, 'posted'),
+    taxTotal: p.gst.taxTotal, roundOff: p.roundOff, total: p.total, ...paymentInfo(p.netPayable, 0, 'posted'),
+    tdsSectionId: p.tds?.sectionId ?? null, tdsSectionCode: p.tds?.sectionCode ?? null, tdsBase: p.tds?.base ?? 0,
+    tdsRate: p.tds?.rate ?? 0, tdsAmount: p.tdsAmount, netPayable: p.netPayable, reverseCharge: p.reverseCharge,
+    rcmSelfInvoiceNo: null, msmeDueDate: p.msmeDueDate, msmeCategory: p.party.msme_category,
     notes: body.notes ?? null, createdAt: new Date(), createdBy: { id: ctx.userId, name: ctx.userName },
     cancelledAt: null, cancelReason: null,
     lines: p.lines.map((l, i) => ({
@@ -109,8 +134,10 @@ export function purchaseSelect(tx: Tx) {
     .innerJoin('locations as l', 'l.id', 'v.location_id')
     .innerJoin('parties as p', 'p.id', 'v.party_id')
     .innerJoin('users as u', 'u.id', 'v.created_by')
+    .leftJoin('tds_sections as ts', 'ts.id', 'v.tds_section_id')
     .selectAll('v')
-    .select(['l.name as location_name', 'p.name as party_name', 'p.gstin as party_gstin', 'u.name as created_by_name']);
+    .select(['l.name as location_name', 'p.name as party_name', 'p.gstin as party_gstin', 'u.name as created_by_name',
+      'p.msme_category as party_msme_category', 'ts.code as tds_section_code']);
 }
 
 type PurchaseRow = Awaited<ReturnType<ReturnType<typeof purchaseSelect>['executeTakeFirstOrThrow']>>;
@@ -122,7 +149,10 @@ export function purchaseJson(r: PurchaseRow) {
     supplierInvoiceDate: r.supplier_invoice_date, indentId: r.indent_id, fy: r.fy, billDate: r.bill_date, dueDate: r.due_date,
     placeOfSupply: r.place_of_supply, supplyType: r.supply_type, status: r.status, subtotal: r.subtotal,
     cgst: r.cgst, sgst: r.sgst, igst: r.igst, taxTotal: Math.round((r.cgst + r.sgst + r.igst) * 100) / 100,
-    roundOff: r.round_off, total: r.total, ...paymentInfo(r.total, r.amount_paid, r.status), notes: r.notes,
+    roundOff: r.round_off, total: r.total, ...paymentInfo(r.net_payable, r.amount_paid, r.status),
+    tdsSectionId: r.tds_section_id, tdsSectionCode: r.tds_section_code, tdsBase: r.tds_base, tdsRate: r.tds_rate,
+    tdsAmount: r.tds_amount, netPayable: r.net_payable, reverseCharge: r.reverse_charge, rcmSelfInvoiceNo: r.rcm_self_invoice_no,
+    msmeDueDate: r.msme_due_date, msmeCategory: r.msme_due_date ? r.party_msme_category : null, notes: r.notes,
     createdAt: r.created_at, createdBy: { id: r.created_by, name: r.created_by_name },
     cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason,
   };
@@ -161,9 +191,9 @@ export async function purchaseRoutes(app: FastifyInstance) {
       if (q.to) base = base.where('v.bill_date', '<=', q.to);
       if (q.locationId) base = base.where('v.location_id', '=', q.locationId);
       if (q.partyId) base = base.where('v.party_id', '=', q.partyId);
-      if (q.paymentStatus === 'paid') base = base.where('v.status', '=', 'posted').whereRef('v.amount_paid', '>=', 'v.total');
-      if (q.paymentStatus === 'partial') base = base.where('v.status', '=', 'posted').where('v.amount_paid', '>', 0).whereRef('v.amount_paid', '<', 'v.total');
-      if (q.paymentStatus === 'unpaid') base = base.where('v.status', '=', 'posted').where('v.amount_paid', '=', 0).where('v.total', '>', 0);
+      if (q.paymentStatus === 'paid') base = base.where('v.status', '=', 'posted').whereRef('v.amount_paid', '>=', 'v.net_payable');
+      if (q.paymentStatus === 'partial') base = base.where('v.status', '=', 'posted').where('v.amount_paid', '>', 0).whereRef('v.amount_paid', '<', 'v.net_payable');
+      if (q.paymentStatus === 'unpaid') base = base.where('v.status', '=', 'posted').where('v.amount_paid', '=', 0).where('v.net_payable', '>', 0);
       if (q.q) {
         const t = likeTerm(q.q);
         base = base.where((eb) => eb.or([eb('v.number', 'ilike', t), eb('v.supplier_invoice_no', 'ilike', t), eb('p.name', 'ilike', t)]));
@@ -195,12 +225,14 @@ export async function purchaseRoutes(app: FastifyInstance) {
     const purchase = await ctx.tx(async (tx) => {
       const p = await prepare(tx, ctx, body);
       const number = await nextNumber(tx, ctx, 'purchase', p.fy);
+      const rcmNo = p.reverseCharge ? await nextNumber(tx, ctx, 'rcm_invoice', p.fy) : null;
       const row = await tx.insertInto('purchases').values({
         tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: p.location.id, party_id: p.party.id, number,
         supplier_invoice_no: body.supplierInvoiceNo ?? null, supplier_invoice_date: body.supplierInvoiceDate ?? null,
         fy: p.fy, bill_date: p.billDate, due_date: p.dueDate, place_of_supply: p.placeOfSupply, supply_type: p.gst.supplyType,
-        subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, round_off: p.gst.roundOff,
-        total: p.gst.total, notes: body.notes ?? null, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
+        subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, round_off: p.roundOff,
+        total: p.total, tds_section_id: p.tds?.sectionId ?? null, tds_base: p.tds?.base ?? 0, tds_rate: p.tds?.rate ?? 0,
+        tds_amount: p.tdsAmount, reverse_charge: p.reverseCharge, rcm_self_invoice_no: rcmNo, msme_due_date: p.msmeDueDate, notes: body.notes ?? null, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
         indent_id: body.indentId ?? null,
       }).returning('id').executeTakeFirstOrThrow();
 
@@ -236,10 +268,18 @@ export async function purchaseRoutes(app: FastifyInstance) {
           { accountId: acc.input_cgst, amount: p.gst.cgst, locationId: loc },
           { accountId: acc.input_sgst, amount: p.gst.sgst, locationId: loc },
           { accountId: acc.input_igst, amount: p.gst.igst, locationId: loc },
-          { accountId: acc.round_off, amount: p.gst.roundOff, locationId: loc },
-          { accountId: acc.payables, amount: -p.gst.total, partyId: p.party.id, locationId: loc },
+          { accountId: acc.round_off, amount: p.roundOff, locationId: loc },
+          { accountId: acc.payables, amount: -p.netPayable, partyId: p.party.id, locationId: loc },
+          { accountId: acc.tds_payable, amount: -p.tdsAmount, locationId: loc },
+          { accountId: acc.rcm_payable, amount: p.reverseCharge ? -p.gst.taxTotal : 0, locationId: loc },
         ],
       });
+      if (p.tds) {
+        await insertDeduction(tx, ctx, {
+          sourceType: 'purchase', sourceId: row.id, number, date: p.billDate, partyId: p.party.id, sectionId: p.tds.sectionId,
+          sectionCode: p.tds.sectionCode, gross: p.tds.gross, base: p.tds.base, rate: p.tds.rate, amount: p.tds.amount,
+        });
+      }
 
       if (body.indentId) {
         await fulfilIndent(tx, ctx, body.indentId, { type: 'purchase', id: row.id, locationId: p.location.id },
@@ -278,6 +318,7 @@ export async function purchaseRoutes(app: FastifyInstance) {
       }
       for (const [itemId, e] of perItem) await requireStock(tx, ctx, location, { id: itemId, ...e }, e.qty);
 
+      await cancelDeduction(tx, 'purchase', id);
       await tx.updateTable('purchases').set({ status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason })
         .where('id', '=', id).execute();
       if (moves.length) {

@@ -188,6 +188,7 @@ class JournalEntry {
     this.number,
     this.narration,
     this.isReversal = false,
+    this.reversedById,
     this.createdAt,
     this.createdBy,
     this.lines = const [],
@@ -201,6 +202,7 @@ class JournalEntry {
     number: asStringOrNull(json['number']),
     narration: asStringOrNull(json['narration']),
     isReversal: asBool(json['isReversal']),
+    reversedById: asStringOrNull(json['reversedById']),
     createdAt: asDateTimeOrNull(json['createdAt']),
     createdBy: UserRef.maybe(json['createdBy']),
     lines: asJsonList(json['lines']).map(JournalLine.fromJson).toList(),
@@ -215,6 +217,9 @@ class JournalEntry {
   final String? number;
   final String? narration;
   final bool isReversal;
+
+  /// The entry that cancelled this one, if it has been cancelled.
+  final String? reversedById;
   final DateTime? createdAt;
   final UserRef? createdBy;
   final List<JournalLine> lines;
@@ -226,9 +231,12 @@ class JournalEntry {
 
   bool get isManual => voucherType == 'journal';
 
-  /// Only manual journals (not their reversals) are cancelled from the day
-  /// book; other entries are cancelled through their source document.
-  bool get canCancel => isManual && !isReversal;
+  bool get isCancelled => reversedById != null;
+
+  /// Only manual journals (not their reversals, nor ones already cancelled)
+  /// are cancelled from the day book; other entries are cancelled through
+  /// their source document.
+  bool get canCancel => isManual && !isReversal && !isCancelled;
 
   /// App route of the source document, if the app has a screen for it.
   String? get documentRoute => LedgerLine(
@@ -286,7 +294,10 @@ class JournalDraftLine {
   Json toJson() => {
     'accountId': accountId,
     if (partyId != null && allowsParty) 'partyId': partyId,
-    if (debitPaise > 0) 'debit': debitPaise / 100 else 'credit': creditPaise / 100,
+    if (debitPaise > 0)
+      'debit': debitPaise / 100
+    else
+      'credit': creditPaise / 100,
   };
 }
 

@@ -26,9 +26,8 @@ class FileThumb extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final bytes = ref.watch(fileBytesProvider(fileId));
-    Widget placeholder(IconData icon) => Center(
-      child: Icon(icon, color: scheme.onSurfaceVariant, size: 32),
-    );
+    Widget placeholder(IconData icon) =>
+        Center(child: Icon(icon, color: scheme.onSurfaceVariant, size: 32));
     final child = switch (bytes) {
       AsyncValue(:final value?) when value.isNotEmpty => Image.memory(
         value,

@@ -77,6 +77,8 @@ class Indent {
     this.createdBy,
     this.approvedAt,
     this.approvedBy,
+    this.rejectedAt,
+    this.rejectedBy,
     this.rejectReason,
     this.lines = const [],
   });
@@ -94,6 +96,8 @@ class Indent {
     createdBy: NamedRef.fromJsonOrNull(json['createdBy']),
     approvedAt: asDateTimeOrNull(json['approvedAt']),
     approvedBy: NamedRef.fromJsonOrNull(json['approvedBy']),
+    rejectedAt: asDateTimeOrNull(json['rejectedAt']),
+    rejectedBy: NamedRef.fromJsonOrNull(json['rejectedBy']),
     rejectReason: asStringOrNull(json['rejectReason']),
     lines: asJsonList(json['lines']).map(IndentLine.fromJson).toList(),
   );
@@ -110,6 +114,8 @@ class Indent {
   final NamedRef? createdBy;
   final DateTime? approvedAt;
   final NamedRef? approvedBy;
+  final DateTime? rejectedAt;
+  final NamedRef? rejectedBy;
   final String? rejectReason;
   final List<IndentLine> lines;
 
@@ -124,8 +130,7 @@ class Indent {
     return target <= 0 ? 0 : clampPct(done / target * 100);
   }
 
-  bool get isFulfilled =>
-      lines.isNotEmpty && lines.every((l) => l.isFulfilled);
+  bool get isFulfilled => lines.isNotEmpty && lines.every((l) => l.isFulfilled);
 }
 
 /// Body of `POST /indents`.
@@ -144,13 +149,25 @@ class IndentDraft {
   final bool submit;
   final List<IndentLineDraft> lines;
 
-  Json toJson() => withoutNulls({
+  /// Body of `POST /indents`.
+  Json toCreateJson() => withoutNulls({
     'locationId': locationId,
     'requiredBy': requiredBy,
     'notes': notes,
     'submit': submit,
     'lines': [for (final line in lines) line.toJson()],
   });
+
+  /// Body of `PUT /indents/:id`; the server replaces all editable content.
+  Json toUpdateJson() => withoutNulls({
+    'locationId': locationId,
+    'requiredBy': requiredBy,
+    'notes': notes,
+    'lines': [for (final line in lines) line.toJson()],
+  });
+
+  /// Kept for callers that use the original generic draft serializer.
+  Json toJson() => toCreateJson();
 }
 
 class IndentLineDraft {
@@ -176,9 +193,8 @@ enum IssueStatus {
 
   final String label;
 
-  static IssueStatus parse(Object? value) => value == 'cancelled'
-      ? IssueStatus.cancelled
-      : IssueStatus.posted;
+  static IssueStatus parse(Object? value) =>
+      value == 'cancelled' ? IssueStatus.cancelled : IssueStatus.posted;
 }
 
 class IssueLine {
@@ -226,6 +242,8 @@ class Issue {
     this.createdAt,
     this.createdBy,
     this.totalValue,
+    this.cancelledAt,
+    this.cancelReason,
     this.lines = const [],
   });
 
@@ -243,6 +261,8 @@ class Issue {
     createdAt: asDateTimeOrNull(json['createdAt']),
     createdBy: NamedRef.fromJsonOrNull(json['createdBy']),
     totalValue: asDoubleOrNull(json['totalValue']),
+    cancelledAt: asDateTimeOrNull(json['cancelledAt']),
+    cancelReason: asStringOrNull(json['cancelReason']),
     lines: asJsonList(json['lines']).map(IssueLine.fromJson).toList(),
   );
 
@@ -261,6 +281,8 @@ class Issue {
 
   /// Only with `items.view_cost`.
   final double? totalValue;
+  final DateTime? cancelledAt;
+  final String? cancelReason;
   final List<IssueLine> lines;
 
   bool get isCancelled => status == IssueStatus.cancelled;

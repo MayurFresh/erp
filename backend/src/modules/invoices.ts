@@ -13,7 +13,8 @@ import { optionalText } from '../lib/india.ts';
 import { moneyField, percentField, qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
-import { parse } from '../lib/validate.ts';
+import { assertGstRates } from '../lib/rates.ts';
+import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
@@ -30,7 +31,7 @@ const lineBody = z.object({
 const createBody = z.object({
   locationId: z.uuid(),
   partyId: z.uuid(),
-  invoiceDate: dateField.optional(),
+  invoiceDate: docDate.optional(),
   notes: optionalText(1000),
   lines: z.array(lineBody).min(1, 'Add at least one line').max(200, 'At most 200 lines'),
 });
@@ -40,6 +41,8 @@ const listQuery = pagingQuery.extend({
   from: dateField.optional(),
   to: dateField.optional(),
   locationId: z.uuid().optional(),
+  partyId: z.uuid().optional(),
+  paymentStatus: z.enum(['unpaid', 'partial', 'paid']).optional(),
 });
 
 type CreateBody = z.infer<typeof createBody>;
@@ -68,6 +71,10 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
     return { item, qty: l.qty, rate: l.rate ?? item.sale_price, discountPct: l.discountPct ?? 0, description: l.description ?? item.name };
   });
 
+  await assertGstRates(tx, invoiceDate, lines.map((l, idx) => ({
+    rate: l.item.gst_rate, hsn: l.item.hsn_code, field: `lines.${idx}.itemId`, label: `${l.item.name} (line ${idx + 1})`,
+  })));
+
   const placeOfSupply = party.state_code ?? location.state_code;
   const gst = computeGst(location.state_code, placeOfSupply, lines.map((l) => ({
     qty: l.qty, rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate,
@@ -87,7 +94,7 @@ function preparedJson(ctx: RequestContext, p: Prepared) {
     invoiceDate: p.invoiceDate, dueDate: p.dueDate, placeOfSupply: p.placeOfSupply, supplyType: p.gst.supplyType, status: 'posted',
     subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, taxTotal: p.gst.taxTotal,
     roundOff: p.gst.roundOff, total: p.gst.total, ...paymentInfo(p.gst.total, 0, 'posted'), notes: null, createdAt: new Date(),
-    createdBy: { id: ctx.userId, name: ctx.userName }, cancelledAt: null, cancelReason: null,
+    createdBy: { id: ctx.userId, name: ctx.userName }, cancelledAt: null, cancelReason: null, einvoice: null, ewaybill: null,
     lines: p.lines.map((l, i) => ({
       id: null, itemId: l.item.id, description: l.description, hsnCode: l.item.hsn_code, qty: l.qty, unit: l.item.unit,
       rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate, ...p.gst.lines[i]!, returnedQty: 0,
@@ -114,6 +121,15 @@ function invoiceJson(r: InvoiceRow) {
     cgst: r.cgst, sgst: r.sgst, igst: r.igst, taxTotal: Math.round((r.cgst + r.sgst + r.igst) * 100) / 100,
     roundOff: r.round_off, total: r.total, ...paymentInfo(r.total, r.amount_paid, r.status), notes: r.notes, createdAt: r.created_at,
     createdBy: { id: r.created_by, name: r.created_by_name }, cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason,
+    einvoice: r.irn ? {
+      irn: r.irn, ackNo: r.irn_ack_no, ackDate: r.irn_ack_date, signedQrCode: r.irn_signed_qr, status: r.irn_status,
+      sandbox: r.irn_sandbox, cancelledAt: r.irn_cancelled_at, cancelReason: r.irn_cancel_reason,
+    } : null,
+    ewaybill: r.ewb_no ? {
+      ewbNo: r.ewb_no, ewbDate: r.ewb_date, validUntil: r.ewb_valid_until, status: r.ewb_status,
+      transportMode: r.ewb_transport_mode, vehicleNo: r.ewb_vehicle_no, distanceKm: r.ewb_distance_km,
+      transporterGstin: r.ewb_transporter_gstin, cancelledAt: r.ewb_cancelled_at,
+    } : null,
   };
 }
 
@@ -141,7 +157,7 @@ async function loadInvoice(tx: Tx, ctx: RequestContext, id: string) {
   };
 }
 
-export { invoiceJson, invoiceSelect };
+export { invoiceJson, invoiceSelect, loadInvoice };
 
 export async function invoiceRoutes(app: FastifyInstance) {
   app.get('/invoices', async (req) => {
@@ -156,6 +172,10 @@ export async function invoiceRoutes(app: FastifyInstance) {
       if (q.from) base = base.where('v.invoice_date', '>=', q.from);
       if (q.to) base = base.where('v.invoice_date', '<=', q.to);
       if (q.locationId) base = base.where('v.location_id', '=', q.locationId);
+      if (q.partyId) base = base.where('v.party_id', '=', q.partyId);
+      if (q.paymentStatus === 'paid') base = base.where('v.status', '=', 'posted').whereRef('v.amount_paid', '>=', 'v.total');
+      if (q.paymentStatus === 'partial') base = base.where('v.status', '=', 'posted').where('v.amount_paid', '>', 0).whereRef('v.amount_paid', '<', 'v.total');
+      if (q.paymentStatus === 'unpaid') base = base.where('v.status', '=', 'posted').where('v.amount_paid', '=', 0).where('v.total', '>', 0);
       if (q.q) base = base.where((eb) => eb.or([eb('v.number', 'ilike', likeTerm(q.q!)), eb('p.name', 'ilike', likeTerm(q.q!))]));
       const { total } = await tx.selectFrom(base.as('b')).select((eb) => eb.fn.countAll<number>().as('total')).executeTakeFirstOrThrow();
       const rows = await base.orderBy('v.invoice_date', 'desc').orderBy('v.created_at', 'desc').limit(q.limit).offset(q.offset).execute();
@@ -263,10 +283,13 @@ export async function invoiceRoutes(app: FastifyInstance) {
     const id = parse(z.uuid(), req.params.id);
     const { reason } = parse(cancelBody, req.body);
     return ctx.tx(async (tx) => {
-      const current = await tx.selectFrom('invoices').select(['id', 'status', 'location_id', 'number', 'amount_paid'])
+      const current = await tx.selectFrom('invoices').select(['id', 'status', 'location_id', 'number', 'amount_paid', 'irn_status'])
         .where('id', '=', id).where('company_id', '=', ctx.companyId).forUpdate().executeTakeFirst();
       if (!current || !ctx.canAccessLocation(current.location_id)) throw notFound('Invoice');
       if (current.status === 'cancelled') throw conflict('This invoice is already cancelled.', 'ALREADY_CANCELLED');
+      if (current.irn_status === 'active') {
+        throw conflict('This invoice has an active IRN. Cancel the IRN first (within 24 hours) or issue a credit note.', 'IRN_ACTIVE');
+      }
       const notes = await tx.selectFrom('credit_notes').select('id').where('invoice_id', '=', id).where('status', '=', 'posted').executeTakeFirst();
       if (current.amount_paid > 0 || notes) {
         throw conflict('Receipts or credit notes are applied to this invoice. Cancel them first.', 'HAS_SETTLEMENTS');

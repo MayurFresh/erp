@@ -156,6 +156,7 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
   late final TextEditingController _name;
   late final TextEditingController _code;
   late final TextEditingController _address;
+  late final TextEditingController _pincode;
   late String _type;
   String? _stateCode;
   late bool _active;
@@ -168,6 +169,7 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
     _name = TextEditingController(text: l?.name);
     _code = TextEditingController(text: l?.code);
     _address = TextEditingController(text: l?.address);
+    _pincode = TextEditingController(text: l?.pincode);
     _type = l?.type ?? 'site';
     _stateCode =
         l?.stateCode ?? ref.read(sessionProvider).value?.company?.stateCode;
@@ -179,6 +181,7 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
     _name.dispose();
     _code.dispose();
     _address.dispose();
+    _pincode.dispose();
     super.dispose();
   }
 
@@ -191,6 +194,7 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
       'code': trimmedOrNull(_code.text),
       'stateCode': _stateCode,
       'address': trimmedOrNull(_address.text),
+      'pincode': trimmedOrNull(_pincode.text),
       'isActive': _active,
     };
     setState(() => _saving = true);
@@ -272,6 +276,19 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
                 maxLines: 4,
                 forceErrorText: serverError('address'),
                 onChanged: (_) => clearServerError('address'),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _pincode,
+                decoration: const InputDecoration(
+                  labelText: 'PIN code (optional)',
+                  counterText: '',
+                ),
+                maxLength: 6,
+                keyboardType: TextInputType.number,
+                forceErrorText: serverError('pincode'),
+                onChanged: (_) => clearServerError('pincode'),
+                validator: validatePincode,
               ),
               if (editing)
                 SwitchListTile(

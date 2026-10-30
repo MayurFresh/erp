@@ -12,7 +12,9 @@ import '../../widgets/state_dropdown.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
 import 'parties_repository.dart';
+import '../tax/tax_pickers.dart';
 import 'party_model.dart';
+import '../../widgets/busy.dart';
 
 /// Create (`/parties/new`) or edit (`/parties/:id`) a customer or vendor.
 class PartyFormScreen extends ConsumerWidget {
@@ -41,15 +43,21 @@ class PartyForm extends ConsumerStatefulWidget {
   ConsumerState<PartyForm> createState() => _PartyFormState();
 }
 
-class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
+class _PartyFormState extends ConsumerState<PartyForm>
+    with ServerFieldErrors, DirtyTracking<PartyForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _gstin;
+  late final TextEditingController _pan;
+  late final TextEditingController _pincode;
   late final TextEditingController _phone;
   late final TextEditingController _email;
   late final TextEditingController _address;
   late final TextEditingController _creditLimit;
   late final TextEditingController _creditDays;
+  late final TextEditingController _udyam;
+  String? _msme;
+  String? _tdsSectionId;
   late PartyType _type;
   String? _stateCode;
   bool _saving = false;
@@ -62,11 +70,16 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
     final p = widget.party;
     _name = TextEditingController(text: p?.name);
     _gstin = TextEditingController(text: p?.gstin);
+    _pan = TextEditingController(text: p?.pan);
+    _pincode = TextEditingController(text: p?.pincode);
     _phone = TextEditingController(text: p?.phone);
     _email = TextEditingController(text: p?.email);
     _address = TextEditingController(text: p?.address);
     _creditLimit = TextEditingController(text: formatPlain(p?.creditLimit));
     _creditDays = TextEditingController(text: '${p?.creditDays ?? 0}');
+    _udyam = TextEditingController(text: p?.udyamNo);
+    _msme = p?.msmeCategory;
+    _tdsSectionId = p?.tdsSectionId;
     _type = p?.type ?? PartyType.customer;
     _stateCode = p?.stateCode;
   }
@@ -76,11 +89,14 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
     for (final c in [
       _name,
       _gstin,
+      _pan,
+      _pincode,
       _phone,
       _email,
       _address,
       _creditLimit,
       _creditDays,
+      _udyam,
     ]) {
       c.dispose();
     }
@@ -108,8 +124,13 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
       'phone': trimmedOrNull(_phone.text),
       'email': trimmedOrNull(_email.text),
       'address': trimmedOrNull(_address.text),
+      'pan': trimmedOrNull(_pan.text.toUpperCase()),
+      'pincode': trimmedOrNull(_pincode.text),
       'creditLimit': parseNumber(_creditLimit.text) ?? 0,
       'creditDays': int.tryParse(_creditDays.text.trim()) ?? 0,
+      'udyamNo': trimmedOrNull(_udyam.text.toUpperCase()),
+      'msmeCategory': _msme,
+      'tdsSectionId': _tdsSectionId,
     };
     setState(() => _saving = true);
     try {
@@ -120,6 +141,7 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
           : await repo.update(original, body);
       ref.bump(const [DataKind.parties]);
       if (!mounted) return;
+      markSaved();
       showInfoSnackBar(context, 'Saved "${saved.name}"');
       context.go('/parties/${saved.id}');
     } catch (e) {
@@ -130,7 +152,9 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final perms = ref.watch(permissionsProvider);
     final canSave = _editing
         ? perms.can(Perm.partiesEdit)
@@ -138,6 +162,7 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: FormPage(
         children: [
           Text(
@@ -234,6 +259,7 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
                       enabled: canSave,
                       decoration: const InputDecoration(labelText: 'Phone'),
                       keyboardType: TextInputType.phone,
+                      validator: validatePhone,
                       forceErrorText: serverError('phone'),
                       onChanged: (_) => clearServerError('phone'),
                     ),
@@ -257,6 +283,38 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
                   maxLines: 4,
                   forceErrorText: serverError('address'),
                   onChanged: (_) => clearServerError('address'),
+                ),
+                const SizedBox(height: 16),
+                FormRow(
+                  children: [
+                    TextFormField(
+                      controller: _pan,
+                      enabled: canSave,
+                      decoration: const InputDecoration(
+                        labelText: 'PAN (optional)',
+                        counterText: '',
+                      ),
+                      maxLength: 10,
+                      textCapitalization: TextCapitalization.characters,
+                      forceErrorText: serverError('pan'),
+                      onChanged: (_) => clearServerError('pan'),
+                      validator: validatePan,
+                    ),
+                    TextFormField(
+                      controller: _pincode,
+                      enabled: canSave,
+                      decoration: const InputDecoration(
+                        labelText: 'PIN code (optional)',
+                        helperText: 'Needed for e-invoices',
+                        counterText: '',
+                      ),
+                      maxLength: 6,
+                      keyboardType: TextInputType.number,
+                      forceErrorText: serverError('pincode'),
+                      onChanged: (_) => clearServerError('pincode'),
+                      validator: validatePincode,
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 FormRow(
@@ -291,11 +349,74 @@ class _PartyFormState extends ConsumerState<PartyForm> with ServerFieldErrors {
                         if (text.isEmpty) return null;
                         final days = int.tryParse(text);
                         if (days == null || days < 0) return 'Whole days only';
-                        return days > 365 ? 'At most 365 days' : null;
+                        if (days > 365) return 'At most 365 days';
+                        if (days > 45 &&
+                            _type != PartyType.customer &&
+                            (_msme == 'micro' || _msme == 'small')) {
+                          return 'MSME suppliers must be paid within 45 days '
+                              '(MSMED Act s.15)';
+                        }
+                        return null;
                       },
                     ),
                   ],
                 ),
+              ],
+            ),
+          ),
+          SectionCard(
+            title: 'MSME and TDS',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FormRow(
+                  children: [
+                    TextFormField(
+                      controller: _udyam,
+                      enabled: canSave,
+                      decoration: const InputDecoration(
+                        labelText: 'Udyam number (optional)',
+                        hintText: 'UDYAM-XX-00-0000000',
+                      ),
+                      textCapitalization: TextCapitalization.characters,
+                      forceErrorText: serverError('udyamNo'),
+                      onChanged: (_) => clearServerError('udyamNo'),
+                    ),
+                    DropdownButtonFormField<String?>(
+                      initialValue: _msme,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'MSME category',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: null, child: Text('Not MSME')),
+                        DropdownMenuItem(value: 'micro', child: Text('Micro')),
+                        DropdownMenuItem(value: 'small', child: Text('Small')),
+                        DropdownMenuItem(
+                          value: 'medium',
+                          child: Text('Medium'),
+                        ),
+                      ],
+                      onChanged: canSave
+                          ? (v) => setState(() {
+                              _msme = v;
+                              clearServerError('msmeCategory');
+                              _formKey.currentState?.validate();
+                            })
+                          : null,
+                    ),
+                  ],
+                ),
+                if (_type != PartyType.customer) ...[
+                  const SizedBox(height: 16),
+                  TdsSectionPicker(
+                    value: _tdsSectionId,
+                    enabled: canSave,
+                    label: 'Default TDS section (on purchases)',
+                    errorText: serverError('tdsSectionId'),
+                    onChanged: (s) => setState(() => _tdsSectionId = s?.id),
+                  ),
+                ],
               ],
             ),
           ),

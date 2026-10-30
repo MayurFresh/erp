@@ -12,7 +12,7 @@ import { qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
 import { nextNumber } from '../lib/series.ts';
-import { parse } from '../lib/validate.ts';
+import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getLocation } from './locations.ts';
 import { boqLinesAt } from './projects.ts';
@@ -24,7 +24,7 @@ const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const createBody = z.object({
   locationId: z.uuid(),
   boqLineId: z.uuid().nullable().optional(),
-  date: dateField.optional(),
+  date: docDate.optional(),
   notes: optionalText(500),
   lines: z.array(z.object({ itemId: z.uuid(), qty: qtyField.refine((v) => v > 0, 'Must be more than zero') }))
     .min(1, 'Add at least one item').max(200),

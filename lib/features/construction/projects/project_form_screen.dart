@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/json.dart';
 import '../../../core/money.dart';
 import '../../../core/permissions.dart';
 import '../../../widgets/form_support.dart';
@@ -22,6 +23,7 @@ import '../common/c_widgets.dart';
 import '../data/construction_repository.dart';
 import '../models/common_models.dart';
 import '../models/project_models.dart';
+import '../../../widgets/busy.dart';
 
 /// Create (`projectId == null`) or edit a project.
 class ProjectFormScreen extends ConsumerWidget {
@@ -55,7 +57,7 @@ class _ProjectForm extends ConsumerStatefulWidget {
 }
 
 class _ProjectFormState extends ConsumerState<_ProjectForm>
-    with ServerFieldErrors {
+    with ServerFieldErrors, DirtyTracking<_ProjectForm> {
   final _formKey = GlobalKey<FormState>();
   late final Project? _p = widget.original;
   late final _code = TextEditingController(text: _p?.code);
@@ -73,7 +75,8 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
       ? null
       : NamedRef(id: _p!.managerUserId!, name: _p.managerName ?? 'Manager');
   late ProjectStatus _status = _p?.status ?? ProjectStatus.planning;
-  late DateTime? _start = parseApiDate(_p?.startDate) ?? (_p == null ? today() : null);
+  late DateTime? _start =
+      parseApiDate(_p?.startDate) ?? (_p == null ? today() : null);
   late DateTime? _end = parseApiDate(_p?.endDate);
   late final Set<String> _siteIds = {...?_p?.sites.map((s) => s.id)};
   bool _saving = false;
@@ -102,8 +105,10 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
       context: context,
       title: 'Choose the project manager',
       hintText: 'Search name or email',
-      search: (q) async =>
-          (await repo.users(q: q, limit: 50)).data.where((u) => u.isActive).toList(),
+      search: (q) async => (await repo.users(
+        q: q,
+        limit: 50,
+      )).data.where((u) => u.isActive).toList(),
       titleBuilder: (context, u) => Text(u.name),
       subtitleBuilder: (context, u) => Text(u.email),
     );
@@ -137,6 +142,7 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
       ref.bumpC(const [CKind.projects]);
       if (!mounted) return;
       showSuccess(context, 'Project ${saved.code} saved');
+      markSaved();
       context.go('/projects/${saved.id}');
     } catch (e) {
       if (mounted) showSubmitError(e);
@@ -146,15 +152,20 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final perms = ref.watch(permissionsProvider);
     final locations = ref.watch(locationsLookupProvider);
     final sites = (locations.value ?? const <Location>[])
-        .where((l) => l.type == 'site' && (l.isActive || _siteIds.contains(l.id)))
+        .where(
+          (l) => l.type == 'site' && (l.isActive || _siteIds.contains(l.id)),
+        )
         .toList();
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: FormPage(
         maxWidth: 900,
         children: [

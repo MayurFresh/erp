@@ -30,6 +30,8 @@ const projectFields = {
   endDate: nullableDate,
   contractValue: moneyField.optional(),
   siteIds: z.array(z.uuid()).max(200).nullable().optional(),
+  reraRegNo: nullableText(60),
+  reraAccountId: nullableId,
 };
 const createBody = z.object({
   ...projectFields,
@@ -179,12 +181,19 @@ async function loadProjects(tx: Tx, ids: string[]) {
       startDate: p.start_date, endDate: p.end_date, contractValue: p.contract_value, address: p.address,
       sites: sites.filter((s) => s.project_id === id).map((s) => ({ id: s.id, name: s.name })),
       budgetTotal: round2(budget), progressPct: budget > 0 ? round2((done / budget) * 100) : 0,
-      createdAt: p.created_at,
+      reraRegNo: p.rera_reg_no, reraAccountId: p.rera_account_id, createdAt: p.created_at,
     };
   });
 }
 
-async function checkRefs(tx: Tx, ctx: RequestContext, body: { clientPartyId?: string | null; managerUserId?: string | null }) {
+async function checkRefs(tx: Tx, ctx: RequestContext, body: { clientPartyId?: string | null; managerUserId?: string | null; reraAccountId?: string | null }) {
+  if (body.reraAccountId) {
+    const acc = await tx.selectFrom('accounts').select(['type', 'subtype', 'is_active'])
+      .where('id', '=', body.reraAccountId).where('company_id', '=', ctx.companyId).executeTakeFirst();
+    if (!acc || acc.type !== 'asset' || acc.subtype !== 'bank' || !acc.is_active) {
+      throw badRequest('Choose an active bank account for RERA collections.', { reraAccountId: 'Not an active bank account' });
+    }
+  }
   if (body.clientPartyId) {
     const party = await tx.selectFrom('parties').select(['id', 'type'])
       .where('id', '=', body.clientPartyId).where('company_id', '=', ctx.companyId).executeTakeFirst();
@@ -235,7 +244,8 @@ function codeConflict(err: unknown, message: string): never {
 export async function projectRoutes(app: FastifyInstance) {
   app.get('/projects', async (req) => {
     const ctx = req.ctx;
-    ctx.require('projects.view');
+    // Real-estate staff need project pickers without seeing project costs screens.
+    ctx.require('projects.view', 'units.view', 'bookings.view');
     const q = parse(listQuery, req.query);
     return ctx.tx(async (tx) => {
       let base = tx.selectFrom('projects as p').where('p.company_id', '=', ctx.companyId);
@@ -254,7 +264,7 @@ export async function projectRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>('/projects/:id', async (req) => {
     const ctx = req.ctx;
-    ctx.require('projects.view');
+    ctx.require('projects.view', 'units.view', 'bookings.view');
     const id = parse(z.uuid(), req.params.id);
     return ctx.tx(async (tx) => {
       await getProject(tx, ctx, id);
@@ -281,6 +291,7 @@ export async function projectRoutes(app: FastifyInstance) {
           client_party_id: body.clientPartyId ?? null, manager_user_id: body.managerUserId ?? null,
           status: body.status ?? 'planning', start_date: body.startDate ?? null, end_date: body.endDate ?? null,
           contract_value: body.contractValue ?? 0, address: body.address ?? null, created_by: ctx.userId,
+          rera_reg_no: body.reraRegNo ?? null, rera_account_id: body.reraAccountId ?? null,
         }).returning('id').executeTakeFirstOrThrow();
         await setSites(tx, ctx, row.id, siteIds);
         const saved = (await loadProjects(tx, [row.id]))[0]!;
@@ -308,7 +319,7 @@ export async function projectRoutes(app: FastifyInstance) {
         const changes = Object.fromEntries(Object.entries({
           code: body.code, name: body.name, client_party_id: body.clientPartyId, manager_user_id: body.managerUserId,
           status: body.status, start_date: body.startDate, end_date: body.endDate, contract_value: body.contractValue,
-          address: body.address,
+          address: body.address, rera_reg_no: body.reraRegNo, rera_account_id: body.reraAccountId,
         }).filter(([, v]) => v !== undefined));
         const old = (await loadProjects(tx, [id]))[0]!;
         if (Object.keys(changes).length) await tx.updateTable('projects').set(changes).where('id', '=', id).execute();
@@ -494,9 +505,17 @@ export async function projectRoutes(app: FastifyInstance) {
       if (from) spent = spent.where('expense_date', '>=', from);
       const expenses = round2(Number((await spent.executeTakeFirstOrThrow()).v));
 
+      // Approved RA bills dated in range: gross, plus GST when the work order's input credit is not claimed.
+      let ra = tx.selectFrom('ra_bills as b').innerJoin('work_orders as w', 'w.id', 'b.work_order_id')
+        .select(sql<number>`coalesce(sum(b.gross + case when w.itc_eligible then 0 else b.cgst + b.sgst + b.igst end), 0)`.as('v'))
+        .where('b.company_id', '=', ctx.companyId).where('w.project_id', '=', id).where('b.status', '=', 'approved')
+        .where('b.bill_date', '<=', to);
+      if (from) ra = ra.where('b.bill_date', '>=', from);
+      const subcontract = round2(Number((await ra.executeTakeFirstOrThrow()).v));
+
       return {
         projectId: id, from, to, budget,
-        actual: { material, labour, expenses, total: round2(material + labour + expenses) },
+        actual: { material, labour, expenses, subcontract, total: round2(material + labour + expenses + subcontract) },
         byBoqLine: lines.map((r) => {
           const b = boqJson(r);
           return {

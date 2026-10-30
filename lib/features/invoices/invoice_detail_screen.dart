@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/india_states.dart';
 import '../../core/money.dart';
+import '../../core/pdf_fonts.dart';
 import '../../core/permissions.dart';
 import '../../core/providers.dart';
 import '../../widgets/layout.dart';
@@ -19,6 +19,7 @@ import '../company/company_repository.dart';
 import '../parties/parties_repository.dart';
 import '../parties/party_model.dart';
 import 'invoice_model.dart';
+import '../../core/whatsapp.dart';
 import 'invoice_pdf.dart';
 import 'invoice_widgets.dart';
 import 'invoices_repository.dart';
@@ -87,6 +88,7 @@ class InvoiceDetailScreen extends ConsumerWidget {
       invoice,
       company ?? const Company(id: '', name: 'Company', stateCode: ''),
       party: party,
+      theme: await pdfTheme(),
     );
   }
 
@@ -125,12 +127,39 @@ class InvoiceDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     Invoice invoice,
   ) async {
-    final company = ref.read(sessionProvider).value?.company?.name ?? '';
-    final uri = whatsAppShareUri(
-      invoiceShareText(invoice, companyName: company),
-    );
+    Company? company;
     try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      company = await ref.read(companyRepositoryProvider).get();
+    } catch (_) {
+      company = ref.read(sessionProvider).value?.company;
+    }
+    // The customer's phone is not on the invoice; without it WhatsApp lets
+    // the user pick the chat.
+    String? phone;
+    try {
+      phone = (await ref.read(partiesRepositoryProvider).get(invoice.partyId))
+          .phone;
+    } catch (_) {}
+    final due = invoice.amountDue ?? invoice.total;
+    final upiId = company?.upiId;
+    final text = invoiceWhatsAppText(
+      companyName: company?.name ?? '',
+      number: invoice.number,
+      invoiceDate: invoice.invoiceDate,
+      amountDue: invoice.isCancelled ? 0 : due,
+      dueDate: invoice.dueDate,
+      upiLink: upiId == null || upiId.isEmpty || due <= 0
+          ? null
+          : buildUpiUri(
+              upiId: upiId,
+              payeeName: company!.name,
+              amount: due,
+              note: invoice.number ?? 'Invoice',
+            ),
+    );
+    final uri = whatsAppUri(phone: phone, text: text);
+    try {
+      final opened = await openWhatsApp(uri);
       if (!opened && context.mounted) {
         showInfoSnackBar(context, 'Could not open WhatsApp.');
       }

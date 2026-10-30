@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -125,7 +126,11 @@ class ApiClient {
     }
   }
 
-  Future<void> _expire() async {
+  /// Why the session ended (e.g. `SESSION_REVOKED`); shown once on sign-in.
+  String? sessionNotice;
+
+  Future<void> _expire([String? notice]) async {
+    sessionNotice = notice;
     await clearSession();
     _sessionExpired.add(null);
   }
@@ -157,7 +162,13 @@ class ApiClient {
     final code = asJsonOrNull(asJsonOrNull(response!.data)?['error'])?['code'];
     if (code != ApiException.tokenExpired ||
         options.extra[_retriedKey] == true) {
-      if (_refreshToken != null || _accessToken != null) await _expire();
+      if (_refreshToken != null || _accessToken != null) {
+        await _expire(
+          code == ApiException.sessionRevoked
+              ? ApiException.friendlyMessage(code as String, 401, '')
+              : null,
+        );
+      }
       handler.next(err);
       return;
     }
@@ -171,7 +182,9 @@ class ApiClient {
     } on ApiException catch (e) {
       // Only an answer from the server means the session is gone; after a
       // network failure the tokens are kept so the user can retry.
-      if (!e.isNetworkError) await _expire();
+      if (!e.isNetworkError) {
+        await _expire(e.code == ApiException.sessionRevoked ? e.message : null);
+      }
       handler.next(err);
       return;
     }
@@ -208,18 +221,64 @@ class ApiClient {
 
   /// A missing [body] is sent as `{}`: the server rejects an empty body
   /// with a JSON content type (e.g. `POST /transfers/:id/receive`).
-  Future<dynamic> post(String path, {Object? body}) => _send(
-    () => _dio.post<dynamic>(path, data: body ?? const <String, dynamic>{}),
+  ///
+  /// Every call sends an `Idempotency-Key` (except `/auth/*`). The same key
+  /// is reused by internal retries (token refresh) because it lives in the
+  /// request options. Pass [idempotencyKey] to keep one key across several
+  /// attempts of the same user submit.
+  Future<dynamic> post(String path, {Object? body, String? idempotencyKey}) =>
+      _send(
+        () => _dio.post<dynamic>(
+          path,
+          data: body ?? const <String, dynamic>{},
+          options: path.startsWith('/auth/')
+              ? null
+              : Options(
+                  headers: {
+                    'Idempotency-Key': idempotencyKey ?? newIdempotencyKey(),
+                  },
+                ),
+        ),
+      );
+
+  static final _random = Random.secure();
+  static const _keyChars =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+  /// 32 random characters from `[A-Za-z0-9]`.
+  static String newIdempotencyKey() => String.fromCharCodes(
+    List.generate(
+      32,
+      (_) => _keyChars.codeUnitAt(_random.nextInt(_keyChars.length)),
+    ),
   );
 
   Future<dynamic> patch(String path, {Object? body}) =>
       _send(() => _dio.patch<dynamic>(path, data: body));
 
+  /// Fetches a text body such as CSV (`GET /export/:dataset`).
+  Future<String> getText(String path, {Map<String, dynamic>? query}) async =>
+      (await _send(
+            () => _dio.get<dynamic>(
+              path,
+              queryParameters: _query(query),
+              options: Options(responseType: ResponseType.plain),
+            ),
+          ))
+          as String;
+
+  Future<dynamic> delete(String path) =>
+      _send(() => _dio.delete<dynamic>(path));
+
   Future<Json> getJson(String path, {Map<String, dynamic>? query}) async =>
       asJson(await get(path, query: query));
 
-  Future<Json> postJson(String path, {Object? body}) async =>
-      asJson(await post(path, body: body));
+  Future<Json> postJson(
+    String path, {
+    Object? body,
+    String? idempotencyKey,
+  }) async =>
+      asJson(await post(path, body: body, idempotencyKey: idempotencyKey));
 
   Future<Json> patchJson(String path, {Object? body}) async =>
       asJson(await patch(path, body: body));

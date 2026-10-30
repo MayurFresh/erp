@@ -15,6 +15,7 @@ import '../items/item_picker.dart';
 import '../locations/location_filter.dart';
 import 'transfer_model.dart';
 import 'transfers_repository.dart';
+import '../../widgets/busy.dart';
 
 class _TransferLineDraft {
   _TransferLineDraft(this.item);
@@ -34,7 +35,7 @@ class TransferCreateScreen extends ConsumerStatefulWidget {
 }
 
 class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
-    with ServerFieldErrors {
+    with ServerFieldErrors, DirtyTracking<TransferCreateScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notes = TextEditingController();
   final List<_TransferLineDraft> _lines = [];
@@ -80,6 +81,7 @@ class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
     });
     final valid = _formKey.currentState!.validate();
     if (_lines.isEmpty) {
+      markSaved();
       showInfoSnackBar(context, 'Add at least one item.');
       return;
     }
@@ -114,10 +116,13 @@ class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final theme = Theme.of(context);
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: FormPage(
         maxWidth: 900,
         children: [
@@ -213,7 +218,7 @@ class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
             runSpacing: 8,
             children: [
               OutlinedButton(
-                onPressed: _saving ? null : () => context.go('/transfers'),
+                onPressed: _saving ? null : () => leave('/transfers'),
                 child: const Text('Cancel'),
               ),
               BusyButton(

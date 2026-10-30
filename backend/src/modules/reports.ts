@@ -5,7 +5,9 @@ import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
 import { daysBetween, fyStart, isValidDate, todayIst } from '../lib/dates.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
+import { visibleProjectIds } from './subcontract-common.ts';
 import { parse } from '../lib/validate.ts';
+import { msmeInterest } from '../lib/msme.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -283,7 +285,7 @@ export async function reportRoutes(app: FastifyInstance) {
     const asOf = q.asOf ?? todayIst();
     const scope = scopedLocationIds(ctx);
     return ctx.tx(async (tx) => {
-      const docs = q.type === 'receivables'
+      const docs: { party_id: string; name: string; due_date: string; total: number; amount_paid: number }[] = q.type === 'receivables'
         ? await (() => {
           let b = tx.selectFrom('invoices as v').innerJoin('parties as p', 'p.id', 'v.party_id')
             .where('v.company_id', '=', ctx.companyId).where('v.status', '=', 'posted').where('v.invoice_date', '<=', asOf)
@@ -294,10 +296,25 @@ export async function reportRoutes(app: FastifyInstance) {
         : await (() => {
           let b = tx.selectFrom('purchases as v').innerJoin('parties as p', 'p.id', 'v.party_id')
             .where('v.company_id', '=', ctx.companyId).where('v.status', '=', 'posted').where('v.bill_date', '<=', asOf)
-            .whereRef('v.amount_paid', '<', 'v.total');
+            .whereRef('v.amount_paid', '<', 'v.net_payable');
           if (scope) b = b.where('v.location_id', 'in', scope);
-          return b.select(['p.id as party_id', 'p.name', 'v.due_date', 'v.total', 'v.amount_paid']).execute();
+          return b.select(['p.id as party_id', 'p.name', 'v.due_date', 'v.net_payable as total', 'v.amount_paid']).execute();
         })();
+      if (q.type === 'receivables') {
+        let d = tx.selectFrom('demands as v').innerJoin('parties as p', 'p.id', 'v.party_id').innerJoin('bookings as bk', 'bk.id', 'v.booking_id')
+          .where('v.company_id', '=', ctx.companyId).where('v.status', '=', 'open').where('v.demand_date', '<=', asOf)
+          .whereRef('v.amount_paid', '<', 'v.total');
+        const vis = await visibleProjectIds(tx, ctx);
+        if (vis) d = d.where('bk.project_id', 'in', vis);
+        docs.push(...await d.select(['p.id as party_id', 'p.name', 'v.due_date', 'v.total', 'v.amount_paid']).execute());
+      } else {
+        let d = tx.selectFrom('ra_bills as v').innerJoin('work_orders as w', 'w.id', 'v.work_order_id').innerJoin('parties as p', 'p.id', 'w.contractor_party_id')
+          .where('v.company_id', '=', ctx.companyId).where('v.status', '=', 'approved').where('v.bill_date', '<=', asOf)
+          .whereRef('v.amount_paid', '<', 'v.net_payable');
+        const vis = await visibleProjectIds(tx, ctx);
+        if (vis) d = d.where('w.project_id', 'in', vis);
+        docs.push(...await d.select(['p.id as party_id', 'p.name', 'v.due_date', 'v.net_payable as total', 'v.amount_paid']).execute());
+      }
       type Buckets = { notDue: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; total: number };
       const empty = (): Buckets => ({ notDue: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, total: 0 });
       const byParty = new Map<string, { partyId: string; partyName: string } & Buckets>();
@@ -314,6 +331,53 @@ export async function reportRoutes(app: FastifyInstance) {
         byParty.set(d.party_id, row);
       }
       return { asOf, rows: [...byParty.values()].sort((a, b) => b.total - a.total), totals };
+    });
+  });
+
+  app.get('/reports/msme-dues', async (req) => {
+    const ctx = req.ctx;
+    ctx.require('reports.view');
+    const q = parse(asOfQuery, req.query);
+    const asOf = q.asOf ?? todayIst();
+    const y = Number(asOf.slice(0, 4));
+    const yearEnd = `${asOf.slice(5) >= '03-31' ? y : y - 1}-03-31`;
+    return ctx.tx(async (tx) => {
+      const co = await tx.selectFrom('companies').select('msme_bank_rate').where('id', '=', ctx.companyId).executeTakeFirstOrThrow();
+      const scope = scopedLocationIds(ctx);
+      let base = tx.selectFrom('purchases as v').innerJoin('parties as p', 'p.id', 'v.party_id')
+        .select(['v.id', 'v.number', 'v.bill_date', 'v.msme_due_date', 'v.net_payable', 'v.amount_paid', 'p.id as party_id', 'p.name', 'p.udyam_no', 'p.msme_category'])
+        .where('v.company_id', '=', ctx.companyId).where('v.status', '=', 'posted').where('v.msme_due_date', 'is not', null);
+      if (scope) base = base.where('v.location_id', 'in', scope);
+      const bills = await base.whereRef('v.amount_paid', '<', 'v.net_payable').orderBy('v.msme_due_date').execute();
+      const rows = bills.map((b) => {
+        const unpaid = round2(b.net_payable - b.amount_paid);
+        const due = b.msme_due_date!;
+        return {
+          purchaseId: b.id, number: b.number, billDate: b.bill_date, msmeDueDate: due, partyId: b.party_id, partyName: b.name, udyamNo: b.udyam_no, category: b.msme_category,
+          total: b.net_payable, unpaid, daysOverdue: Math.max(0, daysBetween(due, asOf)), interest: msmeInterest(unpaid, due, asOf, co.msme_bank_rate),
+        };
+      });
+      // Section 43B(h): amounts past the due date and still unpaid at the last 31 March
+      let yearEndDisallowance = 0;
+      const old = bills.filter((b) => b.msme_due_date! < yearEnd && b.bill_date <= yearEnd);
+      if (old.length) {
+        const paid = await tx.selectFrom('payment_allocations as a').innerJoin('payments as y', 'y.id', 'a.payment_id')
+          .select(['a.doc_id', (eb) => eb.fn.sum<number>('a.amount').as('paid')]).where('a.doc_type', '=', 'purchase').where('a.doc_id', 'in', old.map((b) => b.id))
+          .where('y.status', '=', 'posted').where('y.payment_date', '<=', yearEnd).groupBy('a.doc_id').execute();
+        const m = new Map(paid.map((p) => [p.doc_id, Number(p.paid)]));
+        for (const b of old) yearEndDisallowance += Math.max(0, b.net_payable - (m.get(b.id) ?? 0));
+      }
+      const warnings: string[] = [];
+      if (co.msme_bank_rate === null) warnings.push('Set the RBI bank rate in company settings to compute interest.');
+      return {
+        asOf, bankRate: co.msme_bank_rate, rows,
+        totals: {
+          unpaid: round2(rows.reduce((s, r) => s + r.unpaid, 0)),
+          overdue: round2(rows.filter((r) => r.daysOverdue > 0).reduce((s, r) => s + r.unpaid, 0)),
+          interest: round2(rows.reduce((s, r) => s + (r.interest ?? 0), 0)),
+        },
+        yearEnd, yearEndDisallowance: round2(yearEndDisallowance), warnings,
+      };
     });
   });
 }

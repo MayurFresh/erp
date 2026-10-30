@@ -1,6 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../core/permissions.dart';
+import '../admin_routes.dart';
+import '../construction_routes.dart';
+import '../compliance/compliance_routes.dart';
+import '../realestate/realestate_routes.dart';
+import '../tax/tax_routes.dart';
+import '../gst_filing/gst_filing_routes.dart';
+import '../fixed_assets/fixed_asset_routes.dart';
+import '../income_tax/income_tax_routes.dart';
 
 class NavEntry {
   const NavEntry({
@@ -32,9 +40,13 @@ class NavGroup {
 }
 
 /// The whole menu, in order. To add a section, add a [NavEntry] to a group
-/// (or a new [NavGroup]) and a matching route in `router.dart`; menu
-/// filtering, the home page and route permissions follow from this list.
-const List<NavGroup> navGroups = [
+/// (or a new [NavGroup], or spread a pack's list, e.g. `...adminNavEntries`
+/// into Administration or `NavGroup('Construction', constructionNavEntries)`)
+/// and a matching route in `router.dart`. Menu filtering (empty groups
+/// hidden), the home page and route permissions all follow from this list:
+/// `<path>` and anything under it need [NavEntry.permission], `<path>/new`
+/// needs [NavEntry.createPermission].
+final List<NavGroup> navGroups = [
   NavGroup('Overview', [
     NavEntry(
       path: '/dashboard',
@@ -121,6 +133,17 @@ const List<NavGroup> navGroups = [
       createPermission: Perm.transfersCreate,
     ),
   ]),
+  NavGroup('Construction', constructionNavEntries),
+  NavGroup('Real estate', realEstateNavEntries),
+  NavGroup('Compliance', [
+    ...complianceNavEntries,
+    ...taxNavEntries,
+    ...gstFilingNavEntries,
+  ]),
+  NavGroup('Income tax & assets', [
+    ...incomeTaxNavEntries,
+    ...fixedAssetNavEntries,
+  ]),
   NavGroup('Masters', [
     NavEntry(
       path: '/parties',
@@ -138,7 +161,9 @@ const List<NavGroup> navGroups = [
       permission: Perm.locationsView,
     ),
   ]),
+  ...adminNavGroups,
   NavGroup('Administration', [
+    ...settingsNavEntries,
     NavEntry(
       path: '/users',
       label: 'Users',

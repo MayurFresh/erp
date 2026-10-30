@@ -80,6 +80,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
             controller: _paged,
             emptyMessage: 'No users found.',
             emptyIcon: Icons.group_outlined,
+            onTap: (u) => context.go('/users/${u.id}'),
             columns: [
               TableColumnSpec('Name', (u) => Text(u.name)),
               TableColumnSpec('Email', (u) => Text(u.email)),
@@ -107,6 +108,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
               ),
               title: Text(u.name, overflow: TextOverflow.ellipsis),
               subtitle: Text('${u.email}\n${assignments(u)}'),
+              onTap: () => context.go('/users/${u.id}'),
               trailing: u.isActive
                   ? null
                   : Pill(

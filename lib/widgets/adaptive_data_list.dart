@@ -218,12 +218,47 @@ class ListCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     margin: EdgeInsets.zero,
     clipBehavior: Clip.antiAlias,
-    child: ListTile(
-      leading: leading,
-      title: title,
-      subtitle: subtitle,
-      trailing: trailing,
+    child: InkWell(
       onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 16)],
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DefaultTextStyle.merge(
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    child: title,
+                  ),
+                  if (subtitle != null)
+                    DefaultTextStyle.merge(
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      child: subtitle!,
+                    ),
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 12),
+              Flexible(
+                flex: 0,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.sizeOf(context).width * 0.4,
+                  ),
+                  child: trailing!,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     ),
   );
 }

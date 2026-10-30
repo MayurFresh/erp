@@ -11,7 +11,7 @@ import { optionalText } from '../lib/india.ts';
 import { moneyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { nextNumber } from '../lib/series.ts';
-import { parse } from '../lib/validate.ts';
+import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -20,11 +20,12 @@ const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const createBody = z.object({
   kind: z.enum(['receipt', 'payment']),
   partyId: z.uuid(),
-  date: dateField.optional(),
+  date: docDate.optional(),
   accountId: z.uuid(),
   mode: z.enum(['cash', 'bank', 'upi', 'cheque', 'card']),
   reference: optionalText(60),
   amount: moneyField.refine((v) => v > 0, 'Must be more than zero'),
+  tdsAmount: moneyField.optional(),
   notes: optionalText(500),
   allocations: z.array(z.object({ docId: z.uuid(), amount: moneyField.refine((v) => v > 0, 'Must be more than zero') })).max(200).optional(),
 });
@@ -38,22 +39,51 @@ const listQuery = pagingQuery.extend({
 });
 const rangeQuery = z.object({ from: dateField.optional(), to: dateField.optional() });
 
-export interface OpenDoc { id: string; number: string; date: string; dueDate: string; total: number; amountDue: number }
+export type PayDocType = 'invoice' | 'purchase' | 'ra_bill' | 'demand';
+export interface OpenDoc { id: string; number: string; date: string; dueDate: string; total: number; amountDue: number; docType: PayDocType }
 
-/** Posted invoices (receipts) or bills (payments) of a party that still have something due, oldest first. */
+const ALLOC_TABLE = { invoice: 'invoices', purchase: 'purchases', ra_bill: 'ra_bills', demand: 'demands' } as const;
+const ALLOC_COLUMN = { invoice: 'amount_paid', purchase: 'amount_paid', ra_bill: 'amount_paid', demand: 'amount_paid' } as const;
+
+/** Adds `delta` (negative to release) to a document's amount_paid. */
+async function bumpPaid(tx: Tx, docType: PayDocType, docId: string, delta: number) {
+  const table = ALLOC_TABLE[docType];
+  const col = ALLOC_COLUMN[docType];
+  await tx.updateTable(table).set((eb: any) => ({ [col]: eb(col, '+', delta) })).where('id', '=', docId).execute();
+}
+
+/**
+ * Open documents of a party, oldest first: receipts settle posted invoices and open demands, payments settle
+ * posted purchases and approved RA bills (at net payable).
+ */
 export async function openDocs(tx: Tx, ctx: RequestContext, kind: 'receipt' | 'payment', partyId: string, lock = false): Promise<OpenDoc[]> {
+  const docs: (OpenDoc & { created: Date })[] = [];
   if (kind === 'receipt') {
-    let q = tx.selectFrom('invoices').select(['id', 'number', 'invoice_date as date', 'due_date', 'total', 'amount_paid'])
+    let q = tx.selectFrom('invoices').select(['id', 'number', 'invoice_date as date', 'due_date', 'total', 'amount_paid', 'created_at'])
       .where('company_id', '=', ctx.companyId).where('party_id', '=', partyId).where('status', '=', 'posted')
-      .whereRef('amount_paid', '<', 'total').orderBy('invoice_date').orderBy('created_at');
-    if (lock) q = q.forUpdate();
-    return (await q.execute()).map((r) => ({ id: r.id, number: r.number, date: r.date, dueDate: r.due_date, total: r.total, amountDue: round2(r.total - r.amount_paid) }));
+      .whereRef('amount_paid', '<', 'total');
+    if (lock) q = q.orderBy('id').forUpdate();
+    for (const r of await q.execute()) docs.push({ id: r.id, number: r.number, date: r.date, dueDate: r.due_date, total: r.total, amountDue: round2(r.total - r.amount_paid), docType: 'invoice', created: r.created_at });
+    let d = tx.selectFrom('demands').select(['id', 'number', 'demand_date as date', 'due_date', 'total', 'amount_paid', 'created_at'])
+      .where('company_id', '=', ctx.companyId).where('party_id', '=', partyId).where('status', '=', 'open')
+      .whereRef('amount_paid', '<', 'total');
+    if (lock) d = d.orderBy('id').forUpdate();
+    for (const r of await d.execute()) docs.push({ id: r.id, number: r.number, date: r.date, dueDate: r.due_date, total: r.total, amountDue: round2(r.total - r.amount_paid), docType: 'demand', created: r.created_at });
+  } else {
+    let q = tx.selectFrom('purchases').select(['id', 'number', 'bill_date as date', 'due_date', 'net_payable as total', 'amount_paid', 'created_at'])
+      .where('company_id', '=', ctx.companyId).where('party_id', '=', partyId).where('status', '=', 'posted')
+      .whereRef('amount_paid', '<', 'net_payable');
+    if (lock) q = q.orderBy('id').forUpdate();
+    for (const r of await q.execute()) docs.push({ id: r.id, number: r.number, date: r.date, dueDate: r.due_date, total: r.total, amountDue: round2(r.total - r.amount_paid), docType: 'purchase', created: r.created_at });
+    let d = tx.selectFrom('ra_bills as b').innerJoin('work_orders as w', 'w.id', 'b.work_order_id')
+      .select(['b.id', 'b.number', 'b.bill_date as date', 'b.due_date', 'b.net_payable as total', 'b.amount_paid', 'b.created_at'])
+      .where('b.company_id', '=', ctx.companyId).where('w.contractor_party_id', '=', partyId).where('b.status', '=', 'approved')
+      .whereRef('b.amount_paid', '<', 'b.net_payable');
+    if (lock) d = d.orderBy('b.id').forUpdate('b');
+    for (const r of await d.execute()) docs.push({ id: r.id, number: r.number, date: r.date, dueDate: r.due_date, total: r.total, amountDue: round2(r.total - r.amount_paid), docType: 'ra_bill', created: r.created_at });
   }
-  let q = tx.selectFrom('purchases').select(['id', 'number', 'bill_date as date', 'due_date', 'total', 'amount_paid'])
-    .where('company_id', '=', ctx.companyId).where('party_id', '=', partyId).where('status', '=', 'posted')
-    .whereRef('amount_paid', '<', 'total').orderBy('bill_date').orderBy('created_at');
-  if (lock) q = q.forUpdate();
-  return (await q.execute()).map((r) => ({ id: r.id, number: r.number, date: r.date, dueDate: r.due_date, total: r.total, amountDue: round2(r.total - r.amount_paid) }));
+  docs.sort((x, y) => x.date.localeCompare(y.date) || x.created.getTime() - y.created.getTime());
+  return docs.map(({ created: _c, ...d }) => d);
 }
 
 async function loadPayment(tx: Tx, ctx: RequestContext, id: string) {
@@ -66,16 +96,18 @@ async function loadPayment(tx: Tx, ctx: RequestContext, id: string) {
   if (!p) throw notFound('Payment');
   const allocs = await tx.selectFrom('payment_allocations').selectAll().where('payment_id', '=', id).execute();
   const ids = allocs.map((a) => a.doc_id);
-  const docs = ids.length
-    ? p.kind === 'receipt'
-      ? await tx.selectFrom('invoices').select(['id', 'number', 'invoice_date as date', 'total']).where('id', 'in', ids).execute()
-      : await tx.selectFrom('purchases').select(['id', 'number', 'bill_date as date', 'total']).where('id', 'in', ids).execute()
-    : [];
+  const docs: { id: string; number: string; date: string; total: number }[] = [];
+  if (ids.length) {
+    docs.push(...await tx.selectFrom('invoices').select(['id', 'number', 'invoice_date as date', 'total']).where('id', 'in', ids).execute());
+    docs.push(...await tx.selectFrom('purchases').select(['id', 'number', 'bill_date as date', 'net_payable as total']).where('id', 'in', ids).execute());
+    docs.push(...await tx.selectFrom('demands').select(['id', 'number', 'demand_date as date', 'total']).where('id', 'in', ids).execute());
+    docs.push(...await tx.selectFrom('ra_bills').select(['id', 'number', 'bill_date as date', 'net_payable as total']).where('id', 'in', ids).execute());
+  }
   const allocated = round2(allocs.reduce((s, a) => s + a.amount, 0));
   return {
     id: p.id, companyId: p.company_id, kind: p.kind, number: p.number, date: p.payment_date, partyId: p.party_id,
     partyName: p.party_name, accountId: p.account_id, accountName: p.account_name, mode: p.mode, reference: p.reference,
-    amount: p.amount, allocated, unallocated: round2(p.amount - allocated), notes: p.notes, status: p.status,
+    amount: p.amount, tdsAmount: p.tds_amount, allocated, unallocated: round2(p.amount + p.tds_amount - allocated), notes: p.notes, status: p.status,
     createdAt: p.created_at, createdBy: { id: p.created_by, name: p.created_by_name }, cancelledAt: p.cancelled_at,
     cancelReason: p.cancel_reason,
     allocations: allocs.map((a) => {
@@ -134,12 +166,15 @@ export async function paymentRoutes(app: FastifyInstance) {
       if (!account || !account.is_active || !['cash', 'bank'].includes(account.subtype)) {
         throw badRequest('Choose an active cash or bank account.', { accountId: 'Not a cash or bank account' });
       }
+      const tdsAmount = body.tdsAmount ?? 0;
+      if (tdsAmount > 0 && body.kind !== 'receipt') throw badRequest('TDS applies to receipts only.', { tdsAmount: 'Receipts only' });
+      const settles = round2(body.amount + tdsAmount);
       const date = body.date ?? todayIst();
       if (date > todayIst()) throw badRequest('Date cannot be in the future.', { date: 'In the future' });
 
       // Decide allocations: as given, or oldest documents first.
       const open = await openDocs(tx, ctx, body.kind, party.id, true);
-      let allocations: { docId: string; amount: number }[];
+      let allocations: { docId: string; amount: number; docType: PayDocType }[];
       if (body.allocations) {
         const seen = new Set<string>();
         allocations = body.allocations.map((a, i) => {
@@ -150,17 +185,17 @@ export async function paymentRoutes(app: FastifyInstance) {
           if (a.amount > doc.amountDue + 0.001) {
             throw badRequest(`Only ₹${doc.amountDue} is due on ${doc.number}.`, { [`allocations.${i}.amount`]: `At most ${doc.amountDue}` });
           }
-          return a;
+          return { ...a, docType: doc.docType };
         });
         const sum = round2(allocations.reduce((s, a) => s + a.amount, 0));
-        if (sum > body.amount + 0.001) throw badRequest('Allocations exceed the amount.', { allocations: 'More than the amount' });
+        if (sum > settles + 0.001) throw badRequest('Allocations exceed the amount.', { allocations: 'More than the amount' });
       } else {
-        let left = body.amount;
+        let left = settles;
         allocations = [];
         for (const d of open) {
           if (left <= 0) break;
           const take = round2(Math.min(left, d.amountDue));
-          allocations.push({ docId: d.id, amount: take });
+          allocations.push({ docId: d.id, amount: take, docType: d.docType });
           left = round2(left - take);
         }
       }
@@ -168,19 +203,15 @@ export async function paymentRoutes(app: FastifyInstance) {
       const number = await nextNumber(tx, ctx, body.kind, financialYear(date));
       const row = await tx.insertInto('payments').values({
         tenant_id: ctx.tenantId, company_id: ctx.companyId, kind: body.kind, number, payment_date: date, party_id: party.id,
-        account_id: account.id, mode: body.mode, reference: body.reference ?? null, amount: body.amount,
+        account_id: account.id, mode: body.mode, reference: body.reference ?? null, amount: body.amount, tds_amount: tdsAmount,
         notes: body.notes ?? null, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
       }).returning('id').executeTakeFirstOrThrow();
 
-      const docType = body.kind === 'receipt' ? 'invoice' : 'purchase';
-      const table = body.kind === 'receipt' ? 'invoices' : 'purchases';
       if (allocations.length) {
         await tx.insertInto('payment_allocations').values(allocations.map((a) => ({
-          tenant_id: ctx.tenantId, payment_id: row.id, doc_type: docType, doc_id: a.docId, amount: a.amount,
+          tenant_id: ctx.tenantId, payment_id: row.id, doc_type: a.docType, doc_id: a.docId, amount: a.amount,
         }))).execute();
-        for (const a of allocations) {
-          await tx.updateTable(table).set((eb) => ({ amount_paid: eb('amount_paid', '+', a.amount) })).where('id', '=', a.docId).execute();
-        }
+        for (const a of allocations) await bumpPaid(tx, a.docType, a.docId, a.amount);
       }
 
       const acc = await systemAccounts(tx, ctx);
@@ -191,7 +222,8 @@ export async function paymentRoutes(app: FastifyInstance) {
         narration: `${body.kind === 'receipt' ? 'Received from' : 'Paid to'} ${party.name} by ${body.mode}${body.reference ? ` (${body.reference})` : ''}`,
         lines: [
           { accountId: account.id, amount: sign * body.amount },
-          { accountId: control, amount: -sign * body.amount, partyId: party.id },
+          { accountId: acc.tds_receivable, amount: tdsAmount },
+          { accountId: control, amount: -sign * settles, partyId: party.id },
         ],
       });
       const saved = await loadPayment(tx, ctx, row.id);
@@ -212,11 +244,8 @@ export async function paymentRoutes(app: FastifyInstance) {
       if (!current) throw notFound('Payment');
       if (current.status === 'cancelled') throw conflict('This is already cancelled.', 'ALREADY_CANCELLED');
       await tx.updateTable('payments').set({ status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason }).where('id', '=', id).execute();
-      const table = current.kind === 'receipt' ? 'invoices' : 'purchases';
-      const allocs = await tx.selectFrom('payment_allocations').select(['doc_id', 'amount']).where('payment_id', '=', id).execute();
-      for (const a of allocs) {
-        await tx.updateTable(table).set((eb) => ({ amount_paid: eb('amount_paid', '-', a.amount) })).where('id', '=', a.doc_id).execute();
-      }
+      const allocs = await tx.selectFrom('payment_allocations').select(['doc_type', 'doc_id', 'amount']).where('payment_id', '=', id).execute();
+      for (const a of allocs) await bumpPaid(tx, a.doc_type as PayDocType, a.doc_id, -a.amount);
       await reverseVoucher(tx, auditOf(ctx), id, todayIst(), `Cancelled ${current.number}: ${reason}`);
       await writeAudit(tx, auditOf(ctx), 'payment', id, 'cancel', { status: 'posted' }, { status: 'cancelled', reason });
       return loadPayment(tx, ctx, id);

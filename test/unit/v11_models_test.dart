@@ -152,6 +152,9 @@ void main() {
         'lines': [
           {'itemId': 'i1', 'qty': 3.0},
         ],
+        // v1.4: always sent (null = no TDS, never the party default).
+        'tdsSectionId': null,
+        'reverseCharge': false,
       });
     });
   });

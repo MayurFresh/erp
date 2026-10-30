@@ -177,6 +177,9 @@ describe('roles and location scope', () => {
     expect((await sup('GET', '/invoices')).status).toBe(403);
     const locations = (await sup('GET', '/locations')).body;
     expect(locations.data.map((l: { id: string }) => l.id)).toEqual([siteA.id]);
+    // Transfer destinations: a scoped user who can create transfers may list every active location.
+    const destinations = (await sup('GET', '/locations?all=true')).body;
+    expect(destinations.data.map((l: { id: string }) => l.id).sort()).toEqual([ho.id, siteA.id].sort());
     const stock = (await sup('GET', '/stock')).body;
     expect(stock.data).toHaveLength(1);
     expect(stock.data[0]).toMatchObject({ locationId: siteA.id, qty: 100 });
@@ -211,7 +214,7 @@ describe('tenant isolation', () => {
     expect((await b.api('GET', '/items')).body.total).toBe(0);
     expect((await b.api('GET', `/items/${itemA.id}`)).status).toBe(404);
     const crossCompany = client(env.app, b.auth.accessToken, a.me.companies[0].id);
-    expect((await crossCompany('GET', '/items')).status).toBe(403);
+    expect((await crossCompany('GET', '/items')).status).toBe(401);
   });
 
   it('enforces isolation in the database itself, not only in code', async () => {

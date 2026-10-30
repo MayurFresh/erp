@@ -20,6 +20,9 @@ abstract final class CPerm {
   static const wagesView = 'wages.view';
   static const wagesManage = 'wages.manage';
   static const wagesPay = 'wages.pay';
+  static const subcontractsView = 'subcontracts.view';
+  static const subcontractsManage = 'subcontracts.manage';
+  static const subcontractsApprove = 'subcontracts.approve';
 
   /// Every key above.
   static const all = [
@@ -40,5 +43,8 @@ abstract final class CPerm {
     wagesView,
     wagesManage,
     wagesPay,
+    subcontractsView,
+    subcontractsManage,
+    subcontractsApprove,
   ];
 }

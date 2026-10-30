@@ -133,8 +133,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                 details: [
                   'Budget ${formatMoney(p.budgetTotal)} · '
                       'Contract ${formatMoney(p.contractValue)}',
-                  if (p.sites.isNotEmpty)
-                    p.sites.map((s) => s.name).join(', '),
+                  if (p.sites.isNotEmpty) p.sites.map((s) => s.name).join(', '),
                 ],
                 pills: projectStatusPill(context, p.status),
                 progress: p.progressPct,

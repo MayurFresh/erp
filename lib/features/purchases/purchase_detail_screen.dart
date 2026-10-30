@@ -95,15 +95,38 @@ class PurchaseDetailScreen extends ConsumerWidget {
           children: [
             DocHeader(
               title: bill.number ?? 'Purchase bill',
-              pills: DocPills(
-                status: bill.status,
-                paymentStatus: bill.paymentStatus,
+              pills: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  DocPills(
+                    status: bill.status,
+                    paymentStatus: bill.paymentStatus,
+                  ),
+                  if (bill.msmeCategory != null)
+                    Pill(
+                      'MSME ${bill.msmeCategory}',
+                      color: bill.isMsmeMicroSmall ? Colors.deepOrange : null,
+                    ),
+                  if (bill.reverseCharge)
+                    const Pill('Reverse charge', color: Colors.purple),
+                ],
               ),
               actions: actions,
               facts: [
                 LabeledValue('Bill date', formatDate(bill.billDate)),
                 if (bill.dueDate != null)
                   LabeledValue('Due date', formatDate(bill.dueDate)),
+                if (bill.msmeDueDate != null)
+                  LabeledValue('MSME due date', formatDate(bill.msmeDueDate)),
+                if (bill.tdsSectionCode != null)
+                  LabeledValue(
+                    'TDS',
+                    '${bill.tdsSectionCode} @ ${formatPercent(bill.tdsRate)}'
+                        ' = ${formatMoney(bill.tdsAmount)}',
+                  ),
+                if (bill.rcmSelfInvoiceNo != null)
+                  LabeledValue('RCM self-invoice', bill.rcmSelfInvoiceNo!),
                 LabeledValue('Supplier invoice', bill.supplierInvoiceNo ?? ''),
                 if (bill.supplierInvoiceDate != null)
                   LabeledValue(
@@ -112,6 +135,8 @@ class PurchaseDetailScreen extends ConsumerWidget {
                   ),
                 LabeledValue('Location', bill.locationName),
                 LabeledValue('Total', formatMoney(bill.total)),
+                if (bill.tdsAmount > 0)
+                  LabeledValue('Net payable', formatMoney(bill.payable)),
                 if (posted)
                   LabeledValue('Amount due', formatMoney(bill.amountDue)),
                 if (bill.createdBy != null)

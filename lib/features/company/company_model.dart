@@ -20,6 +20,16 @@ class Company {
     this.upiId,
     this.invoiceTerms,
     this.invoiceFooter,
+    this.pincode,
+    this.einvoiceEnabled = false,
+    this.einvoiceMode = 'manual',
+    this.tan,
+    this.booksLockedUntil,
+    this.msmeBankRate,
+    this.gstFiling = 'monthly',
+    this.constitution,
+    this.responsiblePerson,
+    this.itrForm,
   });
 
   factory Company.fromJson(Json json) => Company(
@@ -39,6 +49,18 @@ class Company {
     upiId: asStringOrNull(json['upiId']),
     invoiceTerms: asStringOrNull(json['invoiceTerms']),
     invoiceFooter: asStringOrNull(json['invoiceFooter']),
+    pincode: asStringOrNull(json['pincode']),
+    einvoiceEnabled: asBool(json['einvoiceEnabled']),
+    einvoiceMode: asString(json['einvoiceMode'], 'manual'),
+    tan: asStringOrNull(json['tan']),
+    booksLockedUntil: asStringOrNull(json['booksLockedUntil']),
+    msmeBankRate: asDoubleOrNull(json['msmeBankRate']),
+    gstFiling: asString(json['gstFiling'], 'monthly'),
+    constitution: asStringOrNull(json['constitution']),
+    responsiblePerson: asJsonOrNull(json['responsiblePerson']) == null
+        ? null
+        : ResponsiblePerson.fromJson(asJson(json['responsiblePerson'])),
+    itrForm: asStringOrNull(json['itrForm']),
   );
 
   final String id;
@@ -57,9 +79,85 @@ class Company {
   final String? upiId;
   final String? invoiceTerms;
   final String? invoiceFooter;
+  final String? pincode;
+
+  /// GST e-invoicing (API v1.3).
+  final bool einvoiceEnabled;
+
+  /// `manual` or `sandbox`.
+  final String einvoiceMode;
+
+  /// TAN, `AAAA99999A` (API v1.4).
+  final String? tan;
+
+  /// `YYYY-MM-DD`: no posting on or before this date.
+  final String? booksLockedUntil;
+
+  /// RBI bank rate, % p.a., used for MSME interest.
+  final double? msmeBankRate;
+
+  /// `monthly` or `quarterly`.
+  final String gstFiling;
+
+  /// `proprietorship`, `partnership`, `llp`, `private_company`,
+  /// `public_company`, `huf`, `trust`, `other` or `null` (API v1.6).
+  final String? constitution;
+
+  /// The deductor's responsible person for TDS statements (API v1.6).
+  final ResponsiblePerson? responsiblePerson;
+
+  /// `itr3`, `itr4`, `itr5`, `itr6` or `null` (API v1.6).
+  final String? itrForm;
+
+  bool get einvoiceSandbox => einvoiceMode == 'sandbox';
 
   bool get hasBankDetails =>
       [bankName, bankAccountNo, bankIfsc, upiId].any(_present);
 
   static bool _present(String? value) => value != null && value.isNotEmpty;
+}
+
+/// `company.responsiblePerson` (API v1.6).
+class ResponsiblePerson {
+  const ResponsiblePerson({
+    this.name = '',
+    this.designation = '',
+    this.pan = '',
+    this.mobile = '',
+    this.email = '',
+  });
+
+  factory ResponsiblePerson.fromJson(Json json) => ResponsiblePerson(
+    name: asString(json['name']),
+    designation: asString(json['designation']),
+    pan: asString(json['pan']),
+    mobile: asString(json['mobile']),
+    email: asString(json['email']),
+  );
+
+  final String name;
+  final String designation;
+  final String pan;
+  final String mobile;
+  final String email;
+
+  Json toJson() => {
+    'name': name,
+    'designation': designation,
+    'pan': pan,
+    'mobile': mobile,
+    'email': email,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResponsiblePerson &&
+      other.name == name &&
+      other.designation == designation &&
+      other.pan == pan &&
+      other.mobile == mobile &&
+      other.email == email;
+
+  @override
+  int get hashCode => Object.hash(name, designation, pan, mobile, email);
 }

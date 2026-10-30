@@ -134,20 +134,16 @@ class JournalLinesView extends StatelessWidget {
             ],
           );
         }
-        TableRow row(List<Widget> cells, {Decoration? decoration}) =>
-            TableRow(
-              decoration: decoration,
-              children: [
-                for (final cell in cells)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    child: cell,
-                  ),
-              ],
-            );
+        TableRow row(List<Widget> cells, {Decoration? decoration}) => TableRow(
+          decoration: decoration,
+          children: [
+            for (final cell in cells)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: cell,
+              ),
+          ],
+        );
         Widget right(String text, [TextStyle? style]) => Text(
           text,
           textAlign: TextAlign.right,
@@ -170,9 +166,7 @@ class JournalLinesView extends StatelessWidget {
                 right('Credit', muted),
               ],
               decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: theme.dividerColor),
-                ),
+                border: Border(bottom: BorderSide(color: theme.dividerColor)),
               ),
             ),
             for (final line in entry.lines)
@@ -288,6 +282,11 @@ class _JournalEntryDialog extends ConsumerWidget {
                 children: [
                   Text(formatDate(e.date)),
                   VoucherPill(e.voucherType, reversal: e.isReversal),
+                  if (e.isCancelled)
+                    Pill(
+                      'Cancelled',
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                 ],
               ),
               if (e.narration != null && e.narration!.isNotEmpty) ...[

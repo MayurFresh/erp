@@ -7,6 +7,8 @@ import '../../core/permissions.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
+import '../filings/needs_you_card.dart';
+import '../compliance/alerts_card.dart';
 import '../invoices/invoice_widgets.dart';
 import 'dashboard_repository.dart';
 
@@ -108,6 +110,10 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Column(children: [NeedsYouCard(), AlertsCard()]),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: FormRow(

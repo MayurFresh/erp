@@ -14,6 +14,7 @@ import '../invoices/invoice_model.dart';
 import '../invoices/invoices_repository.dart';
 import 'credit_note_model.dart';
 import 'credit_notes_repository.dart';
+import '../../widgets/busy.dart';
 
 /// A sales return: pick an invoice, the quantities coming back and a
 /// reason; totals come from `POST /credit-notes/preview`.
@@ -28,7 +29,9 @@ class CreditNoteCreateScreen extends ConsumerStatefulWidget {
 }
 
 class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
-    with LivePreview<CreditNoteCreateScreen, CreditNoteDraft, CreditNote> {
+    with
+        LivePreview<CreditNoteCreateScreen, CreditNoteDraft, CreditNote>,
+        DirtyTracking<CreditNoteCreateScreen> {
   final _formKey = GlobalKey<FormState>();
   final _reason = TextEditingController();
   final Map<String, TextEditingController> _qty = {};
@@ -166,6 +169,7 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
     final valid = _formKey.currentState!.validate();
     if (_invoice == null) return;
     if (_quantities.isEmpty) {
+      markSaved();
       showInfoSnackBar(context, 'Enter the quantity returned on a line.');
       return;
     }
@@ -199,7 +203,9 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final invoice = _invoice;
     final details = SectionCard(
       title: 'Details',
@@ -259,6 +265,7 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: DocFormLayout(
         title: 'New credit note',
         main: [details, lines],

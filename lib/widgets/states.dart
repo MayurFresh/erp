@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderException;
 
 import '../core/api_exception.dart';
@@ -8,7 +9,8 @@ import '../core/api_exception.dart';
 String errorMessage(Object error) {
   final inner = error is ProviderException ? error.exception : error;
   if (inner is ApiException) return inner.message;
-  return 'Something went wrong. ($inner)';
+  // Never show raw exception text.
+  return 'Something went wrong. Please try again.';
 }
 
 /// The [ApiException] behind [error], if any.
@@ -35,6 +37,21 @@ class ErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final api = apiError(error);
+    final forbidden = api?.isForbidden ?? false;
+    final notFound = api?.isNotFound ?? false;
+    final icon = forbidden
+        ? Icons.lock_outline
+        : notFound
+        ? Icons.search_off
+        : (api?.isNetworkError ?? false)
+        ? Icons.cloud_off_outlined
+        : Icons.error_outline;
+    final message = forbidden
+        ? "You don't have access to this. Ask an administrator."
+        : notFound
+        ? 'Not found. It may have been deleted.'
+        : errorMessage(error);
+    final canGoBack = notFound && GoRouter.maybeOf(context) != null;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -42,19 +59,29 @@ class ErrorView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              api?.isNetworkError ?? false
-                  ? Icons.cloud_off_outlined
-                  : Icons.error_outline,
+              icon,
               size: 48,
-              color: theme.colorScheme.error,
+              color: forbidden || notFound
+                  ? theme.colorScheme.outline
+                  : theme.colorScheme.error,
             ),
             const SizedBox(height: 12),
             Text(
-              errorMessage(error),
+              message,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge,
             ),
-            if (onRetry != null) ...[
+            if (canGoBack) ...[
+              const SizedBox(height: 16),
+              FilledButton.tonalIcon(
+                onPressed: () {
+                  final router = GoRouter.of(context);
+                  router.canPop() ? router.pop() : router.go('/');
+                },
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Back'),
+              ),
+            ] else if (onRetry != null && !forbidden && !notFound) ...[
               const SizedBox(height: 16),
               FilledButton.tonalIcon(
                 onPressed: onRetry,

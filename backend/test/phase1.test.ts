@@ -64,6 +64,9 @@ describe('a full business cycle keeps the books exact', () => {
     expect(receipt.status).toBe(201);
     expect(receipt.body).toMatchObject({ allocated: 2000, unallocated: 0, number: expect.stringMatching(/^RCT\//) });
     expect((await api('GET', `/invoices/${invoice.id}`)).body).toMatchObject({ amountPaid: 2000, amountDue: 1540, paymentStatus: 'partial' });
+    const ids = async (query: string) => (await api('GET', `/invoices?${query}`)).body.data.map((v: { id: string }) => v.id);
+    expect(await ids(`partyId=${customer.id}&paymentStatus=partial`)).toEqual([invoice.id]);
+    expect(await ids(`partyId=${customer.id}&paymentStatus=unpaid`)).toEqual([]);
 
     // Return 5 bags: restocked at the cost they left at.
     const line = (await api('GET', `/invoices/${invoice.id}`)).body.lines[0];
@@ -214,7 +217,10 @@ describe('cancellations reverse cleanly', () => {
     expect(jv.status).toBe(201);
     expect(jv.body.number).toMatch(/^JV\//);
     expect(await balanceOf(api, '1010')).toBe(100000);
-    expect((await api('POST', `/journals/${jv.body.id}/cancel`, { reason: 'Entered twice' })).status).toBe(200);
+    const reversal = await api('POST', `/journals/${jv.body.id}/cancel`, { reason: 'Entered twice' });
+    expect(reversal.status).toBe(200);
+    expect(reversal.body).toMatchObject({ isReversal: true, reversesId: jv.body.id, reversedById: null });
+    expect((await api('GET', `/journals/${jv.body.id}`)).body).toMatchObject({ reversesId: null, reversedById: reversal.body.id });
     expect((await api('POST', `/journals/${jv.body.id}/cancel`, { reason: 'Again' })).status).toBe(409);
     expect(await balanceOf(api, '1010')).toBe(0);
   });

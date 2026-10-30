@@ -71,8 +71,7 @@ final gstSummaryProvider = FutureProvider.autoDispose
 /// Keyed by location id (`null` = all locations in scope).
 final stockValuationProvider = FutureProvider.autoDispose
     .family<StockValuation, String?>(
-      (ref, locationId) =>
-          ref.reports().stockValuation(locationId: locationId),
+      (ref, locationId) => ref.reports().stockValuation(locationId: locationId),
     );
 
 final ageingProvider = FutureProvider.autoDispose

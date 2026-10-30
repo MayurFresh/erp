@@ -5,7 +5,9 @@ import type { RequestContext } from '../auth/context.ts';
 import { positions } from '../accounting/costing.ts';
 import type { Tx } from '../db/database.ts';
 import type { ItemTable } from '../db/schema.ts';
+import { todayIst } from '../lib/dates.ts';
 import { conflict, notFound } from '../lib/errors.ts';
+import { assertGstRates } from '../lib/rates.ts';
 import { nullableText, optionalText } from '../lib/india.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { moneyField, percentField, qtyField } from '../lib/numbers.ts';
@@ -88,6 +90,7 @@ export async function itemRoutes(app: FastifyInstance) {
     const body = parse(createBody, req.body);
     try {
       const item = await ctx.tx(async (tx) => {
+        await assertGstRates(tx, todayIst(), [{ rate: body.gstRate, hsn: body.hsnCode, field: 'gstRate' }]);
         const row = await tx.insertInto('items').values({
           tenant_id: ctx.tenantId, company_id: ctx.companyId, name: body.name, sku: body.sku ?? null,
           hsn_code: body.hsnCode ?? null, unit: body.unit, gst_rate: body.gstRate, sale_price: body.salePrice,
@@ -113,6 +116,11 @@ export async function itemRoutes(app: FastifyInstance) {
       return await ctx.tx(async (tx) => {
         const before = await tx.selectFrom('items').selectAll().where('id', '=', id).where('company_id', '=', ctx.companyId).executeTakeFirst();
         if (!before) throw notFound('Item');
+        if (body.gstRate !== undefined || body.hsnCode !== undefined) {
+          await assertGstRates(tx, todayIst(), [{
+            rate: body.gstRate ?? before.gst_rate, hsn: body.hsnCode !== undefined ? body.hsnCode : before.hsn_code, field: 'gstRate',
+          }]);
+        }
         const after = await tx.updateTable('items').set({
           name: body.name, sku: body.sku, hsn_code: body.hsnCode, unit: body.unit, gst_rate: body.gstRate,
           sale_price: body.salePrice, purchase_price: ctx.can('items.view_cost') ? body.purchasePrice : undefined,

@@ -40,6 +40,15 @@ enum PaymentMode {
   );
 }
 
+/// "Invoice", "Purchase", "RA bill", "Demand"; anything else is shown as sent.
+String docTypeLabelOf(String docType) => switch (docType) {
+  'invoice' => 'Invoice',
+  'purchase' => 'Purchase',
+  'ra_bill' => 'RA bill',
+  'demand' => 'Demand',
+  _ => docType,
+};
+
 class PaymentAllocation {
   const PaymentAllocation({
     required this.docType,
@@ -59,16 +68,22 @@ class PaymentAllocation {
     amount: asDouble(json['amount']),
   );
 
-  /// `invoice` or `purchase`.
+  /// `invoice`, `purchase`, `ra_bill` or `demand`; unknown values are kept.
   final String docType;
+
+  String get docTypeLabel => docTypeLabelOf(docType);
   final String docId;
   final String docNumber;
   final String? docDate;
   final double docTotal;
   final double amount;
 
-  String get route =>
-      docType == 'purchase' ? '/purchases/$docId' : '/invoices/$docId';
+  String get route => switch (docType) {
+    'purchase' => '/purchases/$docId',
+    'ra_bill' => '/ra-bills/$docId',
+    'demand' => '/demands/$docId',
+    _ => '/invoices/$docId',
+  };
 }
 
 class Payment {
@@ -88,6 +103,7 @@ class Payment {
     this.reference,
     this.allocated = 0,
     this.unallocated = 0,
+    this.tdsAmount = 0,
     this.notes,
     this.createdAt,
     this.createdBy,
@@ -111,6 +127,7 @@ class Payment {
     amount: asDouble(json['amount']),
     allocated: asDouble(json['allocated']),
     unallocated: asDouble(json['unallocated']),
+    tdsAmount: asDouble(json['tdsAmount']),
     notes: asStringOrNull(json['notes']),
     status: DocStatus.parse(json['status']),
     createdAt: asDateTimeOrNull(json['createdAt']),
@@ -140,6 +157,9 @@ class Payment {
 
   /// Advance left after allocations.
   final double unallocated;
+
+  /// TDS deducted by the customer (receipts); 0 otherwise.
+  final double tdsAmount;
   final String? notes;
   final DocStatus status;
   final DateTime? createdAt;
@@ -163,8 +183,11 @@ class PaymentDraft {
     this.reference,
     this.notes,
     this.allocations,
+    this.tdsAmount,
   });
 
+  /// Receipts only: TDS deducted by the customer.
+  final double? tdsAmount;
   final PaymentKind kind;
   final String partyId;
   final String accountId;
@@ -186,6 +209,7 @@ class PaymentDraft {
     'mode': mode.name,
     'reference': reference,
     'amount': amount,
+    'tdsAmount': tdsAmount,
     'notes': notes,
     'allocations': allocations == null
         ? null
@@ -205,6 +229,7 @@ class OpenDoc {
     required this.amountDue,
     this.date,
     this.dueDate,
+    this.docType = '',
   });
 
   factory OpenDoc.fromJson(Json json) => OpenDoc(
@@ -214,7 +239,16 @@ class OpenDoc {
     dueDate: asStringOrNull(json['dueDate']),
     total: asDouble(json['total']),
     amountDue: asDouble(json['amountDue']),
+    docType: asString(json['docType']),
   );
+
+  /// `invoice`, `purchase`, `ra_bill` or `demand` (`''` from older servers).
+  final String docType;
+
+  /// Empty for plain invoices and purchases (the list already says which).
+  String get kindLabel => docType == 'ra_bill' || docType == 'demand'
+      ? docTypeLabelOf(docType)
+      : '';
 
   final String id;
   final String number;

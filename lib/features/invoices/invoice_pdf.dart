@@ -10,6 +10,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../core/amount_in_words.dart';
 import '../../core/india_states.dart';
 import '../../core/money.dart';
+import '../../core/whatsapp.dart';
 import '../company/company_model.dart';
 import '../parties/party_model.dart';
 import 'invoice_model.dart';
@@ -58,7 +59,7 @@ Future<Uint8List> buildInvoicePdf(
     invoice,
     company,
     party,
-    clean: theme == null ? _latin1 : (s) => s,
+    clean: theme == null ? pdfLatin1 : (s) => s,
   );
   doc.addPage(
     pw.MultiPage(
@@ -101,7 +102,7 @@ Future<Uint8List> buildInvoicePdf(
 
 /// Maps common Unicode punctuation to Latin-1 and drops what the built-in
 /// fonts cannot draw.
-String _latin1(String text) {
+String pdfLatin1(String text) {
   const replacements = {
     '₹': 'Rs.',
     '—': '-',
@@ -164,6 +165,7 @@ class _InvoicePdf {
     return [
       _header(),
       pw.SizedBox(height: 10),
+      if (invoice.hasActiveIrn) ...[_einvoiceBlock(), pw.SizedBox(height: 10)],
       _parties(),
       pw.SizedBox(height: 10),
       _lineTable(lines),
@@ -181,6 +183,74 @@ class _InvoicePdf {
       pw.SizedBox(height: 12),
       _footerBlock(),
     ];
+  }
+
+  String _stamp(DateTime? value) => value == null
+      ? ''
+      : '${formatDate(value.toIso8601String().substring(0, 10))} '
+            '${value.hour.toString().padLeft(2, '0')}:'
+            '${value.minute.toString().padLeft(2, '0')}';
+
+  /// IRN, acknowledgement, QR of the signed code and the e-way bill.
+  pw.Widget _einvoiceBlock() {
+    final e = invoice.einvoice!;
+    final bill = invoice.ewaybill;
+    final showBill = bill != null && bill.isActive;
+    pw.Widget row(String label, String value) => pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 2),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(width: 56, child: _text(label, style: _label)),
+          pw.Expanded(child: _text(value, style: _smallBold)),
+        ],
+      ),
+    );
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(border: pw.Border.all(color: _border)),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                row('IRN', e.irn),
+                row('Ack No', e.ackNo),
+                row('Ack Date', _stamp(e.ackDate)),
+                if (showBill) ...[
+                  row('E-way bill', bill.ewbNo),
+                  row('Valid until', _stamp(bill.validUntil)),
+                ],
+                if (e.sandbox)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 4),
+                    child: _text(
+                      'SANDBOX — not valid for GST',
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.red800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (e.signedQrCode.isNotEmpty) ...[
+            pw.SizedBox(width: 10),
+            pw.BarcodeWidget(
+              barcode: pw.Barcode.qrCode(),
+              data: e.signedQrCode,
+              width: 80,
+              height: 80,
+              drawText: false,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   pw.Widget _header() {
@@ -490,7 +560,7 @@ class _InvoicePdf {
           if (inter || invoice.igst != 0) _totalRow('IGST', invoice.igst),
           _totalRow('Round off', invoice.roundOff),
           pw.Divider(color: _border, thickness: 0.5),
-          _totalRow('Grand total (Rs.)', invoice.total, strong: true),
+          _totalRow('Grand total (₹)', invoice.total, strong: true),
           if (invoice.amountPaid != null && !invoice.isCancelled) ...[
             pw.SizedBox(height: 4),
             _totalRow('Amount paid', invoice.amountPaid!),
@@ -512,6 +582,20 @@ class _InvoicePdf {
       ],
     ),
   );
+
+  /// UPI payment link for the QR code; null when the company has no UPI ID
+  /// or nothing is left to pay.
+  String? get _upiLink {
+    final due = invoice.amountDue;
+    if (!_has(company.upiId) || invoice.isCancelled) return null;
+    if (due == null || due <= 0) return null;
+    return buildUpiUri(
+      upiId: company.upiId!,
+      payeeName: company.name,
+      amount: due,
+      note: invoice.number ?? 'Invoice',
+    );
+  }
 
   pw.Widget _footerBlock() {
     final c = company;
@@ -549,6 +633,22 @@ class _InvoicePdf {
               ),
             ),
             pw.SizedBox(width: 16),
+            if (_upiLink != null) ...[
+              pw.Column(
+                children: [
+                  pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: _upiLink!,
+                    width: 80,
+                    height: 80,
+                    drawText: false,
+                  ),
+                  pw.SizedBox(height: 2),
+                  _text('Scan to pay by UPI', style: _small),
+                ],
+              ),
+              pw.SizedBox(width: 12),
+            ],
             pw.Container(
               width: 180,
               height: 80,

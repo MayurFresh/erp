@@ -12,7 +12,7 @@ import { qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
 import { nextNumber } from '../lib/series.ts';
-import { parse } from '../lib/validate.ts';
+import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { checkIndentLink, fulfilIndent, reverseFulfilment } from './indents.ts';
 import { getLocation } from './locations.ts';
@@ -24,7 +24,7 @@ const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const createBody = z.object({
   fromLocationId: z.uuid(),
   toLocationId: z.uuid(),
-  transferDate: dateField.optional(),
+  transferDate: docDate.optional(),
   notes: optionalText(500),
   indentId: z.uuid().nullable().optional(),
   lines: z.array(z.object({ itemId: z.uuid(), qty: qtyField.refine((v) => v > 0, 'Must be more than zero') }))
@@ -202,6 +202,7 @@ export async function transferRoutes(app: FastifyInstance) {
       const t = await tx.selectFrom('transfers').selectAll().where('id', '=', id).where('company_id', '=', ctx.companyId).forUpdate().executeTakeFirst();
       if (!t || !(ctx.canAccessLocation(t.from_location_id) || ctx.canAccessLocation(t.to_location_id))) throw notFound('Transfer');
       if (!ctx.canAccessLocation(t.from_location_id)) throw forbidden('Only someone at the source can cancel this transfer.');
+      if (t.status === 'cancelled') throw conflict('This transfer is already cancelled.', 'ALREADY_CANCELLED');
       if (t.status !== 'in_transit') throw conflict('Only transfers still in transit can be cancelled.', 'CONFLICT');
 
       const lines = await tx.selectFrom('transfer_lines').selectAll().where('transfer_id', '=', id).execute();

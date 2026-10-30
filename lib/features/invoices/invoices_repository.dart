@@ -64,4 +64,44 @@ class InvoicesRepository {
   Future<Invoice> cancel(String id, String reason) async => Invoice.fromJson(
     await _api.postJson('/invoices/$id/cancel', body: {'reason': reason}),
   );
+
+  // ------------------------------------------------- e-invoice (API v1.3)
+
+  /// The IRP schema JSON for the invoice. A `400 VALIDATION_ERROR` lists
+  /// missing data in its `details`.
+  Future<Json> einvoicePayload(String id) =>
+      _api.getJson('/invoices/$id/einvoice/payload');
+
+  /// Sandbox mode sends `{}`; manual mode sends the IRP's answer.
+  Future<Invoice> generateIrn(String id, [Json body = const {}]) async =>
+      Invoice.fromJson(
+        await _api.postJson('/invoices/$id/einvoice', body: body),
+      );
+
+  Future<Invoice> cancelIrn(
+    String id, {
+    required String reasonCode,
+    required String remark,
+  }) async => Invoice.fromJson(
+    await _api.postJson(
+      '/invoices/$id/einvoice/cancel',
+      body: {'reasonCode': reasonCode, 'remark': remark},
+    ),
+  );
+
+  Future<Invoice> generateEwayBill(String id, Json body) async =>
+      Invoice.fromJson(
+        await _api.postJson('/invoices/$id/ewaybill', body: body),
+      );
+
+  Future<Invoice> cancelEwayBill(
+    String id, {
+    required String reasonCode,
+    required String remark,
+  }) async => Invoice.fromJson(
+    await _api.postJson(
+      '/invoices/$id/ewaybill/cancel',
+      body: {'reasonCode': reasonCode, 'remark': remark},
+    ),
+  );
 }

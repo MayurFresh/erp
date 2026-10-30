@@ -86,6 +86,11 @@ class PaymentDetailScreen extends ConsumerWidget {
                 LabeledValue('Date', formatDate(p.date)),
                 LabeledValue(receipt ? 'Customer' : 'Vendor', p.partyName),
                 LabeledValue('Amount', formatMoney(p.amount)),
+                if (p.tdsAmount > 0)
+                  LabeledValue(
+                    'TDS deducted by customer',
+                    formatMoney(p.tdsAmount),
+                  ),
                 LabeledValue('Mode', p.mode.label),
                 LabeledValue(
                   receipt ? 'Deposited to' : 'Paid from',
@@ -122,6 +127,7 @@ class PaymentDetailScreen extends ConsumerWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 subtitle: Text(
+                                  '${a.docTypeLabel} · '
                                   '${formatDate(a.docDate)} · '
                                   'total ${formatMoney(a.docTotal)}',
                                   overflow: TextOverflow.ellipsis,
@@ -139,6 +145,10 @@ class PaymentDetailScreen extends ConsumerWidget {
                   child: Column(
                     children: [
                       AmountRow('Amount', p.amount, bold: true),
+                      if (p.tdsAmount > 0) ...[
+                        AmountRow('TDS deducted by customer', p.tdsAmount),
+                        AmountRow('Settles', p.amount + p.tdsAmount),
+                      ],
                       AmountRow('Allocated', p.allocated),
                       AmountRow('Advance (unallocated)', p.unallocated),
                     ],

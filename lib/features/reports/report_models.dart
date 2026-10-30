@@ -136,12 +136,8 @@ class ProfitLoss {
   final StatementSection expenses;
   final double netProfit;
 
-  bool get isEmpty => [
-    revenue,
-    cogs,
-    otherIncome,
-    expenses,
-  ].every((s) => s.rows.isEmpty);
+  bool get isEmpty =>
+      [revenue, cogs, otherIncome, expenses].every((s) => s.rows.isEmpty);
 }
 
 class BalanceSheet {
@@ -518,7 +514,11 @@ class StockValuation {
 // --------------------------------------------------------------------- Ageing
 
 enum AgeingType {
-  receivables('Receivables ageing', 'Customers', 'Who owes you, by days overdue'),
+  receivables(
+    'Receivables ageing',
+    'Customers',
+    'Who owes you, by days overdue',
+  ),
   payables('Payables ageing', 'Vendors', 'What you owe, by days overdue');
 
   const AgeingType(this.title, this.partyLabel, this.description);

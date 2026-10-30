@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/money.dart';
+import '../../../core/validators.dart';
 import '../../../widgets/layout.dart';
 import '../../../widgets/picker_field.dart';
 import '../../../widgets/states.dart';
@@ -83,7 +84,8 @@ class PctBar extends StatelessWidget {
     final theme = Theme.of(context);
     final value = clampPct(pct);
     final barColor =
-        color ?? (value >= 100 ? Colors.green.shade700 : theme.colorScheme.primary);
+        color ??
+        (value >= 100 ? Colors.green.shade700 : theme.colorScheme.primary);
     final bar = ClipRRect(
       borderRadius: BorderRadius.circular(height),
       child: LinearProgressIndicator(
@@ -208,6 +210,7 @@ Widget dprStatusPill(BuildContext context, DprStatus status) => Pill(
     DprStatus.draft => Colors.blueGrey,
     DprStatus.submitted => _amber(context),
     DprStatus.approved => Colors.green.shade700,
+    DprStatus.rejected => Theme.of(context).colorScheme.error,
   },
 );
 
@@ -367,8 +370,8 @@ class DateField extends StatelessWidget {
 
   Future<void> _pick(BuildContext context) async {
     final now = DateTime.now();
-    final first = firstDate ?? DateTime(now.year - 3);
-    final last = lastDate ?? DateTime(now.year + 3, 12, 31);
+    final first = firstDate ?? kMinDocDate;
+    final last = lastDate ?? maxDocDate(now);
     var initial = value ?? DateUtils.dateOnly(now);
     if (initial.isBefore(first)) initial = first;
     if (initial.isAfter(last)) initial = last;
@@ -449,44 +452,18 @@ class CountStepper extends StatelessWidget {
   void _set(double next) => onChanged(next.clamp(min, max).toDouble());
 
   Future<void> _type(BuildContext context) async {
-    final controller = TextEditingController(text: formatPlain(value));
     final typed = await showDialog<double>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(label ?? 'Value'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-          ],
-          decoration: InputDecoration(suffixText: unit),
-          onSubmitted: (t) => Navigator.of(context).pop(double.tryParse(t)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(double.tryParse(controller.text)),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+      builder: (_) =>
+          _NumberDialog(title: label ?? 'Value', initial: value, unit: unit),
     );
-    controller.dispose();
     if (typed != null) _set(typed);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final text = unit == null
-        ? formatQty(value)
-        : '${formatQty(value)} $unit';
+    final text = unit == null ? formatQty(value) : '${formatQty(value)} $unit';
     final name = label ?? 'value';
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -528,7 +505,7 @@ class CountStepper extends StatelessWidget {
 
 /// Opens [builder] full screen on phones and as a centred dialog (max 560
 /// wide) otherwise.
-Future<T?> showAdaptiveDialog<T>(
+Future<T?> showFormSheet<T>(
   BuildContext context, {
   required String title,
   required Widget Function(BuildContext context) builder,
@@ -852,4 +829,153 @@ class StatusChips<T> extends StatelessWidget {
         ),
     ],
   );
+}
+
+/// Types a number for [CountStepper]; owns its controller so it outlives
+/// the closing animation.
+class _NumberDialog extends StatefulWidget {
+  const _NumberDialog({required this.title, required this.initial, this.unit});
+
+  final String title;
+  final double initial;
+  final String? unit;
+
+  @override
+  State<_NumberDialog> createState() => _NumberDialogState();
+}
+
+class _NumberDialogState extends State<_NumberDialog> {
+  late final _controller = TextEditingController(
+    text: formatPlain(widget.initial),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() =>
+      Navigator.of(context).pop(double.tryParse(_controller.text.trim()));
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: TextField(
+      controller: _controller,
+      autofocus: true,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+      ],
+      decoration: InputDecoration(suffixText: widget.unit),
+      onSubmitted: (_) => _submit(),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _submit, child: const Text('OK')),
+    ],
+  );
+}
+
+/// Asks for a reason (reject / cancel); pops with the trimmed text. The
+/// server needs at least 3 characters.
+Future<String?> showReasonDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmLabel,
+  String cancelLabel = 'Cancel',
+}) => showDialog<String>(
+  context: context,
+  builder: (_) => _ReasonDialog(
+    title: title,
+    message: message,
+    confirmLabel: confirmLabel,
+    cancelLabel: cancelLabel,
+  ),
+);
+
+class _ReasonDialog extends StatefulWidget {
+  const _ReasonDialog({
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+    required this.cancelLabel,
+  });
+
+  final String title;
+  final String message;
+  final String confirmLabel;
+  final String cancelLabel;
+
+  @override
+  State<_ReasonDialog> createState() => _ReasonDialogState();
+}
+
+class _ReasonDialogState extends State<_ReasonDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState!.validate()) {
+      Navigator.of(context).pop(_reason.text.trim());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Text(widget.title),
+      scrollable: true,
+      content: SizedBox(
+        width: 440,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(widget.message),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _reason,
+                autofocus: true,
+                maxLength: 300,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Reason'),
+                validator: (v) => (v ?? '').trim().length < 3
+                    ? 'At least 3 characters'
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(widget.cancelLabel),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: scheme.error,
+            foregroundColor: scheme.onError,
+          ),
+          onPressed: _submit,
+          child: Text(widget.confirmLabel),
+        ),
+      ],
+    );
+  }
 }

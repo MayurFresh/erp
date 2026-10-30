@@ -242,6 +242,7 @@ class CostSplit {
     this.material = 0,
     this.labour = 0,
     this.other = 0,
+    this.subcontract = 0,
     this.total = 0,
   });
 
@@ -251,6 +252,7 @@ class CostSplit {
         material: asDouble(json['material']),
         labour: asDouble(json['labour']),
         other: asDouble(json[otherKey]),
+        subcontract: asDouble(json['subcontract']),
         total: asDouble(json['total']),
       );
 
@@ -259,6 +261,9 @@ class CostSplit {
 
   /// Budget: other; actual: expenses at project sites.
   final double other;
+
+  /// Actual only: approved RA bills (v1.3); included in [total].
+  final double subcontract;
   final double total;
 }
 

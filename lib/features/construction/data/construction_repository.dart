@@ -31,6 +31,11 @@ final constructionRepositoryProvider = Provider<ConstructionRepository>(
 class ConstructionRepository {
   ConstructionRepository(this._api, this._http);
 
+  /// Action endpoints take no fields, but the server rejects a JSON request
+  /// without a body (`400 Body cannot be empty when content-type is set to
+  /// 'application/json'`), so they get `{}`.
+  static const Map<String, dynamic> _noBody = {};
+
   final ApiClient _api;
   final ConstructionHttp _http;
 
@@ -44,12 +49,7 @@ class ConstructionRepository {
   }) => _api.getPage(
     '/projects',
     Project.fromJson,
-    query: {
-      'q': q,
-      'status': status?.api,
-      'offset': offset,
-      'limit': limit,
-    },
+    query: {'q': q, 'status': status?.api, 'offset': offset, 'limit': limit},
   );
 
   Future<Project> project(String id) async =>
@@ -81,12 +81,19 @@ class ConstructionRepository {
     );
   }
 
+  /// Every BOQ line of the project (the endpoint is paged; this reads all
+  /// pages of 200).
   Future<List<BoqLine>> boq(String projectId) async {
-    final page = await _api.getPage(
-      '/projects/$projectId/boq',
-      BoqLine.fromJson,
-    );
-    return page.data;
+    final lines = <BoqLine>[];
+    while (true) {
+      final page = await _api.getPage(
+        '/projects/$projectId/boq',
+        BoqLine.fromJson,
+        query: {'limit': 200, 'offset': lines.length},
+      );
+      lines.addAll(page.data);
+      if (page.data.isEmpty || lines.length >= page.total) return lines;
+    }
   }
 
   Future<BoqLine> addBoqLine(String projectId, BoqLineInput input) async =>
@@ -110,10 +117,7 @@ class ConstructionRepository {
 
   /// Sends only the fields that changed from [original].
   Future<BoqLine> updateBoqLine(BoqLine original, BoqLineInput input) async {
-    final changes = changedFields(
-      original.toInput().toJson(),
-      input.toJson(),
-    );
+    final changes = changedFields(original.toInput().toJson(), input.toJson());
     if (changes.isEmpty) return original;
     return BoqLine.fromJson(
       await _api.patchJson('/boq/${original.id}', body: changes),
@@ -159,11 +163,19 @@ class ConstructionRepository {
   Future<Indent> indent(String id) async =>
       Indent.fromJson(await _api.getJson('/indents/$id'));
 
-  Future<Indent> createIndent(IndentDraft draft) async =>
-      Indent.fromJson(await _api.postJson('/indents', body: draft.toJson()));
+  Future<Indent> createIndent(IndentDraft draft) async => Indent.fromJson(
+    await _api.postJson('/indents', body: draft.toCreateJson()),
+  );
 
-  Future<Indent> submitIndent(String id) async =>
-      Indent.fromJson(await _api.postJson('/indents/$id/submit'));
+  /// Replaces all editable content of a draft or rejected indent.
+  Future<Indent> updateIndent(String id, IndentDraft draft) async =>
+      Indent.fromJson(
+        await _http.putJson('/indents/$id', body: draft.toUpdateJson()),
+      );
+
+  Future<Indent> submitIndent(String id) async => Indent.fromJson(
+    await _api.postJson('/indents/$id/submit', body: _noBody),
+  );
 
   /// [approvedQty] is lineId → qty; empty approves the requested qty.
   Future<Indent> approveIndent(
@@ -189,7 +201,7 @@ class ConstructionRepository {
       );
 
   Future<Indent> closeIndent(String id) async =>
-      Indent.fromJson(await _api.postJson('/indents/$id/close'));
+      Indent.fromJson(await _api.postJson('/indents/$id/close', body: _noBody));
 
   // ------------------------------------------------------------------ issues
 
@@ -285,19 +297,20 @@ class ConstructionRepository {
   );
 
   Future<Dpr> submitDpr(String id) async =>
-      Dpr.fromJson(await _api.postJson('/dprs/$id/submit'));
+      Dpr.fromJson(await _api.postJson('/dprs/$id/submit', body: _noBody));
 
   Future<Dpr> approveDpr(String id) async =>
-      Dpr.fromJson(await _api.postJson('/dprs/$id/approve'));
+      Dpr.fromJson(await _api.postJson('/dprs/$id/approve', body: _noBody));
+
+  Future<Dpr> rejectDpr(String id, String reason) async => Dpr.fromJson(
+    await _api.postJson('/dprs/$id/reject', body: {'reason': reason}),
+  );
 
   /// The site's latest DPR, or `null` if it has none.
   Future<Dpr?> previousDpr(String locationId) async {
     try {
       return Dpr.fromJson(
-        await _api.getJson(
-          '/dprs/previous',
-          query: {'locationId': locationId},
-        ),
+        await _api.getJson('/dprs/previous', query: {'locationId': locationId}),
       );
     } on ApiException catch (e) {
       if (e.statusCode == 404) return null;
@@ -426,11 +439,13 @@ class ConstructionRepository {
     ),
   );
 
-  Future<WageSheet> recomputeWageSheet(String id) async =>
-      WageSheet.fromJson(await _api.postJson('/wage-sheets/$id/recompute'));
+  Future<WageSheet> recomputeWageSheet(String id) async => WageSheet.fromJson(
+    await _api.postJson('/wage-sheets/$id/recompute', body: _noBody),
+  );
 
-  Future<WageSheet> approveWageSheet(String id) async =>
-      WageSheet.fromJson(await _api.postJson('/wage-sheets/$id/approve'));
+  Future<WageSheet> approveWageSheet(String id) async => WageSheet.fromJson(
+    await _api.postJson('/wage-sheets/$id/approve', body: _noBody),
+  );
 
   Future<WageSheet> payWageSheet(
     String id, {
@@ -439,7 +454,10 @@ class ConstructionRepository {
   }) async => WageSheet.fromJson(
     await _api.postJson(
       '/wage-sheets/$id/pay',
-      body: withoutNulls({'paidFromAccountId': paidFromAccountId, 'date': date}),
+      body: withoutNulls({
+        'paidFromAccountId': paidFromAccountId,
+        'date': date,
+      }),
     ),
   );
 
@@ -463,8 +481,11 @@ class ConstructionRepository {
           query: {'subtype': subtype, 'activeOnly': true, 'limit': 200},
         ),
     ]);
+    final seen = <String>{};
     final accounts = [
-      for (final page in results) ...page.data.where((a) => a.isCashOrBank),
+      for (final page in results)
+        for (final a in page.data)
+          if (a.isCashOrBank && seen.add(a.id)) a,
     ]..sort((a, b) => a.code.compareTo(b.code));
     return accounts;
   }
@@ -563,13 +584,14 @@ final workerProvider = FutureProvider.autoDispose.family<Worker, String>((
   return _repo(ref).worker(id);
 });
 
-final wageSheetProvider = FutureProvider.autoDispose.family<WageSheet, String>(
-  (ref, id) {
-    ref.watch(activeCompanyIdProvider);
-    ref.watchC(const [CKind.wages]);
-    return _repo(ref).wageSheet(id);
-  },
-);
+final wageSheetProvider = FutureProvider.autoDispose.family<WageSheet, String>((
+  ref,
+  id,
+) {
+  ref.watch(activeCompanyIdProvider);
+  ref.watchC(const [CKind.wages]);
+  return _repo(ref).wageSheet(id);
+});
 
 /// Bytes of an uploaded file (photo thumbnails), fetched with auth.
 final fileBytesProvider = FutureProvider.autoDispose.family<Uint8List, String>(
@@ -605,7 +627,7 @@ final indentLocationsProvider = FutureProvider.autoDispose<List<NamedRef>>((
 ) async {
   try {
     final locations = await ref.watch(locationsLookupProvider.future);
-    return _sites(locations, const {'site', 'store', 'warehouse'});
+    return _sites(locations, const {'site', 'store'});
   } catch (_) {
     return ref.watch(sitesProvider.future);
   }

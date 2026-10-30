@@ -52,7 +52,8 @@ class BridgedConstructionHttp implements ConstructionHttp {
            connectTimeout: timeout,
            receiveTimeout: timeout,
            sendTimeout: kIsWeb ? null : timeout,
-           contentType: Headers.jsonContentType,
+           // No default content type: the server rejects a JSON content type
+           // without a body (DELETE, GET), so it is set per request.
            responseType: ResponseType.json,
          ),
        ) {
@@ -88,6 +89,7 @@ class BridgedConstructionHttp implements ConstructionHttp {
       data: data,
       options: Options(
         method: method,
+        contentType: data == null ? null : Headers.jsonContentType,
         responseType: responseType,
         headers: {
           'Authorization': 'Bearer $token',

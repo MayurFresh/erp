@@ -17,8 +17,11 @@ import '../locations/locations_repository.dart';
 import '../parties/parties_repository.dart';
 import '../parties/party_model.dart';
 import '../parties/party_picker.dart';
+import '../tax/tax_pickers.dart';
+import '../tax/tds_preview_card.dart';
 import 'purchase_model.dart';
 import 'purchases_repository.dart';
+import '../../widgets/busy.dart';
 
 /// New purchase bill with live totals from `POST /purchases/preview`.
 class PurchaseCreateScreen extends ConsumerStatefulWidget {
@@ -33,7 +36,9 @@ class PurchaseCreateScreen extends ConsumerStatefulWidget {
 }
 
 class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
-    with LivePreview<PurchaseCreateScreen, PurchaseDraft, Purchase> {
+    with
+        LivePreview<PurchaseCreateScreen, PurchaseDraft, Purchase>,
+        DirtyTracking<PurchaseCreateScreen> {
   final _formKey = GlobalKey<FormState>();
   final _supplierInvoiceNo = TextEditingController();
   final _notes = TextEditingController();
@@ -42,6 +47,9 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
   Party? _party;
   DateTime _billDate = DateUtils.dateOnly(DateTime.now());
   DateTime? _supplierInvoiceDate;
+  String? _tdsSectionId;
+  bool _tdsTouched = false;
+  bool _reverseCharge = false;
 
   bool _saving = false;
   Object? _saveError;
@@ -59,7 +67,10 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
     try {
       final party = await ref.read(partiesRepositoryProvider).get(id);
       if (mounted && party.isVendor) {
-        setState(() => _party = party);
+        setState(() {
+          _party = party;
+          if (!_tdsTouched) _tdsSectionId = party.tdsSectionId;
+        });
         schedulePreview();
       }
     } catch (_) {
@@ -91,6 +102,8 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
       supplierInvoiceNo: trimmedOrNull(_supplierInvoiceNo.text),
       supplierInvoiceDate: supplierDate == null ? null : apiDate(supplierDate),
       notes: trimmedOrNull(_notes.text),
+      tdsSectionId: _tdsSectionId,
+      reverseCharge: _reverseCharge,
       lines: [for (final line in _lines) line.toDraft()],
     );
   }
@@ -108,7 +121,10 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
   Future<void> _pickParty() async {
     final party = await pickParty(context, ref, type: PartyType.vendor);
     if (party == null) return;
-    setState(() => _party = party);
+    setState(() {
+      _party = party;
+      if (!_tdsTouched) _tdsSectionId = party.tdsSectionId;
+    });
     _clearError('partyId');
     schedulePreview();
   }
@@ -155,6 +171,7 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
     });
     final valid = _formKey.currentState!.validate();
     if (_lines.isEmpty) {
+      markSaved();
       showInfoSnackBar(context, 'Add at least one item.');
       return;
     }
@@ -183,7 +200,9 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final locations = ref.watch(locationsLookupProvider).value;
     if (_locationId == null && locations != null) {
       final active = locations.where((l) => l.isActive).toList();
@@ -272,10 +291,55 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: DocFormLayout(
         title: 'New purchase bill',
         main: [
           details,
+          SectionCard(
+            title: 'TDS and reverse charge',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TdsSectionPicker(
+                  value: _tdsSectionId,
+                  date: apiDate(_billDate),
+                  enabled: !_saving,
+                  errorText: _fieldErrors['tdsSectionId'],
+                  onChanged: (s) {
+                    setState(() {
+                      _tdsSectionId = s?.id;
+                      _tdsTouched = true;
+                    });
+                    schedulePreview();
+                  },
+                ),
+                TdsPreviewCard(
+                  partyId: _party?.id,
+                  sectionId: _tdsSectionId,
+                  date: apiDate(_billDate),
+                  gross: preview?.subtotal,
+                  documentTotal: preview?.total,
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Reverse charge (RCM)'),
+                  subtitle: const Text(
+                    'The supplier charges no GST. You pay the tax directly '
+                    'and a self-invoice number is issued.',
+                  ),
+                  value: _reverseCharge,
+                  onChanged: _saving
+                      ? null
+                      : (v) {
+                          setState(() => _reverseCharge = v);
+                          schedulePreview();
+                        },
+                ),
+              ],
+            ),
+          ),
           DocLinesSection(
             lines: _lines,
             previewLines: preview?.lines,

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:progen_erp/core/pdf_fonts.dart';
 import 'package:progen_erp/features/company/company_model.dart';
 import 'package:progen_erp/features/invoices/invoice_model.dart';
 import 'package:progen_erp/features/invoices/invoice_pdf.dart';
@@ -21,6 +22,16 @@ void main() {
 
   test('builds an A4 tax invoice', () async {
     expectPdf(await buildInvoicePdf(invoice, company, party: party));
+  });
+
+  testWidgets('embeds the bundled Noto Sans so ₹ prints', (tester) async {
+    final theme = await tester.runAsync(pdfTheme);
+    expect(theme, isNotNull);
+    final bytes = (await tester.runAsync(
+      () => buildInvoicePdf(invoice, company, party: party, theme: theme),
+    ))!;
+    expectPdf(bytes);
+    expect(latin1.decode(bytes, allowInvalid: true), contains('NotoSans'));
   });
 
   test('builds for cancelled, intra-state, many-line invoices', () async {
@@ -63,6 +74,77 @@ void main() {
       ],
     });
     expectPdf(await buildInvoicePdf(odd, bare));
+  });
+
+  group('e-invoice block', () {
+    const einv = {
+      'irn': 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9',
+      'ackNo': '112010012345678',
+      'ackDate': '2026-10-21T10:15:00.000Z',
+      'signedQrCode': 'eyJhbGciOiJSUzI1NiJ9.payload.signature',
+      'status': 'active',
+      'sandbox': false,
+    };
+    const ewb = {
+      'ewbNo': '331001234567',
+      'ewbDate': '2026-10-21T11:00:00.000Z',
+      'validUntil': '2026-10-23T23:59:00.000Z',
+      'status': 'active',
+    };
+
+    test('parses einvoice and ewaybill', () {
+      final inv = Invoice.fromJson({
+        ...FakeBackend.invoiceDetail,
+        'einvoice': einv,
+        'ewaybill': ewb,
+      });
+      expect(inv.hasActiveIrn, isTrue);
+      expect(inv.einvoice!.ackNo, '112010012345678');
+      expect(inv.ewaybill!.ewbNo, '331001234567');
+      expect(invoice.hasActiveIrn, isFalse);
+    });
+
+    test('renders an IRN block with QR and e-way bill', () async {
+      final inv = Invoice.fromJson({
+        ...FakeBackend.invoiceDetail,
+        'einvoice': einv,
+        'ewaybill': ewb,
+      });
+      final plain = await buildInvoicePdf(invoice, company, party: party);
+      final withIrn = await buildInvoicePdf(inv, company, party: party);
+      expectPdf(withIrn);
+      expect(withIrn.length, greaterThan(plain.length));
+    });
+
+    test('renders the sandbox marker', () async {
+      final inv = Invoice.fromJson({
+        ...FakeBackend.invoiceDetail,
+        'einvoice': {...einv, 'sandbox': true},
+      });
+      expectPdf(await buildInvoicePdf(inv, company, party: party));
+    });
+
+    testWidgets('renders with the Unicode theme', (tester) async {
+      final theme = await tester.runAsync(pdfTheme);
+      final inv = Invoice.fromJson({
+        ...FakeBackend.invoiceDetail,
+        'einvoice': {...einv, 'sandbox': true},
+        'ewaybill': ewb,
+      });
+      final bytes = (await tester.runAsync(
+        () => buildInvoicePdf(inv, company, party: party, theme: theme),
+      ))!;
+      expectPdf(bytes);
+    });
+
+    test('cancelled IRN prints no block', () async {
+      final inv = Invoice.fromJson({
+        ...FakeBackend.invoiceDetail,
+        'einvoice': {...einv, 'status': 'cancelled'},
+      });
+      expect(inv.hasActiveIrn, isFalse);
+      expectPdf(await buildInvoicePdf(inv, company, party: party));
+    });
   });
 
   test('file name and share text', () {

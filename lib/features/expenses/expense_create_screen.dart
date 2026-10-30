@@ -12,13 +12,15 @@ import '../accounts/account_model.dart';
 import '../accounts/accounts_repository.dart';
 import '../documents/document_widgets.dart';
 import '../documents/line_editor.dart';
-import '../items/item_model.dart';
 import '../locations/location_filter.dart';
 import '../locations/locations_repository.dart';
 import '../parties/party_model.dart';
 import '../parties/party_picker.dart';
+import '../tax/tax_pickers.dart';
+import '../tax/tds_preview_card.dart';
 import 'expense_model.dart';
 import 'expenses_repository.dart';
+import '../../widgets/busy.dart';
 
 /// `POST /expenses`: an expense head, an amount before GST and the cash or
 /// bank account it was paid from. GST shown here is an estimate.
@@ -31,7 +33,7 @@ class ExpenseCreateScreen extends ConsumerStatefulWidget {
 }
 
 class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
-    with ServerFieldErrors {
+    with ServerFieldErrors, DirtyTracking<ExpenseCreateScreen> {
   final _formKey = GlobalKey<FormState>();
   final _description = TextEditingController();
   final _amount = TextEditingController();
@@ -40,6 +42,9 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
   String? _paidFromId;
   double _gstRate = 0;
   Party? _vendor;
+  String? _tdsSectionId;
+  bool _tdsTouched = false;
+  bool _reverseCharge = false;
   DateTime _date = DateUtils.dateOnly(DateTime.now());
   bool _saving = false;
   Object? _error;
@@ -53,7 +58,11 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
 
   Future<void> _pickVendor() async {
     final vendor = await pickParty(context, ref, type: PartyType.vendor);
-    if (vendor != null) setState(() => _vendor = vendor);
+    if (vendor == null) return;
+    setState(() {
+      _vendor = vendor;
+      if (!_tdsTouched) _tdsSectionId = vendor.tdsSectionId;
+    });
   }
 
   Future<void> _pickDate() async {
@@ -80,11 +89,15 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
               amount: parseNumber(_amount.text)!,
               gstRate: _gstRate,
               partyId: _vendor?.id,
+              sendTdsSection: _vendor != null,
+              tdsSectionId: _vendor == null ? null : _tdsSectionId,
+              reverseCharge: _vendor != null && _reverseCharge,
               paidFromAccountId: _paidFromId!,
             ),
           );
       ref.bump(const [DataKind.expenses, DataKind.accounts]);
       if (!mounted) return;
+      markSaved();
       showInfoSnackBar(context, 'Expense ${expense.number} saved');
       context.go('/expenses/${expense.id}');
     } catch (e) {
@@ -140,7 +153,9 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final locations = ref.watch(locationsLookupProvider).value;
     if (_locationId == null && locations != null) {
       final active = locations.where((l) => l.isActive).toList();
@@ -167,10 +182,11 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
         vendorState != locationState;
     final amount = parseNumber(_amount.text) ?? 0;
     final tax = estimateExpenseTax(amount, _gstRate, interState: inter);
-    final rates = {...gstRates, _gstRate}.toList()..sort();
+    final payTotal = _reverseCharge && _vendor != null ? amount : tax.total;
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: FormPage(
         children: [
           Text('New expense', style: Theme.of(context).textTheme.headlineSmall),
@@ -254,18 +270,10 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
                             : 'Must be more than 0';
                       },
                     ),
-                    DropdownButtonFormField<double>(
-                      initialValue: _gstRate,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'GST rate'),
-                      forceErrorText: serverError('gstRate'),
-                      items: [
-                        for (final rate in rates)
-                          DropdownMenuItem(
-                            value: rate,
-                            child: Text(formatPercent(rate)),
-                          ),
-                      ],
+                    GstRatePicker(
+                      value: _gstRate,
+                      date: apiDate(_date),
+                      errorText: serverError('gstRate'),
                       onChanged: (v) => setState(() => _gstRate = v ?? 0),
                     ),
                   ],
@@ -281,13 +289,59 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
-                      onPressed: () => setState(() => _vendor = null),
+                      onPressed: () => setState(() {
+                        _vendor = null;
+                        _tdsSectionId = null;
+                        _tdsTouched = false;
+                        _reverseCharge = false;
+                      }),
                       icon: const Icon(Icons.clear),
                       label: const Text('Remove vendor'),
                     ),
                   ),
               ],
             ),
+          ),
+          SectionCard(
+            title: 'TDS and reverse charge',
+            child: _vendor == null
+                ? Text(
+                    'Choose a vendor to deduct TDS or apply reverse charge.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TdsSectionPicker(
+                        value: _tdsSectionId,
+                        date: apiDate(_date),
+                        errorText: serverError('tdsSectionId'),
+                        onChanged: (s) => setState(() {
+                          _tdsSectionId = s?.id;
+                          _tdsTouched = true;
+                        }),
+                      ),
+                      TdsPreviewCard(
+                        partyId: _vendor?.id,
+                        sectionId: _tdsSectionId,
+                        date: apiDate(_date),
+                        gross: amount,
+                        documentTotal: payTotal,
+                        netLabel: 'Net paid',
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Reverse charge (RCM)'),
+                        subtitle: const Text(
+                          'The vendor charges no GST. You pay the tax '
+                          'directly and a self-invoice number is issued.',
+                        ),
+                        value: _reverseCharge,
+                        onChanged: (v) => setState(() => _reverseCharge = v),
+                      ),
+                    ],
+                  ),
           ),
           SectionCard(
             title: 'Amount',
@@ -302,7 +356,11 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
                   AmountRow('SGST', tax.sgst),
                 ],
                 const Divider(),
-                AmountRow('Total paid', tax.total, emphasize: true),
+                if (_reverseCharge && _vendor != null)
+                  const Text(
+                    'Reverse charge: GST is not added to what you pay.',
+                  ),
+                AmountRow('Total paid', payTotal, emphasize: true),
                 Text(
                   'Estimated here; the server calculates the final GST.',
                   style: Theme.of(context).textTheme.bodySmall,
@@ -320,7 +378,7 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
             runSpacing: 8,
             children: [
               OutlinedButton(
-                onPressed: _saving ? null : () => context.go('/expenses'),
+                onPressed: _saving ? null : () => leave('/expenses'),
                 child: const Text('Cancel'),
               ),
               BusyButton(

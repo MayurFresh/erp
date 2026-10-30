@@ -54,6 +54,7 @@ Map<String, Object> authResult(String access, String refresh) => {
 };
 
 void main() {
+  idempotencyAndErrorTests();
   late InMemoryTokenStore store;
   late FakeAdapter adapter;
   late ApiClient api;
@@ -181,5 +182,137 @@ void main() {
       ),
     );
     expect(api.refreshToken, 'r1');
+  });
+}
+
+void idempotencyAndErrorTests() {
+  late InMemoryTokenStore store;
+  late FakeAdapter adapter;
+  late ApiClient api;
+
+  setUp(() async {
+    store = InMemoryTokenStore();
+    adapter = FakeAdapter((_) => jsonBody(200, {}));
+    api = ApiClient(
+      baseUrl: 'http://api.test/api/v1',
+      tokenStore: store,
+      httpClientAdapter: adapter,
+    );
+    await api.setTokens(
+      const AuthTokens(accessToken: 'old', refreshToken: 'r1'),
+    );
+    await api.setCompany('c1');
+  });
+
+  tearDown(() => api.close());
+
+  group('Idempotency-Key', () {
+    test('sent on POST, valid format, fresh per call, not on /auth', () async {
+      await api.post('/invoices', body: {'a': 1});
+      await api.post('/invoices', body: {'a': 1});
+      await api.post('/auth/login', body: {'email': 'x', 'password': 'y'});
+      await api.get('/items');
+      final k1 = adapter.requests[0].headers['Idempotency-Key'] as String;
+      final k2 = adapter.requests[1].headers['Idempotency-Key'] as String;
+      expect(k1, matches(RegExp(r'^[A-Za-z0-9_-]{8,100}$')));
+      expect(k1, isNot(k2));
+      expect(adapter.requests[2].headers.containsKey('Idempotency-Key'), false);
+      expect(adapter.requests[3].headers.containsKey('Idempotency-Key'), false);
+    });
+
+    test('caller-supplied key is used', () async {
+      await api.post('/invoices', body: {}, idempotencyKey: 'my-key-12345');
+      expect(
+        adapter.requests.single.headers['Idempotency-Key'],
+        'my-key-12345',
+      );
+    });
+
+    test('same key is reused on the refresh retry', () async {
+      adapter.handler = (o) {
+        if (o.path == '/auth/refresh') {
+          return jsonBody(200, authResult('new', 'r2'));
+        }
+        if (o.headers['Authorization'] == 'Bearer old') {
+          return errorBody(401, 'TOKEN_EXPIRED');
+        }
+        return jsonBody(200, {'id': 'x'});
+      };
+      await api.post('/invoices', body: {'a': 1});
+      final posts = adapter.requests.where((r) => r.path == '/invoices');
+      expect(posts.length, 2);
+      final keys = posts.map((r) => r.headers['Idempotency-Key']).toSet();
+      expect(keys.length, 1);
+      expect(keys.single, isNotNull);
+    });
+  });
+
+  group('error mapping', () {
+    final cases = {
+      'IN_USE': 409,
+      'TRY_AGAIN': 503,
+      'REQUEST_IN_PROGRESS': 409,
+      'IDEMPOTENCY_MISMATCH': 422,
+      'PAYLOAD_TOO_LARGE': 413,
+    };
+    for (final e in cases.entries) {
+      test('${e.key} gets a friendly message', () async {
+        adapter.handler = (_) => errorBody(e.value, e.key);
+        try {
+          await api.post('/x', body: {});
+          fail('should throw');
+        } on ApiException catch (ex) {
+          expect(ex.code, e.key);
+          expect(ex.message, isNot('msg ${e.key}'));
+          expect(ex.message, isNotEmpty);
+        }
+      });
+    }
+
+    test('connection errors and timeouts read as offline', () async {
+      for (final type in [
+        DioExceptionType.connectionError,
+        DioExceptionType.connectionTimeout,
+        DioExceptionType.receiveTimeout,
+        DioExceptionType.sendTimeout,
+      ]) {
+        adapter.handler = (o) =>
+            throw DioException(requestOptions: o, type: type, error: 'boom');
+        try {
+          await api.get('/items');
+          fail('should throw');
+        } on ApiException catch (ex) {
+          expect(ex.message, ApiException.offlineMessage);
+          expect(ex.message, isNot(contains('Dio')));
+          expect(ex.isNetworkError, isTrue);
+        }
+      }
+    });
+
+    test('5xx hides server detail', () async {
+      adapter.handler = (_) => errorBody(500, 'INTERNAL');
+      try {
+        await api.get('/items');
+        fail('should throw');
+      } on ApiException catch (ex) {
+        expect(ex.message, isNot(contains('msg')));
+      }
+    });
+
+    test('SESSION_REVOKED signs out with a notice', () async {
+      adapter.handler = (_) => errorBody(401, 'SESSION_REVOKED');
+      var expired = 0;
+      final sub = api.sessionExpired.listen((_) => expired++);
+      try {
+        await api.get('/items');
+        fail('should throw');
+      } on ApiException catch (ex) {
+        expect(ex.code, 'SESSION_REVOKED');
+      }
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+      expect(expired, 1);
+      expect(api.sessionNotice, isNotNull);
+    });
   });
 }

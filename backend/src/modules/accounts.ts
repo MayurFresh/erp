@@ -10,7 +10,7 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors.ts';
 import { moneyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { nextNumber } from '../lib/series.ts';
-import { parse } from '../lib/validate.ts';
+import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -18,11 +18,11 @@ const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const TYPES = ['asset', 'liability', 'equity', 'income', 'expense'] as const;
 const CODE_BASE: Record<(typeof TYPES)[number], number> = { asset: 1500, liability: 2500, equity: 3500, income: 4500, expense: 6500 };
 // Expense accounts that are posted automatically and are not offered as expense heads.
-const AUTO_EXPENSES = ['cogs', 'purchases_nonstock', 'stock_loss', 'round_off', 'material_consumed', 'site_labour'];
+const AUTO_EXPENSES = ['cogs', 'purchases_nonstock', 'stock_loss', 'round_off', 'material_consumed', 'site_labour', 'subcontract_cost'];
 
 const listQuery = z.object({
   type: z.enum(TYPES).optional(),
-  subtype: z.enum(['cash', 'bank', 'receivables', 'payables', 'inventory', 'tax', 'other']).optional(),
+  subtype: z.enum(['cash', 'bank', 'receivables', 'payables', 'inventory', 'tax', 'fixed_asset', 'other']).optional(),
   activeOnly: z.enum(['true', 'false']).optional(),
 });
 const createBody = z.object({
@@ -41,10 +41,12 @@ const journalQuery = pagingQuery.extend({
   from: dateField.optional(),
   to: dateField.optional(),
   voucherType: z.enum(['sales', 'purchase', 'receipt', 'payment', 'credit_note', 'expense', 'stock', 'transfer', 'journal',
-    'issue', 'wages']).optional(),
+    'issue', 'wages', 'labour_advance', 'contractor_advance', 'ra_bill', 'retention_release', 'demand', 'possession',
+    'tds_challan', 'bank_entry', 'gst_payment', 'gst_setoff', 'tax_payment', 'asset_capitalise', 'depreciation',
+    'asset_disposal']).optional(),
 });
 const journalBody = z.object({
-  date: dateField.optional(),
+  date: docDate.optional(),
   narration: z.string().trim().min(3, 'Add a narration').max(500),
   lines: z.array(z.object({
     accountId: z.uuid(),
@@ -80,11 +82,14 @@ export async function loadEntries(tx: Tx, ids: string[]) {
     .leftJoin('parties as p', 'p.id', 'jl.party_id')
     .select(['jl.entry_id', 'jl.line_no', 'jl.account_id', 'a.code', 'a.name', 'jl.party_id', 'p.name as party_name', 'jl.debit', 'jl.credit'])
     .where('jl.entry_id', 'in', ids).orderBy('jl.line_no').execute();
+  const reversals = await tx.selectFrom('journal_entries').select(['id', 'reverses_id'])
+    .where('reverses_id', 'in', ids).execute();
   return ids.map((id) => {
     const e = entries.find((x) => x.id === id)!;
     return {
       id: e.id, date: e.entry_date, voucherType: e.voucher_type, voucherId: e.voucher_id, number: e.number,
-      narration: e.narration, isReversal: e.is_reversal, createdAt: e.created_at,
+      narration: e.narration, isReversal: e.is_reversal, reversesId: e.reverses_id,
+      reversedById: reversals.find((r) => r.reverses_id === id)?.id ?? null, createdAt: e.created_at,
       createdBy: e.created_by ? { id: e.created_by, name: e.created_by_name! } : null,
       lines: lines.filter((l) => l.entry_id === id).map((l) => ({
         accountId: l.account_id, accountCode: l.code, accountName: l.name, partyId: l.party_id, partyName: l.party_name,

@@ -196,9 +196,12 @@ class _QtyText extends StatelessWidget {
           Icon(Icons.warning_amber_rounded, size: 16, color: color),
           const SizedBox(width: 4),
         ],
-        Text(
-          '${formatQty(balance.qty)} ${balance.unit}',
-          style: TextStyle(color: color, fontWeight: FontWeight.w600),
+        Flexible(
+          child: Text(
+            '${formatQty(balance.qty)} ${balance.unit}',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );

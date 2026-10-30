@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'features/admin_routes.dart';
 import 'features/audit/audit_screen.dart';
+import 'features/construction_routes.dart';
 import 'features/credit_notes/credit_note_create_screen.dart';
 import 'features/credit_notes/credit_note_detail_screen.dart';
 import 'features/credit_notes/credit_notes_screen.dart';
@@ -30,8 +32,15 @@ import 'features/payments/payments_screen.dart';
 import 'features/purchases/purchase_create_screen.dart';
 import 'features/purchases/purchase_detail_screen.dart';
 import 'features/purchases/purchases_screen.dart';
+import 'features/compliance/compliance_routes.dart';
+import 'features/realestate/realestate_routes.dart';
+import 'features/tax/tax_routes.dart';
+import 'features/gst_filing/gst_filing_routes.dart';
+import 'features/fixed_assets/fixed_asset_routes.dart';
+import 'features/income_tax/income_tax_routes.dart';
 import 'features/shell/app_shell.dart';
 import 'features/shell/nav.dart';
+import 'features/shell/routing.dart';
 import 'features/stock/stock_moves_screen.dart';
 import 'features/stock/stock_screen.dart';
 import 'features/transfers/transfer_create_screen.dart';
@@ -88,22 +97,16 @@ String _withFrom(String target, Uri uri) {
   return '$target?from=${Uri.encodeComponent(current)}';
 }
 
-Page<void> _section(GoRouterState state, Widget child) =>
-    NoTransitionPage<void>(key: state.pageKey, child: child);
-
-/// Screens that read their query string start afresh when it changes.
-Key _queryKey(GoRouterState state) => ValueKey(state.uri.query);
-
 /// `/receipts` or `/payments`: list, new (optionally pre-filled with
 /// `partyId`, `docId` and `amount`) and detail.
 GoRoute _paymentsRoute(PaymentKind kind) => GoRoute(
   path: kind.basePath,
-  pageBuilder: (_, state) => _section(state, PaymentsScreen(kind: kind)),
+  pageBuilder: (_, state) => sectionPage(state, PaymentsScreen(kind: kind)),
   routes: [
     GoRoute(
       path: 'new',
       builder: (_, state) => PaymentCreateScreen(
-        key: _queryKey(state),
+        key: queryKey(state),
         kind: kind,
         initialPartyId: state.uri.queryParameters['partyId'],
         initialDocId: state.uri.queryParameters['docId'],
@@ -129,13 +132,13 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) =>
         sessionRedirect(ref.read(sessionProvider), state.uri),
     errorBuilder: (context, state) => Scaffold(
-      appBar: AppBar(title: const Text('Not found')),
+      appBar: AppBar(title: const Text('Page not found')),
       body: EmptyView(
         icon: Icons.search_off,
-        message: 'No page at ${state.uri.path}',
+        message: "Page not found.\nThere is no page at ${state.uri.path}.",
         action: FilledButton(
           onPressed: () => context.go('/'),
-          child: const Text('Go home'),
+          child: const Text('Home'),
         ),
       ),
     ),
@@ -144,6 +147,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
       GoRoute(path: '/signup', builder: (_, _) => const SignupScreen()),
+      // Sections inside the shell. A feature pack adds its routes here
+      // (e.g. `...constructionRoutes()`) and its menu entries in
+      // `navGroups` (nav.dart); see `sectionPage` / `queryKey`.
       ShellRoute(
         navigatorKey: _shellKey,
         builder: (context, state, child) =>
@@ -151,20 +157,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/no-access',
-            pageBuilder: (_, state) => _section(state, const NoAccessScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const NoAccessScreen()),
           ),
           GoRoute(
             path: '/dashboard',
-            pageBuilder: (_, state) => _section(state, const DashboardScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const DashboardScreen()),
           ),
           GoRoute(
             path: '/invoices',
-            pageBuilder: (_, state) => _section(state, const InvoicesScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const InvoicesScreen()),
             routes: [
               GoRoute(
                 path: 'new',
                 builder: (_, state) => InvoiceCreateScreen(
-                  key: _queryKey(state),
+                  key: queryKey(state),
                   initialPartyId: state.uri.queryParameters['partyId'],
                 ),
               ),
@@ -178,12 +187,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/credit-notes',
             pageBuilder: (_, state) =>
-                _section(state, const CreditNotesScreen()),
+                sectionPage(state, const CreditNotesScreen()),
             routes: [
               GoRoute(
                 path: 'new',
                 builder: (_, state) => CreditNoteCreateScreen(
-                  key: _queryKey(state),
+                  key: queryKey(state),
                   initialInvoiceId: state.uri.queryParameters['invoiceId'],
                 ),
               ),
@@ -198,12 +207,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           _paymentsRoute(PaymentKind.receipt),
           GoRoute(
             path: '/purchases',
-            pageBuilder: (_, state) => _section(state, const PurchasesScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const PurchasesScreen()),
             routes: [
               GoRoute(
                 path: 'new',
                 builder: (_, state) => PurchaseCreateScreen(
-                  key: _queryKey(state),
+                  key: queryKey(state),
                   initialPartyId: state.uri.queryParameters['partyId'],
                 ),
               ),
@@ -218,7 +228,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           _paymentsRoute(PaymentKind.payment),
           GoRoute(
             path: '/expenses',
-            pageBuilder: (_, state) => _section(state, const ExpensesScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const ExpensesScreen()),
             routes: [
               GoRoute(
                 path: 'new',
@@ -233,7 +244,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/transfers',
-            pageBuilder: (_, state) => _section(state, const TransfersScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const TransfersScreen()),
             routes: [
               GoRoute(
                 path: 'new',
@@ -249,7 +261,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/items',
-            pageBuilder: (_, state) => _section(state, const ItemsScreen()),
+            pageBuilder: (_, state) => sectionPage(state, const ItemsScreen()),
             routes: [
               GoRoute(path: 'new', builder: (_, _) => const ItemFormScreen()),
               GoRoute(
@@ -261,7 +273,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/stock',
-            pageBuilder: (_, state) => _section(
+            pageBuilder: (_, state) => sectionPage(
               state,
               StockScreen(
                 initialLowOnly: state.uri.queryParameters['lowOnly'] == 'true',
@@ -271,7 +283,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'moves',
                 builder: (_, state) => StockMovesScreen(
-                  key: _queryKey(state),
+                  key: queryKey(state),
                   itemId: state.uri.queryParameters['itemId'],
                   locationId: state.uri.queryParameters['locationId'],
                   title: state.uri.queryParameters['title'],
@@ -281,7 +293,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/parties',
-            pageBuilder: (_, state) => _section(state, const PartiesScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const PartiesScreen()),
             routes: [
               GoRoute(path: 'new', builder: (_, _) => const PartyFormScreen()),
               GoRoute(
@@ -300,18 +313,28 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/locations',
-            pageBuilder: (_, state) => _section(state, const LocationsScreen()),
+            pageBuilder: (_, state) =>
+                sectionPage(state, const LocationsScreen()),
           ),
           GoRoute(
             path: '/users',
-            pageBuilder: (_, state) => _section(state, const UsersScreen()),
+            pageBuilder: (_, state) => sectionPage(state, const UsersScreen()),
             routes: [
               GoRoute(path: 'new', builder: (_, _) => const UserFormScreen()),
             ],
           ),
+          // After `/users`, so `/users/new` wins over `/users/:id`.
+          ...adminRoutes(),
+          ...constructionRoutes(),
+          ...realEstateRoutes(),
+          ...complianceRoutes(),
+          ...taxRoutes(),
+          ...incomeTaxRoutes(),
+          ...fixedAssetRoutes(),
+          ...gstFilingRoutes(),
           GoRoute(
             path: '/audit',
-            pageBuilder: (_, state) => _section(state, const AuditScreen()),
+            pageBuilder: (_, state) => sectionPage(state, const AuditScreen()),
           ),
         ],
       ),

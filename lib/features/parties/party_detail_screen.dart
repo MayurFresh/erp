@@ -93,6 +93,14 @@ class PartyDetailScreen extends ConsumerWidget {
                 LabeledValue('Email', party.email ?? ''),
                 LabeledValue('Credit limit', formatMoney(party.creditLimit)),
                 LabeledValue('Credit days', '${party.creditDays}'),
+                if ((party.pan ?? '').isNotEmpty)
+                  LabeledValue('PAN', party.pan!),
+                if ((party.udyamNo ?? '').isNotEmpty)
+                  LabeledValue('Udyam number', party.udyamNo!),
+                if (party.msmeCategory != null)
+                  LabeledValue('MSME category', party.msmeCategory!),
+                if (party.tdsSectionCode != null)
+                  LabeledValue('TDS section', party.tdsSectionCode!),
               ],
             ),
             if (party.address != null && party.address!.isNotEmpty)

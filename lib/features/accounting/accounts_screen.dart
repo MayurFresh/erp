@@ -210,7 +210,8 @@ class _AccountGroupCard extends StatelessWidget {
                       style: theme.textTheme.titleMedium,
                       children: [
                         TextSpan(
-                          text: '  $count ${count == 1 ? 'account' : 'accounts'}',
+                          text:
+                              '  $count ${count == 1 ? 'account' : 'accounts'}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
@@ -293,13 +294,14 @@ class _AccountRow extends StatelessWidget {
             final balance = Text(
               drCr(a.balance, formatMoney),
               textAlign: TextAlign.right,
-              style: theme.textTheme.bodyMedium?.merge(tabularFigures).copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: theme.textTheme.bodyMedium
+                  ?.merge(tabularFigures)
+                  .copyWith(fontWeight: FontWeight.w600),
             );
             return Row(
               children: [
-                if (wide) SizedBox(width: 64, child: Text(a.code, style: muted)),
+                if (wide)
+                  SizedBox(width: 64, child: Text(a.code, style: muted)),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,7 +320,10 @@ class _AccountRow extends StatelessWidget {
                           spacing: 6,
                           runSpacing: 4,
                           crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [Text(a.code, style: muted), ...pills],
+                          children: [
+                            Text(a.code, style: muted),
+                            ...pills,
+                          ],
                         ),
                       ],
                     ],

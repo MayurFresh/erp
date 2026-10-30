@@ -22,6 +22,7 @@ class Location {
     this.parentId,
     this.code,
     this.address,
+    this.pincode,
     this.isActive = true,
     this.createdAt,
   });
@@ -35,6 +36,7 @@ class Location {
     code: asStringOrNull(json['code']),
     stateCode: asString(json['stateCode']),
     address: asStringOrNull(json['address']),
+    pincode: asStringOrNull(json['pincode']),
     isActive: asBool(json['isActive'], true),
     createdAt: asDateTimeOrNull(json['createdAt']),
   );
@@ -47,6 +49,9 @@ class Location {
   final String? code;
   final String stateCode;
   final String? address;
+
+  /// 6 digits (API v1.3).
+  final String? pincode;
   final bool isActive;
   final DateTime? createdAt;
 
@@ -58,6 +63,7 @@ class Location {
     'code': code,
     'stateCode': stateCode,
     'address': address,
+    'pincode': pincode,
     'isActive': isActive,
   };
 }

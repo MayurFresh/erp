@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
 import '../../core/money.dart';
+import '../../core/pdf_fonts.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
@@ -48,7 +49,10 @@ class ReportPage extends StatelessWidget {
       PageHeader(
         title: title,
         subtitle: subtitle,
-        actions: [...extraActions, ExportActions(export: export)],
+        actions: [
+          ...extraActions,
+          ExportActions(export: export),
+        ],
       ),
       if (controls.isNotEmpty) FilterBar(children: controls),
       Expanded(child: body),
@@ -103,11 +107,7 @@ class ReportBody<T> extends StatelessWidget {
 
 /// Shows [value]; offers financial-year presets and a custom range.
 class PeriodButton extends StatelessWidget {
-  const PeriodButton({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
+  const PeriodButton({super.key, required this.value, required this.onChanged});
 
   final DateRange value;
   final ValueChanged<DateRange> onChanged;
@@ -140,7 +140,8 @@ class PeriodButton extends StatelessWidget {
       ),
     ],
     builder: (context, controller, _) => OutlinedButton.icon(
-      onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+      onPressed: () =>
+          controller.isOpen ? controller.close() : controller.open(),
       icon: const Icon(Icons.date_range_outlined),
       label: Text(value.label, overflow: TextOverflow.ellipsis),
     ),
@@ -182,7 +183,8 @@ class AsOfButton extends StatelessWidget {
       ),
     ],
     builder: (context, controller, _) => OutlinedButton.icon(
-      onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+      onPressed: () =>
+          controller.isOpen ? controller.close() : controller.open(),
       icon: const Icon(Icons.event_outlined),
       label: Text('As of ${formatDate(value)}'),
     ),
@@ -214,9 +216,16 @@ class ExportActions extends ConsumerWidget {
     if (e == null) return;
     try {
       final company = ref.read(sessionProvider).value?.company?.name;
-      final bytes = await buildReportPdf(e, companyName: company);
+      final bytes = await buildReportPdf(
+        e,
+        companyName: company,
+        theme: await pdfTheme(),
+      );
       if (print) {
-        await Printing.layoutPdf(onLayout: (_) async => bytes, name: e.fileName);
+        await Printing.layoutPdf(
+          onLayout: (_) async => bytes,
+          name: e.fileName,
+        );
       } else {
         await Printing.sharePdf(bytes: bytes, filename: '${e.fileName}.pdf');
       }
@@ -337,8 +346,12 @@ class ReportTable<T> extends StatelessWidget {
   final double cardBreakpoint;
   final String emptyText;
 
-  Widget _cell(BuildContext context, String text, ReportColumn<T> column,
-      {TextStyle? style}) {
+  Widget _cell(
+    BuildContext context,
+    String text,
+    ReportColumn<T> column, {
+    TextStyle? style,
+  }) {
     final child = Text(
       text,
       maxLines: 1,
@@ -525,7 +538,10 @@ class ReportRowCard extends StatelessWidget {
                   runSpacing: 2,
                   children: [
                     for (final (label, value) in pairs)
-                      Text('$label $value', style: muted?.merge(tabularFigures)),
+                      Text(
+                        '$label $value',
+                        style: muted?.merge(tabularFigures),
+                      ),
                   ],
                 ),
               ],
@@ -565,7 +581,9 @@ class StatementLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final base = large ? theme.textTheme.titleMedium : theme.textTheme.bodyMedium;
+    final base = large
+        ? theme.textTheme.titleMedium
+        : theme.textTheme.bodyMedium;
     final style = base?.copyWith(
       fontWeight: bold || large ? FontWeight.w700 : null,
       color: color,
@@ -669,7 +687,11 @@ class BalanceCheck extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(ok ? Icons.check_circle : Icons.error_outline, color: color, size: 18),
+        Icon(
+          ok ? Icons.check_circle : Icons.error_outline,
+          color: color,
+          size: 18,
+        ),
         const SizedBox(width: 6),
         Flexible(
           child: Text(

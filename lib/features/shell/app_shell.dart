@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -76,7 +78,7 @@ class AppShell extends ConsumerWidget {
         appBar: appBar,
         body: Row(
           children: [
-            SizedBox(width: 256, child: menu),
+            SizedBox(width: _sidebarWidth, child: menu),
             const VerticalDivider(width: 1),
             Expanded(child: child),
           ],
@@ -86,6 +88,8 @@ class AppShell extends ConsumerWidget {
     return Scaffold(appBar: appBar, drawer: menu, body: child);
   }
 }
+
+const double _sidebarWidth = 256;
 
 class _NavMenu extends StatelessWidget {
   const _NavMenu({
@@ -112,6 +116,13 @@ class _NavMenu extends StatelessWidget {
       fontWeight: FontWeight.w600,
       letterSpacing: 0.6,
     );
+    // A destination's Row doesn't flex its label, so cap labels at the row
+    // width (drawer − 80 padding) minus its leading gap, icon and gap
+    // (16 + 24 + 12) to ellipsize long names instead of overflowing.
+    final drawerWidth = embedded
+        ? _sidebarWidth
+        : math.min(360.0, MediaQuery.sizeOf(context).width);
+    final labelMaxWidth = math.max(48.0, drawerWidth - 132);
     // NavigationDrawer scrolls its children, so a tall menu stays usable.
     return NavigationDrawer(
       selectedIndex: selectedIndex,
@@ -152,7 +163,14 @@ class _NavMenu extends StatelessWidget {
             NavigationDrawerDestination(
               icon: Icon(entry.icon),
               selectedIcon: Icon(entry.selectedIcon),
-              label: Text(entry.label),
+              label: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: labelMaxWidth),
+                child: Text(
+                  entry.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
         ],
         const SizedBox(height: 12),
@@ -226,6 +244,7 @@ class _UserMenu extends ConsumerWidget {
       tooltip: 'Account',
       icon: CircleAvatar(radius: 16, child: Text(user.initials)),
       onSelected: (value) {
+        if (value == 'account') context.go('/account');
         if (value == 'logout') ref.read(sessionProvider.notifier).logout();
       },
       itemBuilder: (context) => [
@@ -240,6 +259,14 @@ class _UserMenu extends ConsumerWidget {
           ),
         ),
         const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: 'account',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.person_outline),
+            title: Text('My account'),
+          ),
+        ),
         const PopupMenuItem<String>(
           value: 'logout',
           child: ListTile(

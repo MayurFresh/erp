@@ -18,6 +18,7 @@ import '../parties/party_picker.dart';
 import 'allocation.dart';
 import 'payment_model.dart';
 import 'payments_repository.dart';
+import '../../widgets/busy.dart';
 
 /// Records a receipt or a payment and allocates it to open documents.
 class PaymentCreateScreen extends ConsumerStatefulWidget {
@@ -42,8 +43,9 @@ class PaymentCreateScreen extends ConsumerStatefulWidget {
 }
 
 class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
-    with ServerFieldErrors {
+    with ServerFieldErrors, DirtyTracking<PaymentCreateScreen> {
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _tds = TextEditingController();
   late final TextEditingController _amount = TextEditingController(
     text: widget.initialAmount,
   );
@@ -77,7 +79,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
 
   @override
   void dispose() {
-    for (final c in [_amount, _reference, _notes, ..._alloc.values]) {
+    for (final c in [_amount, _tds, _reference, _notes, ..._alloc.values]) {
       c.dispose();
     }
     super.dispose();
@@ -95,6 +97,13 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
   }
 
   double get _amountValue => parseNumber(_amount.text) ?? 0;
+
+  double get _tdsValue =>
+      _kind == PaymentKind.receipt ? (parseNumber(_tds.text) ?? 0) : 0;
+
+  /// What the allocations may add up to: cash received plus the TDS the
+  /// customer deducted (API v1.4).
+  double get _settleValue => _amountValue + _tdsValue;
 
   Map<String, double> get _allocations => {
     for (final MapEntry(:key, value: c) in _alloc.entries)
@@ -140,7 +149,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
   void _autoFill({String? preferred}) {
     final docs = _docs;
     if (docs == null) return;
-    final result = autoAllocate(docs, _amountValue, firstId: preferred);
+    final result = autoAllocate(docs, _settleValue, firstId: preferred);
     for (final doc in docs) {
       final value = result[doc.id];
       _alloc[doc.id]!.text = value == null ? '' : formatPlain(value);
@@ -189,7 +198,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
     final allocations = _allocations;
     final allocError = docs == null
         ? null
-        : allocationsError(docs, allocations, _amountValue);
+        : allocationsError(docs, allocations, _settleValue);
     if (!valid || allocError != null || _party == null) return;
     setState(() => _saving = true);
     try {
@@ -204,6 +213,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
               mode: _mode,
               reference: trimmedOrNull(_reference.text),
               amount: _amountValue,
+              tdsAmount: _tdsValue > 0 ? _tdsValue : null,
               notes: trimmedOrNull(_notes.text),
               // Without the open documents, let the server allocate.
               allocations: docs == null ? null : allocations,
@@ -211,6 +221,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
           );
       ref.bump(moneyKinds);
       if (!mounted) return;
+      markSaved();
       showInfoSnackBar(context, '${_kind.label} ${payment.number} saved');
       context.go('${_kind.basePath}/${payment.id}');
     } catch (e) {
@@ -223,7 +234,9 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final accounts = ref.watch(cashBankAccountsProvider);
     final accountList = accounts.value;
     if (!_accountTouched && accountList != null && accountList.isNotEmpty) {
@@ -234,7 +247,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
     final allocations = _allocations;
     final allocError = docs == null
         ? null
-        : allocationsError(docs, allocations, _amountValue);
+        : allocationsError(docs, allocations, _settleValue);
 
     final details = SectionCard(
       title: 'Details',
@@ -293,6 +306,30 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
               ),
             ],
           ),
+          if (receipt) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _tds,
+              decoration: const InputDecoration(
+                labelText: 'TDS deducted by customer (optional)',
+                helperText:
+                    'Settles invoices along with the amount received and '
+                    'is claimed back as TDS receivable',
+                helperMaxLines: 2,
+                prefixText: '₹ ',
+              ),
+              keyboardType: decimalKeyboard,
+              inputFormatters: [decimalInput()],
+              forceErrorText: serverError('tdsAmount'),
+              onChanged: (_) {
+                clearServerError('tdsAmount');
+                setState(() {
+                  if (!_allocTouched) _autoFill(preferred: _preferredDocId);
+                });
+              },
+              validator: (v) => optionalNumber(v, min: 0),
+            ),
+          ],
           const SizedBox(height: 16),
           FormRow(
             children: [
@@ -370,10 +407,14 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AmountRow('Amount', _amountValue, bold: true),
+          if (_tdsValue > 0) ...[
+            AmountRow('TDS deducted by customer', _tdsValue),
+            AmountRow('Settles', _settleValue),
+          ],
           AmountRow('Allocated', allocated),
           AmountRow(
             'Unallocated (advance)',
-            unallocatedAmount(_amountValue, allocations),
+            unallocatedAmount(_settleValue, allocations),
           ),
           if (_saveError != null) ...[
             const SizedBox(height: 12),
@@ -392,6 +433,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: DocFormLayout(
         title: 'Record ${_kind.label.toLowerCase()}',
         main: [details, allocationCard],
@@ -525,6 +567,7 @@ class _AllocationRow extends StatelessWidget {
         ),
         Text(
           [
+            if (doc.kindLabel.isNotEmpty) doc.kindLabel,
             formatDate(doc.date),
             if (doc.dueDate != null)
               'due ${formatDate(doc.dueDate)}${overdue ? ' (overdue)' : ''}',
@@ -569,7 +612,7 @@ class _AllocationRow extends StatelessWidget {
                   children: [
                     Expanded(child: info),
                     const SizedBox(width: 8),
-                    amounts,
+                    Flexible(child: amounts),
                   ],
                 ),
                 const SizedBox(height: 8),

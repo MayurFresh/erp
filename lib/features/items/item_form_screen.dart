@@ -9,8 +9,10 @@ import '../../widgets/form_support.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
+import '../tax/tax_pickers.dart';
 import 'item_model.dart';
 import 'items_repository.dart';
+import '../../widgets/busy.dart';
 
 /// Create (`/items/new`) or edit (`/items/:id`) an item.
 class ItemFormScreen extends ConsumerWidget {
@@ -39,7 +41,8 @@ class ItemForm extends ConsumerStatefulWidget {
   ConsumerState<ItemForm> createState() => _ItemFormState();
 }
 
-class _ItemFormState extends ConsumerState<ItemForm> with ServerFieldErrors {
+class _ItemFormState extends ConsumerState<ItemForm>
+    with ServerFieldErrors, DirtyTracking<ItemForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _sku;
@@ -54,6 +57,13 @@ class _ItemFormState extends ConsumerState<ItemForm> with ServerFieldErrors {
   bool _saving = false;
 
   bool get _editing => widget.item != null;
+
+  /// SAC codes start with 99 (services); other codes are goods.
+  String? get _rateKind {
+    final hsn = _hsn.text.trim();
+    if (hsn.isEmpty) return null;
+    return hsn.startsWith('99') ? 'services' : 'goods';
+  }
 
   @override
   void initState() {
@@ -115,6 +125,7 @@ class _ItemFormState extends ConsumerState<ItemForm> with ServerFieldErrors {
           : await repo.update(original, input, includeCost: showCost);
       ref.bump(const [DataKind.items, DataKind.stock]);
       if (!mounted) return;
+      markSaved();
       showInfoSnackBar(context, 'Saved "${saved.name}"');
       context.go('/items');
     } catch (e) {
@@ -125,16 +136,18 @@ class _ItemFormState extends ConsumerState<ItemForm> with ServerFieldErrors {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final perms = ref.watch(permissionsProvider);
     final showCost = perms.can(Perm.itemsViewCost);
     final canSave = _editing
         ? perms.can(Perm.itemsEdit)
         : perms.can(Perm.itemsCreate);
-    final rates = {...gstRates, _gstRate}.toList()..sort();
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: FormPage(
         children: [
           Text(
@@ -175,7 +188,10 @@ class _ItemFormState extends ConsumerState<ItemForm> with ServerFieldErrors {
                       ),
                       keyboardType: TextInputType.number,
                       forceErrorText: serverError('hsnCode'),
-                      onChanged: (_) => clearServerError('hsnCode'),
+                      onChanged: (_) {
+                        clearServerError('hsnCode');
+                        setState(() {});
+                      },
                       validator: (v) {
                         final text = v?.trim() ?? '';
                         if (text.isEmpty) return null;
@@ -212,25 +228,15 @@ class _ItemFormState extends ConsumerState<ItemForm> with ServerFieldErrors {
                       onChanged: (_) => clearServerError('unit'),
                       validator: (v) => requiredField(v, 'Unit'),
                     ),
-                    DropdownButtonFormField<double>(
-                      initialValue: _gstRate,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'GST rate'),
-                      forceErrorText: serverError('gstRate'),
-                      items: [
-                        for (final rate in rates)
-                          DropdownMenuItem(
-                            value: rate,
-                            child: Text(formatPercent(rate)),
-                          ),
-                      ],
-                      onChanged: canSave
-                          ? (v) => setState(() {
-                              _gstRate = v ?? _gstRate;
-                              serverErrors = Map.of(serverErrors)
-                                ..remove('gstRate');
-                            })
-                          : null,
+                    GstRatePicker(
+                      value: _gstRate,
+                      kind: _rateKind,
+                      enabled: canSave,
+                      errorText: serverError('gstRate'),
+                      onChanged: (v) => setState(() {
+                        _gstRate = v ?? _gstRate;
+                        serverErrors = Map.of(serverErrors)..remove('gstRate');
+                      }),
                     ),
                   ],
                 ),
@@ -323,7 +329,7 @@ class _ItemFormState extends ConsumerState<ItemForm> with ServerFieldErrors {
             runSpacing: 8,
             children: [
               OutlinedButton(
-                onPressed: _saving ? null : () => context.go('/items'),
+                onPressed: _saving ? null : () => leave('/items'),
                 child: Text(canSave ? 'Cancel' : 'Back'),
               ),
               if (canSave)

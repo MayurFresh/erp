@@ -17,6 +17,7 @@ import '../parties/party_model.dart';
 import '../parties/party_picker.dart';
 import 'invoice_model.dart';
 import 'invoices_repository.dart';
+import '../../widgets/busy.dart';
 
 /// New sales invoice with live totals from `POST /invoices/preview`.
 class InvoiceCreateScreen extends ConsumerStatefulWidget {
@@ -31,7 +32,9 @@ class InvoiceCreateScreen extends ConsumerStatefulWidget {
 }
 
 class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
-    with LivePreview<InvoiceCreateScreen, InvoiceDraft, Invoice> {
+    with
+        LivePreview<InvoiceCreateScreen, InvoiceDraft, Invoice>,
+        DirtyTracking<InvoiceCreateScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notes = TextEditingController();
   final List<LineDraft> _lines = [];
@@ -132,6 +135,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
     });
     final valid = _formKey.currentState!.validate();
     if (_lines.isEmpty) {
+      markSaved();
       showInfoSnackBar(context, 'Add at least one item.');
       return;
     }
@@ -160,7 +164,9 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     // Default to the only location when there is just one.
     final locations = ref.watch(locationsLookupProvider).value;
     if (_locationId == null && locations != null) {
@@ -229,6 +235,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: DocFormLayout(
         title: 'New invoice',
         main: [

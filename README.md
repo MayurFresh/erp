@@ -24,6 +24,12 @@ Web and mobile are the same Flutter app, so both always show the same data from 
 - **Double-entry accounting**: every document posts a balanced journal automatically (the database refuses unbalanced entries); stock is valued at weighted-average cost; chart of accounts, account and party ledgers, day book, manual journals.
 - **Reports**: trial balance, profit & loss, balance sheet, sales and purchase registers, GST summary (rate-wise, B2B/B2C, HSN, input credit, net payable), stock valuation, receivable/payable ageing.
 - Company profile with bank and UPI details, role editor, user editing and password resets, dashboard, audit log.
+- **Construction pack**:
+  - Projects tied to sites, with a BOQ (paste from Excel), and progress weighted by BOQ amount.
+  - Material indents (raise → approve → fulfil by transfer or purchase, edit and resubmit after rejection) and material issues to site, booked at average cost.
+  - Daily progress reports with photos, approval and rejection.
+  - Workers and labour contractors, daily attendance with overtime (OT), and wage sheets (OT at 2×, advance recovery, payment posted to the books).
+  - A project cost sheet: material + labour + expenses.
 - Every customer's data is isolated by PostgreSQL row-level security, not just by application code.
 
 ## Requirements
@@ -57,6 +63,8 @@ npm run dev         # API on http://localhost:8080 (restarts on file changes)
 
 Check it: open <http://localhost:8080/health>.
 
+After pulling new code, run `npm run db:migrate` to apply new database migrations. Existing data is kept. To reload the demo data from scratch, drop the `progen` database, then run `npm run db:setup` and `npm run db:seed` again.
+
 ## 2. Run the app
 
 ```bash
@@ -84,12 +92,13 @@ All use password `Demo@1234`:
 | `owner@demo.in` | Everything |
 | `accountant@demo.in` | Invoices, parties, stock values and audit for all locations |
 | `sales@demo.in` | Invoices and customers for Central Warehouse only, no cost prices |
-| `supervisor@demo.in` | Stock and dashboard for Site A — Tower 1 only |
+| `supervisor@demo.in` | Stock, indents, DPRs and attendance for Site A — Tower 1 only |
+| `pm@demo.in` | Project Manager: projects, BOQ, approvals, labour and wage sheets |
 
 ## Tests
 
 ```bash
-cd backend && npm test && npm run typecheck   # API: GST maths, invoice flow, roles, tenant isolation
+cd backend && npm test && npm run typecheck   # API: GST, accounting, construction, roles, tenant isolation
 flutter analyze && flutter test               # app
 # End-to-end check that the app's API client works against the running backend:
 PROGEN_API=http://localhost:8080/api/v1 flutter test test/live_api_test.dart

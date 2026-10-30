@@ -19,17 +19,25 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const STATUSES = ['draft', 'submitted', 'approved', 'rejected', 'closed'] as const;
 
+const indentLines = z.array(z.object({
+  itemId: z.uuid(),
+  qty: qtyField.refine((v) => v > 0, 'Must be more than zero'),
+  boqLineId: z.uuid().nullable().optional(),
+})).min(1, 'Add at least one item').max(200);
 const createBody = z.object({
   locationId: z.uuid(),
   requiredBy: dateField.optional(),
   notes: optionalText(1000),
   submit: z.boolean().optional(),
-  lines: z.array(z.object({
-    itemId: z.uuid(),
-    qty: qtyField.refine((v) => v > 0, 'Must be more than zero'),
-    boqLineId: z.uuid().nullable().optional(),
-  })).min(1, 'Add at least one item').max(200),
+  lines: indentLines,
 });
+const updateBody = z.object({
+  locationId: z.uuid(),
+  requiredBy: dateField.optional(),
+  notes: optionalText(1000),
+  lines: indentLines,
+});
+type IndentLineInput = z.infer<typeof indentLines>[number];
 const approveBody = z.object({
   lines: z.array(z.object({
     lineId: z.uuid(),
@@ -50,8 +58,10 @@ async function loadIndents(tx: Tx, ids: string[]) {
     .innerJoin('locations as l', 'l.id', 'n.location_id')
     .innerJoin('users as u', 'u.id', 'n.created_by')
     .leftJoin('users as a', 'a.id', 'n.approved_by')
+    .leftJoin('users as r', 'r.id', 'n.rejected_by')
     .selectAll('n')
-    .select(['l.name as location_name', 'l.project_id', 'u.name as created_by_name', 'a.name as approved_by_name'])
+    .select(['l.name as location_name', 'l.project_id', 'u.name as created_by_name',
+      'a.name as approved_by_name', 'r.name as rejected_by_name'])
     .where('n.id', 'in', ids).execute();
   const fulfilled = tx.selectFrom('indent_fulfilments')
     .select((eb) => ['indent_line_id', eb.fn.sum<number>('qty').as('qty')])
@@ -74,6 +84,7 @@ async function loadIndents(tx: Tx, ids: string[]) {
       requiredBy: n.required_by, status: n.status, notes: n.notes, createdAt: n.created_at,
       createdBy: { id: n.created_by, name: n.created_by_name },
       approvedAt: n.approved_at, approvedBy: n.approved_by ? { id: n.approved_by, name: n.approved_by_name! } : null,
+      rejectedAt: n.rejected_at, rejectedBy: n.rejected_by ? { id: n.rejected_by, name: n.rejected_by_name! } : null,
       rejectReason: n.reject_reason,
       isFulfilled: (n.status === 'approved' || n.status === 'closed')
         && mine.every((l) => l.approvedQty !== null && l.fulfilledQty + 0.0005 >= l.approvedQty),
@@ -92,6 +103,32 @@ async function getIndent(tx: Tx, ctx: RequestContext, id: string) {
 
 function requireStatus(n: { status: string; number: string }, wanted: string, action: string) {
   if (n.status !== wanted) throw conflict(`Indent ${n.number} is ${n.status}; only ${wanted} indents can be ${action}.`, 'CONFLICT');
+}
+
+function requireEditableStatus(n: { status: string; number: string }) {
+  if (!['draft', 'rejected'].includes(n.status)) {
+    throw conflict(`Indent ${n.number} is ${n.status}; only draft or rejected indents can be edited.`, 'CONFLICT');
+  }
+}
+
+/** Validates that every requested item is active and every BOQ line belongs to the location's project. */
+async function validateIndentLines(
+  tx: Tx,
+  ctx: RequestContext,
+  location: { project_id: string | null; name: string },
+  lines: IndentLineInput[],
+) {
+  const itemIds = [...new Set(lines.map((l) => l.itemId))];
+  const items = await tx.selectFrom('items').select(['id', 'name', 'is_active'])
+    .where('company_id', '=', ctx.companyId).where('id', 'in', itemIds).execute();
+  lines.forEach((line, index) => {
+    const item = items.find((candidate) => candidate.id === line.itemId);
+    if (!item) throw badRequest(`Line ${index + 1}: item not found.`, { [`lines.${index}.itemId`]: 'Not found' });
+    if (!item.is_active) throw badRequest(`Line ${index + 1}: ${item.name} is inactive.`, { [`lines.${index}.itemId`]: 'Inactive' });
+  });
+  await boqLinesAt(tx, location, lines.flatMap((line, index) => (
+    line.boqLineId ? [{ id: line.boqLineId, field: `lines.${index}.boqLineId` }] : []
+  )));
 }
 
 // Fulfilment through transfers and purchases ----------------------------------------------------
@@ -194,15 +231,7 @@ export async function indentRoutes(app: FastifyInstance) {
       if (!['site', 'store'].includes(location.type)) throw badRequest('Indents are raised by a site or a store.', { locationId: 'Not a site or store' });
       if (!location.is_active) throw badRequest('This location is inactive.', { locationId: 'Inactive' });
 
-      const itemIds = [...new Set(body.lines.map((l) => l.itemId))];
-      const items = await tx.selectFrom('items').select(['id', 'name', 'is_active'])
-        .where('company_id', '=', ctx.companyId).where('id', 'in', itemIds).execute();
-      body.lines.forEach((l, i) => {
-        const item = items.find((x) => x.id === l.itemId);
-        if (!item) throw badRequest(`Line ${i + 1}: item not found.`, { [`lines.${i}.itemId`]: 'Not found' });
-        if (!item.is_active) throw badRequest(`Line ${i + 1}: ${item.name} is inactive.`, { [`lines.${i}.itemId`]: 'Inactive' });
-      });
-      await boqLinesAt(tx, location, body.lines.flatMap((l, i) => (l.boqLineId ? [{ id: l.boqLineId, field: `lines.${i}.boqLineId` }] : [])));
+      await validateIndentLines(tx, ctx, location, body.lines);
 
       const today = todayIst();
       const number = await nextNumber(tx, ctx, 'indent', financialYear(today));
@@ -222,15 +251,53 @@ export async function indentRoutes(app: FastifyInstance) {
     return reply.status(201).send(indent);
   });
 
+  app.put<{ Params: { id: string } }>('/indents/:id', async (req) => {
+    const ctx = req.ctx;
+    ctx.require('indents.create', 'indents.approve');
+    const id = parse(z.uuid(), req.params.id);
+    const body = parse(updateBody, req.body);
+    return ctx.tx(async (tx) => {
+      const before = await getIndent(tx, ctx, id);
+      if (!ctx.can('indents.approve') && before.created_by !== ctx.userId) {
+        throw forbidden('Only the person who raised this indent or an approver can edit it.');
+      }
+      requireEditableStatus(before);
+
+      const location = await getLocation(tx, ctx, body.locationId);
+      if (!['site', 'store'].includes(location.type)) throw badRequest('Indents are raised by a site or a store.', { locationId: 'Not a site or store' });
+      if (!location.is_active) throw badRequest('This location is inactive.', { locationId: 'Inactive' });
+      await validateIndentLines(tx, ctx, location, body.lines);
+
+      const old = (await loadIndents(tx, [id]))[0]!;
+      await tx.updateTable('indents').set({
+        location_id: location.id,
+        required_by: body.requiredBy ?? null,
+        notes: body.notes ?? null,
+      }).where('id', '=', id).execute();
+      await tx.deleteFrom('indent_lines').where('indent_id', '=', id).execute();
+      await tx.insertInto('indent_lines').values(body.lines.map((line, index) => ({
+        tenant_id: ctx.tenantId, indent_id: id, line_no: index + 1, item_id: line.itemId,
+        qty: line.qty, approved_qty: null, boq_line_id: line.boqLineId ?? null,
+      }))).execute();
+      const after = (await loadIndents(tx, [id]))[0]!;
+      await writeAudit(tx, auditOf(ctx), 'indent', id, 'update', old, after);
+      return after;
+    });
+  });
+
   app.post<{ Params: { id: string } }>('/indents/:id/submit', async (req) => {
     const ctx = req.ctx;
     ctx.require('indents.create');
     const id = parse(z.uuid(), req.params.id);
     return ctx.tx(async (tx) => {
       const n = await getIndent(tx, ctx, id);
-      requireStatus(n, 'draft', 'submitted');
-      await tx.updateTable('indents').set({ status: 'submitted', submitted_at: new Date() }).where('id', '=', id).execute();
-      await writeAudit(tx, auditOf(ctx), 'indent', id, 'submit', { status: 'draft' }, { status: 'submitted' });
+      if (!['draft', 'rejected'].includes(n.status)) {
+        throw conflict(`Indent ${n.number} is ${n.status}; only draft or rejected indents can be submitted.`, 'CONFLICT');
+      }
+      await tx.updateTable('indents').set({
+        status: 'submitted', submitted_at: new Date(), rejected_by: null, rejected_at: null, reject_reason: null,
+      }).where('id', '=', id).execute();
+      await writeAudit(tx, auditOf(ctx), 'indent', id, 'submit', { status: n.status }, { status: 'submitted' });
       return (await loadIndents(tx, [id]))[0];
     });
   });

@@ -148,7 +148,8 @@ class LineEditor extends StatelessWidget {
       'Disc %',
       'discountPct',
       decimals: 2,
-      validator: (v) => optionalNumber(v, min: 0, max: 100),
+      validator: (v) =>
+          validatePercent(v, isRequired: false, label: 'Discount'),
     );
     final title = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -439,14 +440,17 @@ class DocFormLayout extends StatelessWidget {
   );
 }
 
-/// Shows a date picker over the usual financial-year range.
+/// Date picker for document dates: 2000-01-01 to today + 365 days.
 Future<DateTime?> pickDocDate(BuildContext context, DateTime initial) {
-  final now = DateTime.now();
+  final last = maxDocDate();
+  final clamped = initial.isBefore(kMinDocDate)
+      ? kMinDocDate
+      : (initial.isAfter(last) ? last : initial);
   return showDatePicker(
     context: context,
-    initialDate: initial,
-    firstDate: DateTime(now.year - 2, 4),
-    lastDate: DateTime(now.year + 1, 3, 31),
+    initialDate: clamped,
+    firstDate: kMinDocDate,
+    lastDate: last,
   );
 }
 

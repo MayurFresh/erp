@@ -1,10 +1,14 @@
 import type { Tx } from '../db/database.ts';
+import { conflict } from '../lib/errors.ts';
 
 export interface Who { tenantId: string; companyId: string; userId: string | null }
 
 export type VoucherType =
   | 'sales' | 'purchase' | 'receipt' | 'payment' | 'credit_note' | 'expense' | 'stock' | 'transfer' | 'journal'
-  | 'issue' | 'wages';
+  | 'issue' | 'wages'
+  | 'labour_advance' | 'contractor_advance' | 'ra_bill' | 'retention_release' | 'demand' | 'possession'
+  | 'tds_challan' | 'bank_entry'
+  | 'gst_payment' | 'gst_setoff' | 'tax_payment' | 'asset_capitalise' | 'depreciation' | 'asset_disposal';
 
 /** A journal line. A signed `amount` is a debit when positive and a credit when negative. */
 export interface JLine { accountId: string; amount: number; partyId?: string | null; locationId?: string | null }
@@ -15,6 +19,15 @@ export interface JEntry {
 
 const toPaise = (rupees: number) => Math.round(rupees * 100);
 
+/** Rejects a posting dated on or before the company's `books_locked_until` (409 PERIOD_LOCKED). */
+export async function assertPeriodOpen(tx: Tx, companyId: string, date: string): Promise<void> {
+  const c = await tx.selectFrom('companies').select('books_locked_until').where('id', '=', companyId).executeTakeFirst();
+  const locked = c?.books_locked_until;
+  if (locked && date <= locked) {
+    throw conflict(`Books are locked up to ${locked}. Ask an owner to unlock the period first.`, 'PERIOD_LOCKED', { lockedUntil: locked });
+  }
+}
+
 /**
  * Posts a balanced journal entry. Zero lines are dropped; the database checks the
  * balance again at commit, so an unbalanced entry can never be saved.
@@ -24,6 +37,7 @@ export async function postJournal(tx: Tx, who: Who, e: JEntry): Promise<string> 
   const sum = lines.reduce((s, l) => s + l.paise, 0);
   if (sum !== 0) throw new Error(`Unbalanced journal for ${e.voucherType} ${e.number ?? ''}: off by ${sum / 100}`);
   if (lines.length < 2) throw new Error(`Journal for ${e.voucherType} ${e.number ?? ''} needs at least two lines`);
+  await assertPeriodOpen(tx, who.companyId, e.date);
 
   const entry = await tx.insertInto('journal_entries').values({
     tenant_id: who.tenantId, company_id: who.companyId, entry_date: e.date, voucher_type: e.voucherType,
@@ -40,6 +54,7 @@ export async function postJournal(tx: Tx, who: Who, e: JEntry): Promise<string> 
 
 /** Posts the mirror image of one entry (debits become credits) and links it to the original. */
 export async function reverseEntry(tx: Tx, who: Who, entryId: string, date: string, narration: string | null): Promise<string> {
+  await assertPeriodOpen(tx, who.companyId, date);
   const original = await tx.selectFrom('journal_entries').selectAll().where('id', '=', entryId).executeTakeFirstOrThrow();
   const lines = await tx.selectFrom('journal_lines').selectAll().where('entry_id', '=', entryId).orderBy('line_no').execute();
   const reversal = await tx.insertInto('journal_entries').values({

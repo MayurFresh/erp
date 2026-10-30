@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/providers.dart';
 import '../../widgets/form_support.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
@@ -21,6 +22,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _password = TextEditingController();
   bool _busy = false;
   bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    final notice = ref.read(apiClientProvider).sessionNotice;
+    if (notice != null) {
+      ref.read(apiClientProvider).sessionNotice = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showInfoSnackBar(context, notice);
+      });
+    }
+  }
 
   @override
   void dispose() {

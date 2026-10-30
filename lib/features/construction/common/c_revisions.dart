@@ -6,7 +6,19 @@ import '../../../core/providers.dart';
 ///
 /// The app-wide [DataKind] enum lives in core; the pack keeps its own so it
 /// can be added without editing shared files.
-enum CKind { projects, boq, indents, issues, dprs, workers, attendance, wages }
+enum CKind {
+  projects,
+  boq,
+  indents,
+  issues,
+  dprs,
+  workers,
+  attendance,
+  wages,
+  labourAdvances,
+  workOrders,
+  raBills,
+}
 
 final cRevisionProvider =
     NotifierProvider.family<CRevisionNotifier, int, CKind>(

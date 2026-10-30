@@ -15,7 +15,11 @@ final chartOfAccountsProvider = FutureProvider.autoDispose<List<Account>>((
   ref,
 ) {
   ref.watch(activeCompanyIdProvider);
-  ref.watchRevisions(const [...moneyKinds, DataKind.accounts, DataKind.expenses]);
+  ref.watchRevisions(const [
+    ...moneyKinds,
+    DataKind.accounts,
+    DataKind.expenses,
+  ]);
   return ref.watch(accountingRepositoryProvider).allAccounts();
 });
 
@@ -59,7 +63,10 @@ class AccountingRepository {
 
   /// `GET /accounts` returns the whole chart (ordered by code); later pages
   /// are fetched if a server ever pages it.
-  Future<List<Account>> allAccounts({String? type, bool activeOnly = false}) async {
+  Future<List<Account>> allAccounts({
+    String? type,
+    bool activeOnly = false,
+  }) async {
     final result = <Account>[];
     var offset = 0;
     for (var guard = 0; guard < 20; guard++) {
@@ -80,8 +87,9 @@ class AccountingRepository {
     return result;
   }
 
-  Future<Account> create(NewAccount account) async =>
-      Account.fromJson(await _api.postJson('/accounts', body: account.toJson()));
+  Future<Account> create(NewAccount account) async => Account.fromJson(
+    await _api.postJson('/accounts', body: account.toJson()),
+  );
 
   /// Sends only what changed. System accounts may only be renamed, so
   /// `code` and `isActive` are never sent for them.
@@ -95,7 +103,9 @@ class AccountingRepository {
       if (name != null && name != original.name) 'name': name,
       if (!original.isSystem && code != null && code != original.code)
         'code': code,
-      if (!original.isSystem && isActive != null && isActive != original.isActive)
+      if (!original.isSystem &&
+          isActive != null &&
+          isActive != original.isActive)
         'isActive': isActive,
     };
     if (body.isEmpty) return original;

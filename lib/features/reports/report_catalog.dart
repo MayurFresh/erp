@@ -2,8 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../core/permissions.dart';
 
-/// One report: its route segment under `/reports`, hub card text and the
-/// permissions it needs (all of them).
+/// Section root of the financial statements (needs `accounts.view`).
+const String kFinancialsPath = '/financials';
+
+/// Section root of the registers, GST, ageing and valuation reports (needs
+/// `reports.view`).
+const String kReportsPath = '/reports';
+
+/// One report: its route, hub card text and the permissions it needs (all
+/// of them). Financial statements live under [kFinancialsPath], the rest
+/// under [kReportsPath], so each section's menu permission covers its
+/// reports.
 class ReportInfo {
   const ReportInfo({
     required this.name,
@@ -12,9 +21,10 @@ class ReportInfo {
     required this.icon,
     required this.group,
     required this.allOf,
+    this.route,
   });
 
-  /// Route segment: `/reports/<name>`.
+  /// Route segment: `<section>/<name>`.
   final String name;
   final String title;
   final String description;
@@ -22,7 +32,14 @@ class ReportInfo {
   final String group;
   final List<String> allOf;
 
-  String get path => '/reports/$name';
+  /// Full app path when the report lives outside the report sections.
+  final String? route;
+
+  bool get isFinancialStatement => group == kFinancialStatements;
+
+  /// `/financials/trial-balance`, `/reports/gst-summary`, …
+  String get path =>
+      route ?? '${isFinancialStatement ? kFinancialsPath : kReportsPath}/$name';
 
   bool allowed(PermissionSet permissions) => allOf.every(permissions.can);
 }
@@ -76,10 +93,20 @@ const List<ReportInfo> reportCatalog = [
   ReportInfo(
     name: 'gst-summary',
     title: 'GST summary',
-    description: 'Outward and inward supplies by rate, HSN summary, net payable',
+    description:
+        'Outward and inward supplies by rate, HSN summary, net payable',
     icon: Icons.percent_outlined,
     group: kRegistersAndGst,
     allOf: [Perm.reportsView],
+  ),
+  ReportInfo(
+    name: 'gst-returns',
+    title: 'GST returns',
+    description: 'GSTR-1 data, GSTR-3B form and GSTN JSON for a month',
+    icon: Icons.description_outlined,
+    group: kRegistersAndGst,
+    allOf: ['gst.view'],
+    route: '/gst-returns',
   ),
   ReportInfo(
     name: 'receivables-ageing',
@@ -104,6 +131,16 @@ const List<ReportInfo> reportCatalog = [
     icon: Icons.inventory_2_outlined,
     group: kPartiesAndStock,
     allOf: [Perm.reportsView, Perm.itemsViewCost],
+  ),
+  ReportInfo(
+    name: 'msme-dues',
+    title: 'MSME dues',
+    description:
+        'Unpaid micro and small supplier bills, overdue days and interest',
+    icon: Icons.store_outlined,
+    group: kPartiesAndStock,
+    allOf: [Perm.reportsView],
+    route: '/msme-dues',
   ),
 ];
 

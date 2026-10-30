@@ -18,3 +18,5 @@ export const forbidden = (message = 'You do not have permission to do this.') =>
 export const notFound = (what = 'Record') => new AppError(404, 'NOT_FOUND', `${what} not found.`);
 export const conflict = (message: string, code = 'CONFLICT', details?: Record<string, unknown>) =>
   new AppError(409, code, message, details);
+export const sessionRevoked = (message = 'Your access has changed. Please sign in again.') =>
+  new AppError(401, 'SESSION_REVOKED', message);

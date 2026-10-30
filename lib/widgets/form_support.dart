@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/validators.dart';
 import 'states.dart';
+
+export '../core/validators.dart';
 
 /// Maps `VALIDATION_ERROR` details onto form fields via `forceErrorText`.
 mixin ServerFieldErrors<T extends StatefulWidget> on State<T> {
@@ -24,27 +27,40 @@ mixin ServerFieldErrors<T extends StatefulWidget> on State<T> {
   }
 }
 
-/// Allows digits with up to [decimals] decimal places (optionally signed).
-TextInputFormatter decimalInput({int decimals = 2, bool signed = false}) {
-  final sign = signed ? '-?' : '';
-  final fraction = decimals > 0 ? '(\\.\\d{0,$decimals})?' : '';
-  return FilteringTextInputFormatter.allow(RegExp('^$sign\\d*$fraction'));
-}
+/// Digits with up to [decimals] decimal places (optionally signed). Typed or
+/// pasted grouping ("1,00,000") is accepted and stripped; letters are
+/// rejected. [max] defaults to the contract limit (1e9 for quantities with
+/// 3 decimals, 1e12 otherwise).
+TextInputFormatter decimalInput({
+  int decimals = 2,
+  bool signed = false,
+  double? max,
+}) => NumberInputFormatter(
+  decimals: decimals,
+  signed: signed,
+  max: max ?? (decimals == 3 ? kMaxQty : kMaxMoney),
+);
 
 const TextInputType decimalKeyboard = TextInputType.numberWithOptions(
   decimal: true,
 );
 
-double? parseNumber(String text) => double.tryParse(text.trim());
+double? parseNumber(String text) => parseIndianNumber(text);
 
 String? requiredField(String? value, [String label = 'This field']) =>
     (value == null || value.trim().isEmpty) ? '$label is required' : null;
 
-String? requiredNumber(String? value, {String label = 'Value', double? min}) {
+String? requiredNumber(
+  String? value, {
+  String label = 'Value',
+  double? min,
+  double max = kMaxMoney,
+}) {
   final text = value?.trim() ?? '';
   if (text.isEmpty) return '$label is required';
-  final number = double.tryParse(text);
+  final number = parseIndianNumber(text);
   if (number == null) return 'Enter a number';
+  if (number.abs() > max) return '$label is too large';
   if (min != null && number < min) return '$label must be at least $min';
   return null;
 }
@@ -52,19 +68,12 @@ String? requiredNumber(String? value, {String label = 'Value', double? min}) {
 String? optionalNumber(String? value, {double? min, double? max}) {
   final text = value?.trim() ?? '';
   if (text.isEmpty) return null;
-  final number = double.tryParse(text);
+  final number = parseIndianNumber(text);
   if (number == null) return 'Enter a number';
+  if (number.abs() > kMaxMoney) return 'Value is too large';
   if (min != null && number < min) return 'Must be at least $min';
   if (max != null && number > max) return 'Must be at most $max';
   return null;
-}
-
-final RegExp _email = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-
-String? validateEmail(String? value, {bool required = true}) {
-  final text = value?.trim() ?? '';
-  if (text.isEmpty) return required ? 'Email is required' : null;
-  return _email.hasMatch(text) ? null : 'Enter a valid email';
 }
 
 String? trimmedOrNull(String text) {

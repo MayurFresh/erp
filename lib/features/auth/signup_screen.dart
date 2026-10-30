@@ -115,6 +115,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen>
                     labelText: 'Phone (optional)',
                   ),
                   keyboardType: TextInputType.phone,
+                  validator: validatePhone,
                   forceErrorText: serverError('phone'),
                   onChanged: (_) => clearServerError('phone'),
                 ),

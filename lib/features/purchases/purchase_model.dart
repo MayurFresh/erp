@@ -39,6 +39,16 @@ class Purchase implements TaxSummary {
     this.cancelReason,
     this.lines,
     this.settlements,
+    this.tdsSectionId,
+    this.tdsSectionCode,
+    this.tdsBase = 0,
+    this.tdsRate = 0,
+    this.tdsAmount = 0,
+    this.netPayable,
+    this.reverseCharge = false,
+    this.rcmSelfInvoiceNo,
+    this.msmeDueDate,
+    this.msmeCategory,
   });
 
   factory Purchase.fromJson(Json json) => Purchase(
@@ -75,6 +85,16 @@ class Purchase implements TaxSummary {
     cancelReason: asStringOrNull(json['cancelReason']),
     lines: TaxLine.listOrNull(json['lines']),
     settlements: Settlement.listOrNull(json['settlements']),
+    tdsSectionId: asStringOrNull(json['tdsSectionId']),
+    tdsSectionCode: asStringOrNull(json['tdsSectionCode']),
+    tdsBase: asDouble(json['tdsBase']),
+    tdsRate: asDouble(json['tdsRate']),
+    tdsAmount: asDouble(json['tdsAmount']),
+    netPayable: asDoubleOrNull(json['netPayable']),
+    reverseCharge: asBool(json['reverseCharge']),
+    rcmSelfInvoiceNo: asStringOrNull(json['rcmSelfInvoiceNo']),
+    msmeDueDate: asStringOrNull(json['msmeDueDate']),
+    msmeCategory: asStringOrNull(json['msmeCategory']),
   );
 
   /// `null` in previews.
@@ -126,6 +146,25 @@ class Purchase implements TaxSummary {
   /// Detail only (payments).
   final List<Settlement>? settlements;
 
+  final String? tdsSectionId;
+  final String? tdsSectionCode;
+  final double tdsBase;
+  final double tdsRate;
+  final double tdsAmount;
+
+  /// `total − tdsAmount` (API v1.4); null from an older server.
+  final double? netPayable;
+  final bool reverseCharge;
+  final String? rcmSelfInvoiceNo;
+  final String? msmeDueDate;
+
+  /// `micro`/`small`/`medium` when the supplier is MSME.
+  final String? msmeCategory;
+
+  double get payable => netPayable ?? (total - tdsAmount);
+  bool get isMsmeMicroSmall =>
+      msmeCategory == 'micro' || msmeCategory == 'small';
+
   @override
   bool get isInterState => supplyType == 'inter';
   bool get isCancelled => status == DocStatus.cancelled;
@@ -141,8 +180,14 @@ class PurchaseDraft {
     this.supplierInvoiceNo,
     this.supplierInvoiceDate,
     this.notes,
+    this.tdsSectionId,
+    this.reverseCharge = false,
   });
 
+  /// Always sent: an explicit null means "no TDS" (the server would
+  /// otherwise fall back to the vendor's section).
+  final String? tdsSectionId;
+  final bool reverseCharge;
   final String locationId;
   final String partyId;
   final String? billDate;
@@ -159,5 +204,5 @@ class PurchaseDraft {
     'supplierInvoiceDate': supplierInvoiceDate,
     'notes': notes,
     'lines': [for (final line in lines) line.toJson()],
-  });
+  })..addAll({'tdsSectionId': tdsSectionId, 'reverseCharge': reverseCharge});
 }

@@ -12,7 +12,7 @@ import { qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
 import { nextNumber } from '../lib/series.ts';
-import { parse } from '../lib/validate.ts';
+import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
@@ -23,7 +23,7 @@ const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 
 const createBody = z.object({
   invoiceId: z.uuid(),
-  noteDate: dateField.optional(),
+  noteDate: docDate.optional(),
   reason: z.string().trim().min(3, 'Give a reason').max(300),
   restock: z.boolean().optional(),
   lines: z.array(z.object({ invoiceLineId: z.uuid(), qty: qtyField.refine((v) => v > 0, 'Must be more than zero') }))
@@ -54,7 +54,7 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody, lock: bool
   let linesQ = tx.selectFrom('invoice_lines as il').innerJoin('items as i', 'i.id', 'il.item_id')
     .selectAll('il').select(['i.track_stock', 'i.name as item_name'])
     .where('il.invoice_id', '=', invoice.id);
-  if (lock) linesQ = linesQ.forUpdate();
+  if (lock) linesQ = linesQ.orderBy('il.id').forUpdate('il');
   const invLines = await linesQ.execute();
 
   const seen = new Set<string>();

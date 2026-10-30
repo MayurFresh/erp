@@ -56,7 +56,14 @@ class ExpenseDetailScreen extends ConsumerWidget {
         children: [
           DocHeader(
             title: e.number,
-            pills: DocStatusPill(status: e.status),
+            pills: Wrap(
+              spacing: 6,
+              children: [
+                DocStatusPill(status: e.status),
+                if (e.reverseCharge)
+                  const Pill('Reverse charge', color: Colors.purple),
+              ],
+            ),
             actions: [
               if (e.status == DocStatus.posted &&
                   perms.can(Perm.expensesCancel))
@@ -97,6 +104,24 @@ class ExpenseDetailScreen extends ConsumerWidget {
                 ],
                 const Divider(),
                 AmountRow('Total', e.total, emphasize: true),
+                if (e.tdsAmount > 0) ...[
+                  AmountRow(
+                    'TDS ${e.tdsSectionCode ?? ''} @ ${formatPercent(e.tdsRate)}',
+                    -e.tdsAmount,
+                  ),
+                  AmountRow('Net paid', e.paid, emphasize: true),
+                ],
+                if (e.reverseCharge) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Reverse charge: the GST above is paid by you directly, '
+                      'not added to the amount paid.'
+                      '${e.rcmSelfInvoiceNo == null ? '' : '\nSelf-invoice ${e.rcmSelfInvoiceNo}'}',
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

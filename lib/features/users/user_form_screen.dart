@@ -10,6 +10,7 @@ import '../locations/location_model.dart';
 import '../locations/locations_repository.dart';
 import 'user_models.dart';
 import 'users_repository.dart';
+import '../../widgets/busy.dart';
 
 /// `POST /users`: a new user with one role and a location scope.
 class UserFormScreen extends ConsumerStatefulWidget {
@@ -20,7 +21,7 @@ class UserFormScreen extends ConsumerStatefulWidget {
 }
 
 class _UserFormScreenState extends ConsumerState<UserFormScreen>
-    with ServerFieldErrors {
+    with ServerFieldErrors, DirtyTracking<UserFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _email = TextEditingController();
@@ -69,6 +70,7 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
           );
       ref.bump(const [DataKind.users]);
       if (!mounted) return;
+      markSaved();
       showInfoSnackBar(context, 'Created ${user.name}');
       context.go('/users');
     } catch (e) {
@@ -79,13 +81,16 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => track(_buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     final roles = ref.watch(rolesProvider);
     final locations = ref.watch(locationsLookupProvider);
     final theme = Theme.of(context);
 
     return Form(
       key: _formKey,
+      onChanged: markDirty,
       child: FormPage(
         children: [
           Text('New user', style: theme.textTheme.headlineSmall),
@@ -119,6 +124,7 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
                         labelText: 'Phone (optional)',
                       ),
                       keyboardType: TextInputType.phone,
+                      validator: validatePhone,
                       forceErrorText: serverError('phone'),
                       onChanged: (_) => clearServerError('phone'),
                     ),
@@ -205,7 +211,7 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
             runSpacing: 8,
             children: [
               OutlinedButton(
-                onPressed: _saving ? null : () => context.go('/users'),
+                onPressed: _saving ? null : () => leave('/users'),
                 child: const Text('Cancel'),
               ),
               BusyButton(busy: _saving, onPressed: _save, label: 'Create user'),

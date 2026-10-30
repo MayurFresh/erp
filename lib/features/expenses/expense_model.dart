@@ -27,6 +27,14 @@ class Expense {
     this.createdBy,
     this.cancelledAt,
     this.cancelReason,
+    this.tdsSectionId,
+    this.tdsSectionCode,
+    this.tdsBase = 0,
+    this.tdsRate = 0,
+    this.tdsAmount = 0,
+    this.netPaid,
+    this.reverseCharge = false,
+    this.rcmSelfInvoiceNo,
   });
 
   factory Expense.fromJson(Json json) => Expense(
@@ -54,6 +62,14 @@ class Expense {
     createdBy: UserRef.maybe(json['createdBy']),
     cancelledAt: asDateTimeOrNull(json['cancelledAt']),
     cancelReason: asStringOrNull(json['cancelReason']),
+    tdsSectionId: asStringOrNull(json['tdsSectionId']),
+    tdsSectionCode: asStringOrNull(json['tdsSectionCode']),
+    tdsBase: asDouble(json['tdsBase']),
+    tdsRate: asDouble(json['tdsRate']),
+    tdsAmount: asDouble(json['tdsAmount']),
+    netPaid: asDoubleOrNull(json['netPaid']),
+    reverseCharge: asBool(json['reverseCharge']),
+    rcmSelfInvoiceNo: asStringOrNull(json['rcmSelfInvoiceNo']),
   );
 
   final String id;
@@ -87,6 +103,19 @@ class Expense {
   final DateTime? cancelledAt;
   final String? cancelReason;
 
+  final String? tdsSectionId;
+  final String? tdsSectionCode;
+  final double tdsBase;
+  final double tdsRate;
+  final double tdsAmount;
+
+  /// `total − tdsAmount` (API v1.4).
+  final double? netPaid;
+  final bool reverseCharge;
+  final String? rcmSelfInvoiceNo;
+
+  double get paid => netPaid ?? (total - tdsAmount);
+
   double get taxTotal => cgst + sgst + igst;
   bool get isCancelled => status == DocStatus.cancelled;
 }
@@ -102,8 +131,16 @@ class ExpenseDraft {
     this.expenseDate,
     this.gstRate,
     this.partyId,
+    this.tdsSectionId,
+    this.sendTdsSection = false,
+    this.reverseCharge = false,
   });
 
+  /// Sent (even as null = no TDS) only when [sendTdsSection]; both TDS and
+  /// reverse charge need a [partyId].
+  final String? tdsSectionId;
+  final bool sendTdsSection;
+  final bool reverseCharge;
   final String locationId;
   final String accountId;
   final String description;
@@ -113,16 +150,20 @@ class ExpenseDraft {
   final double? gstRate;
   final String? partyId;
 
-  Json toJson() => withoutNulls({
-    'expenseDate': expenseDate,
-    'locationId': locationId,
-    'accountId': accountId,
-    'description': description,
-    'amount': amount,
-    'gstRate': gstRate,
-    'partyId': partyId,
-    'paidFromAccountId': paidFromAccountId,
-  });
+  Json toJson() =>
+      withoutNulls({
+        'expenseDate': expenseDate,
+        'locationId': locationId,
+        'accountId': accountId,
+        'description': description,
+        'amount': amount,
+        'gstRate': gstRate,
+        'partyId': partyId,
+        'paidFromAccountId': paidFromAccountId,
+      })..addAll({
+        if (sendTdsSection) 'tdsSectionId': tdsSectionId,
+        if (reverseCharge) 'reverseCharge': true,
+      });
 }
 
 /// Client-side estimate of an expense's GST (the server is authoritative):

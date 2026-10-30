@@ -19,42 +19,78 @@ class ApiException implements Exception {
       final status = response.statusCode ?? 0;
       final error = asJsonOrNull(asJsonOrNull(response.data)?['error']);
       if (error != null) {
+        final code = asString(error['code'], 'HTTP_$status');
+        final serverMessage = asString(error['message']);
         return ApiException(
           status,
-          asString(error['code'], 'HTTP_$status'),
-          asString(error['message'], 'Request failed ($status)'),
+          code,
+          friendlyMessage(code, status, serverMessage),
           asJson(error['details']),
         );
       }
       return ApiException(
         status,
         'HTTP_$status',
-        'Request failed with status $status'
-            '${response.statusMessage == null ? '' : ' (${response.statusMessage})'}',
+        friendlyMessage('HTTP_$status', status, ''),
       );
     }
     return switch (e.type) {
-      DioExceptionType.connectionTimeout ||
-      DioExceptionType.sendTimeout ||
-      DioExceptionType.receiveTimeout => const ApiException(
-        0,
-        timeout,
-        'The server took too long to respond. Please try again.',
-      ),
       DioExceptionType.cancel => const ApiException(
         0,
         cancelled,
         'Request cancelled.',
       ),
-      _ => const ApiException(
+      DioExceptionType.connectionTimeout ||
+      DioExceptionType.sendTimeout ||
+      DioExceptionType.receiveTimeout => const ApiException(
         0,
-        networkError,
-        'Cannot reach the server. Check your connection and try again.',
+        timeout,
+        offlineMessage,
       ),
+      _ => const ApiException(0, networkError, offlineMessage),
+    };
+  }
+
+  static const offlineMessage =
+      "You're offline. Check your connection and try again.";
+
+  /// Client-side wording for codes the app must explain itself; other
+  /// codes keep the server message.
+  static String friendlyMessage(String code, int status, String server) {
+    switch (code) {
+      case inUse:
+        return "This record is used by other documents, so it can't be "
+            'deleted. Deactivate it instead.';
+      case tryAgain:
+        return 'The server is busy. Please try again.';
+      case requestInProgress:
+        return 'This request is already being processed. Please wait.';
+      case idempotencyMismatch:
+        return 'This request conflicts with an earlier one. '
+            'Reload and try again.';
+      case payloadTooLarge:
+        return 'That is too large to send. Reduce the size and try again.';
+      case sessionRevoked:
+        return 'Your access has changed. Please sign in again.';
+    }
+    if (status >= 500) return 'Something went wrong on our side. Try again.';
+    if (server.isNotEmpty) return server;
+    return switch (status) {
+      404 => 'Not found.',
+      403 => "You don't have access to this.",
+      401 => 'Please sign in again.',
+      _ => 'Request failed. Please try again.',
     };
   }
 
   static const networkError = 'NETWORK_ERROR';
+  static const offline = networkError;
+  static const inUse = 'IN_USE';
+  static const tryAgain = 'TRY_AGAIN';
+  static const requestInProgress = 'REQUEST_IN_PROGRESS';
+  static const idempotencyMismatch = 'IDEMPOTENCY_MISMATCH';
+  static const payloadTooLarge = 'PAYLOAD_TOO_LARGE';
+  static const sessionRevoked = 'SESSION_REVOKED';
   static const timeout = 'TIMEOUT';
   static const cancelled = 'CANCELLED';
   static const validationError = 'VALIDATION_ERROR';
@@ -70,6 +106,8 @@ class ApiException implements Exception {
   final Json details;
 
   bool get isNetworkError => statusCode == 0;
+  bool get isNotFound => statusCode == 404;
+  bool get isForbidden => statusCode == 403;
   bool get isValidation => code == validationError;
 
   /// `details` of a `VALIDATION_ERROR` as field → message.

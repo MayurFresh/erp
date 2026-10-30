@@ -5,7 +5,8 @@ import 'labour_models.dart';
 enum DprStatus {
   draft('Draft'),
   submitted('Submitted'),
-  approved('Approved');
+  approved('Approved'),
+  rejected('Rejected');
 
   const DprStatus(this.label);
 
@@ -155,6 +156,9 @@ class Dpr {
     this.submittedAt,
     this.approvedAt,
     this.approvedBy,
+    this.rejectedAt,
+    this.rejectedBy,
+    this.rejectReason,
   });
 
   factory Dpr.fromJson(Json json) => Dpr(
@@ -178,6 +182,9 @@ class Dpr {
     submittedAt: asDateTimeOrNull(json['submittedAt']),
     approvedAt: asDateTimeOrNull(json['approvedAt']),
     approvedBy: NamedRef.fromJsonOrNull(json['approvedBy']),
+    rejectedAt: asDateTimeOrNull(json['rejectedAt']),
+    rejectedBy: NamedRef.fromJsonOrNull(json['rejectedBy']),
+    rejectReason: asStringOrNull(json['rejectReason']),
   );
 
   final String id;
@@ -198,12 +205,17 @@ class Dpr {
   final DateTime? submittedAt;
   final DateTime? approvedAt;
   final NamedRef? approvedBy;
+  final DateTime? rejectedAt;
+  final NamedRef? rejectedBy;
+  final String? rejectReason;
 
   int get labourTotal => labour.fold(0, (sum, l) => sum + l.count);
 
   double get equipmentHours => equipment.fold(0, (sum, e) => sum + e.hours);
 
   bool get isDraft => status == DprStatus.draft;
+
+  bool get isRejected => status == DprStatus.rejected;
 }
 
 /// Body of `POST /dprs` and `PATCH /dprs/:id`.
@@ -256,5 +268,10 @@ class DprDraft {
   });
 
   /// Every editable field; `null` clears weather, summary and hindrances.
-  Json toPatchJson() => {'locationId': locationId, 'date': date, ..._fields()};
+  Json toPatchJson() => {
+    'locationId': locationId,
+    'date': date,
+    ..._fields(),
+    if (submit) 'submit': true,
+  };
 }

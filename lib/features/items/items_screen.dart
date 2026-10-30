@@ -120,12 +120,11 @@ class _ItemsScreenState extends ConsumerState<ItemsScreen> {
             ],
             cardBuilder: (context, i) => ListCard(
               onTap: canEdit ? () => open(i) : null,
-              title: Row(
+              title: Wrap(
+                spacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Flexible(
-                    child: Text(i.name, overflow: TextOverflow.ellipsis),
-                  ),
-                  const SizedBox(width: 8),
+                  Text(i.name),
                   _ItemStatus(item: i),
                 ],
               ),

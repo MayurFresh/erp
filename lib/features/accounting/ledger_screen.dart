@@ -8,6 +8,7 @@ import '../../widgets/states.dart';
 import '../auth/session.dart';
 import '../parties/party_model.dart';
 import '../parties/party_picker.dart';
+import '../parties/party_reminder.dart';
 import '../reports/report_export.dart';
 import '../reports/report_period.dart';
 import '../reports/report_widgets.dart';
@@ -42,7 +43,9 @@ class _AccountLedgerScreenState extends ConsumerState<AccountLedgerScreen> {
     final party = await pickParty(
       context,
       ref,
-      type: account.subtype == 'payables' ? PartyType.vendor : PartyType.customer,
+      type: account.subtype == 'payables'
+          ? PartyType.vendor
+          : PartyType.customer,
     );
     if (party != null) setState(() => _party = party);
   }
@@ -76,10 +79,12 @@ class _AccountLedgerScreenState extends ConsumerState<AccountLedgerScreen> {
         : [
             account.code,
             accountTypeLabel(account.type),
-            if (account.subtype != 'other') accountSubtypeLabel(account.subtype),
+            if (account.subtype != 'other')
+              accountSubtypeLabel(account.subtype),
             if (!account.isActive) 'Inactive',
           ].join(' · ');
-    final partyFilter = account != null &&
+    final partyFilter =
+        account != null &&
         accountTakesParty(account) &&
         perms.can(Perm.partiesView);
 
@@ -110,6 +115,21 @@ class _AccountLedgerScreenState extends ConsumerState<AccountLedgerScreen> {
                   onPressed: () => _pickParty(account!),
                   onDeleted: () => setState(() => _party = null),
                 ),
+        if (partyFilter &&
+            _party != null &&
+            account.subtype == 'receivables' &&
+            (ledger?.closingBalance ?? 0) > 0)
+          OutlinedButton.icon(
+            onPressed: () => sendPartyReminder(
+              context,
+              ref,
+              partyId: _party!.id,
+              partyName: _party!.name,
+              amountDue: ledger!.closingBalance,
+            ),
+            icon: const Icon(Icons.chat_outlined),
+            label: const Text('Send reminder'),
+          ),
       ],
       body: ReportBody<Ledger>(
         value: value,
@@ -191,13 +211,13 @@ class LedgerTable extends StatelessWidget {
           maxWidth: 320,
         ),
         if (hasParty)
-          ReportColumn(
-            'Party',
-            (r) => r.line?.partyName ?? '',
-            maxWidth: 200,
-          ),
+          ReportColumn('Party', (r) => r.line?.partyName ?? '', maxWidth: 200),
         ReportColumn('Debit', (r) => money(r.line?.debit ?? 0), numeric: true),
-        ReportColumn('Credit', (r) => money(r.line?.credit ?? 0), numeric: true),
+        ReportColumn(
+          'Credit',
+          (r) => money(r.line?.credit ?? 0),
+          numeric: true,
+        ),
         ReportColumn('Balance', (r) => bal(r.balance), numeric: true),
       ],
       totals: [

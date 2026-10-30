@@ -1,7 +1,7 @@
 import { sql } from 'kysely';
 import { withTenant, type Db, type Tx } from '../db/database.ts';
 import { todayIst } from '../lib/dates.ts';
-import { forbidden, unauthorized } from '../lib/errors.ts';
+import { forbidden, sessionRevoked } from '../lib/errors.ts';
 
 export interface Membership {
   companyId: string;
@@ -58,7 +58,7 @@ export class RequestContext {
 /** Loads the caller's companies, roles, permissions and location scope. */
 export async function loadMemberships(tx: Tx, userId: string): Promise<{ name: string; memberships: Membership[] }> {
   const user = await tx.selectFrom('users').select(['name', 'is_active']).where('id', '=', userId).executeTakeFirst();
-  if (!user || !user.is_active) throw unauthorized('This account is not active.');
+  if (!user || !user.is_active) throw sessionRevoked('This account is not active.');
 
   const today = todayIst();
   const rows = await tx

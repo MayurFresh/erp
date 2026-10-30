@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -593,7 +595,7 @@ class DocAction {
 
   final String label;
   final IconData icon;
-  final VoidCallback onPressed;
+  final FutureOr<void> Function() onPressed;
 
   /// Stays a visible button on phones; others move to the "More" menu.
   final bool primary;
@@ -603,9 +605,79 @@ class DocAction {
 /// Below this width only primary actions stay as buttons.
 const double kCompactActions = 600;
 
+class _ActionFlag extends ValueNotifier<bool> {
+  _ActionFlag() : super(false);
+  bool _dead = false;
+
+  void set(bool v) {
+    if (!_dead) value = v;
+  }
+
+  @override
+  void dispose() {
+    _dead = true;
+    super.dispose();
+  }
+}
+
+class _ActionScope extends InheritedWidget {
+  const _ActionScope({required this.flag, required super.child});
+
+  final _ActionFlag flag;
+
+  @override
+  bool updateShouldNotify(_ActionScope old) => flag != old.flag;
+}
+
+/// Shares one "an action is running" flag between [DocActions] and
+/// [DocOverflowMenu] so that no second action can start meanwhile.
+class DocActionScope extends StatefulWidget {
+  const DocActionScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<DocActionScope> createState() => _DocActionScopeState();
+}
+
+class _DocActionScopeState extends State<DocActionScope> {
+  final _flag = _ActionFlag();
+
+  @override
+  void dispose() {
+    _flag.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      _ActionScope(flag: _flag, child: widget.child);
+}
+
+Widget _withScope(BuildContext context, Widget Function(_ActionFlag) build) {
+  final scope = context.getInheritedWidgetOfExactType<_ActionScope>();
+  if (scope != null) return build(scope.flag);
+  return DocActionScope(
+    child: Builder(
+      builder: (context) =>
+          build(context.getInheritedWidgetOfExactType<_ActionScope>()!.flag),
+    ),
+  );
+}
+
+Future<void> _runAction(_ActionFlag flag, DocAction action) async {
+  if (flag.value) return;
+  flag.set(true);
+  try {
+    await action.onPressed();
+  } finally {
+    flag.set(false);
+  }
+}
+
 /// Action buttons for a detail page. When [compact], only
 /// [DocAction.primary] actions are shown; the rest are left to a
-/// [DocOverflowMenu].
+/// [DocOverflowMenu]. Buttons are disabled while any action runs.
 class DocActions extends StatelessWidget {
   const DocActions({super.key, required this.actions, this.compact = false});
 
@@ -619,27 +691,33 @@ class DocActions extends StatelessWidget {
         : actions;
     if (visible.isEmpty) return const SizedBox.shrink();
     final error = Theme.of(context).colorScheme.error;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        for (final action in visible)
-          action.primary && !action.destructive
-              ? FilledButton.tonalIcon(
-                  onPressed: action.onPressed,
-                  icon: Icon(action.icon),
-                  label: Text(action.label),
-                )
-              : OutlinedButton.icon(
-                  onPressed: action.onPressed,
-                  icon: Icon(action.icon),
-                  label: Text(action.label),
-                  style: action.destructive
-                      ? OutlinedButton.styleFrom(foregroundColor: error)
-                      : null,
-                ),
-      ],
+    return _withScope(
+      context,
+      (flag) => ValueListenableBuilder<bool>(
+        valueListenable: flag,
+        builder: (context, busy, _) => Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final action in visible)
+              action.primary && !action.destructive
+                  ? FilledButton.tonalIcon(
+                      onPressed: busy ? null : () => _runAction(flag, action),
+                      icon: Icon(action.icon),
+                      label: Text(action.label),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: busy ? null : () => _runAction(flag, action),
+                      icon: Icon(action.icon),
+                      label: Text(action.label),
+                      style: action.destructive
+                          ? OutlinedButton.styleFrom(foregroundColor: error)
+                          : null,
+                    ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -655,27 +733,34 @@ class DocOverflowMenu extends StatelessWidget {
     final overflow = actions.where((a) => !a.primary).toList();
     if (overflow.isEmpty) return const SizedBox.shrink();
     final error = Theme.of(context).colorScheme.error;
-    return PopupMenuButton<int>(
-      tooltip: 'More actions',
-      icon: const Icon(Icons.more_vert),
-      onSelected: (i) => overflow[i].onPressed(),
-      itemBuilder: (context) => [
-        for (final (i, action) in overflow.indexed)
-          PopupMenuItem<int>(
-            value: i,
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                action.icon,
-                color: action.destructive ? error : null,
+    return _withScope(
+      context,
+      (flag) => ValueListenableBuilder<bool>(
+        valueListenable: flag,
+        builder: (context, busy, _) => PopupMenuButton<int>(
+          tooltip: 'More actions',
+          enabled: !busy,
+          icon: Icon(busy ? Icons.hourglass_top : Icons.more_vert),
+          onSelected: (i) => _runAction(flag, overflow[i]),
+          itemBuilder: (context) => [
+            for (final (i, action) in overflow.indexed)
+              PopupMenuItem<int>(
+                value: i,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    action.icon,
+                    color: action.destructive ? error : null,
+                  ),
+                  title: Text(
+                    action.label,
+                    style: action.destructive ? TextStyle(color: error) : null,
+                  ),
+                ),
               ),
-              title: Text(
-                action.label,
-                style: action.destructive ? TextStyle(color: error) : null,
-              ),
-            ),
-          ),
-      ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -709,36 +794,38 @@ class DocHeader extends StatelessWidget {
         pills,
       ],
     );
-    return SectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (compact) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: heading),
-                DocOverflowMenu(actions: actions),
+    return DocActionScope(
+      child: SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (compact) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: heading),
+                  DocOverflowMenu(actions: actions),
+                ],
+              ),
+              if (actions.any((a) => a.primary)) ...[
+                const SizedBox(height: 12),
+                DocActions(actions: actions, compact: true),
               ],
-            ),
-            if (actions.any((a) => a.primary)) ...[
-              const SizedBox(height: 12),
-              DocActions(actions: actions, compact: true),
-            ],
-          ] else
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                heading,
-                DocActions(actions: actions),
-              ],
-            ),
-          const SizedBox(height: 16),
-          Wrap(spacing: 32, runSpacing: 12, children: facts),
-        ],
+            ] else
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  heading,
+                  DocActions(actions: actions),
+                ],
+              ),
+            const SizedBox(height: 16),
+            Wrap(spacing: 32, runSpacing: 12, children: facts),
+          ],
+        ),
       ),
     );
   }

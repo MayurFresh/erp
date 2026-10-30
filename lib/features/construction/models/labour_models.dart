@@ -18,10 +18,8 @@ enum Trade {
   final String api;
   final String label;
 
-  static Trade parse(Object? value) => Trade.values.firstWhere(
-    (t) => t.api == value,
-    orElse: () => Trade.other,
-  );
+  static Trade parse(Object? value) =>
+      Trade.values.firstWhere((t) => t.api == value, orElse: () => Trade.other);
 
   static Trade? tryParse(Object? value) {
     for (final t in Trade.values) {
@@ -69,6 +67,7 @@ class Worker {
     this.photoFileId,
     this.joinedOn,
     this.isActive = true,
+    this.advanceBalance = 0,
     this.createdAt,
   });
 
@@ -88,6 +87,7 @@ class Worker {
     photoFileId: asStringOrNull(json['photoFileId']),
     joinedOn: asStringOrNull(json['joinedOn']),
     isActive: asBool(json['isActive'], true),
+    advanceBalance: asDouble(json['advanceBalance']),
     createdAt: asDateTimeOrNull(json['createdAt']),
   );
 
@@ -108,6 +108,9 @@ class Worker {
   final String? photoFileId;
   final String? joinedOn;
   final bool isActive;
+
+  /// Open labour advances not yet recovered (v1.3).
+  final double advanceBalance;
   final DateTime? createdAt;
 
   /// Create / PATCH fields as stored (`isActive` only matters for PATCH).
@@ -121,6 +124,7 @@ class Worker {
     'siteId': siteId,
     'aadhaarLast4': aadhaarLast4,
     'bocwRegNo': bocwRegNo,
+    'photoFileId': photoFileId,
     'joinedOn': joinedOn,
     'isActive': isActive,
   };
@@ -312,6 +316,7 @@ class WageRow {
     this.otAmount = 0,
     this.gross = 0,
     this.advance = 0,
+    this.advanceBalance = 0,
     this.net = 0,
   });
 
@@ -327,6 +332,7 @@ class WageRow {
     otAmount: asDouble(json['otAmount']),
     gross: asDouble(json['gross']),
     advance: asDouble(json['advance']),
+    advanceBalance: asDouble(json['advanceBalance']),
     net: asDouble(json['net']),
   );
 
@@ -343,6 +349,9 @@ class WageRow {
   final double otAmount;
   final double gross;
   final double advance;
+
+  /// The worker's open advance balance when the row was last computed.
+  final double advanceBalance;
   final double net;
 }
 

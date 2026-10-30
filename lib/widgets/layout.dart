@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 /// Width at which the shell switches from drawer to sidebar.
@@ -58,11 +60,18 @@ class FilterBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-    child: Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: children,
+    child: ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+      ),
+      child: SingleChildScrollView(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: children,
+        ),
+      ),
     ),
   );
 }
@@ -203,31 +212,53 @@ class LabeledValue extends StatelessWidget {
   }
 }
 
-/// A button that shows a spinner while [busy].
-class BusyButton extends StatelessWidget {
+/// A button that shows a spinner and ignores taps while [busy], or while an
+/// async [onPressed] is still running.
+class BusyButton extends StatefulWidget {
   const BusyButton({
     super.key,
-    required this.busy,
+    this.busy = false,
     required this.onPressed,
     required this.label,
     this.icon,
   });
 
   final bool busy;
-  final VoidCallback? onPressed;
+  final FutureOr<void> Function()? onPressed;
   final String label;
   final IconData? icon;
 
   @override
+  State<BusyButton> createState() => _BusyButtonState();
+}
+
+class _BusyButtonState extends State<BusyButton> {
+  bool _running = false;
+
+  Future<void> _tap() async {
+    if (_running || widget.busy) return;
+    final result = widget.onPressed?.call();
+    if (result is! Future<void>) return;
+    setState(() => _running = true);
+    try {
+      await result;
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final indicator = const SizedBox.square(
-      dimension: 18,
-      child: CircularProgressIndicator(strokeWidth: 2),
-    );
+    final busy = widget.busy || _running;
     return FilledButton.icon(
-      onPressed: busy ? null : onPressed,
-      icon: busy ? indicator : Icon(icon ?? Icons.check),
-      label: Text(label),
+      onPressed: busy || widget.onPressed == null ? null : _tap,
+      icon: busy
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(widget.icon ?? Icons.check),
+      label: Text(widget.label),
     );
   }
 }
