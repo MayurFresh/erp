@@ -69,7 +69,8 @@ void main() {
       final labels = visibleNavEntries(
         const PermissionSet({Perm.itemsView, Perm.stockView}),
       ).map((e) => e.label);
-      expect(labels, ['Items', 'Stock']);
+      // Stock counts only need stock.view to open; posting is checked separately.
+      expect(labels, ['Items', 'Stock', 'Stock counts']);
     });
 
     test('groups hide when empty and keep their order', () {

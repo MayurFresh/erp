@@ -58,8 +58,16 @@ class PartiesRepository {
   Future<Party> update(Party original, Json body) async {
     final changes = changedFields(original.toInputJson(), body);
     if (changes.isEmpty) return original;
+    final stamp = original.updatedAt;
     return Party.fromJson(
-      await _api.patchJson('/parties/${original.id}', body: changes),
+      await _api.patchJson(
+        '/parties/${original.id}',
+        body: {
+          ...changes,
+          if (stamp != null)
+            'expectedUpdatedAt': stamp.toUtc().toIso8601String(),
+        },
+      ),
     );
   }
 }

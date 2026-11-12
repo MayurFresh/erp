@@ -1,3 +1,4 @@
+import { assertFresh } from '../lib/stale.ts';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { RequestContext } from '../auth/context.ts';
@@ -10,6 +11,7 @@ import { scopedLocationIds } from '../lib/scope.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import type { Selectable } from 'kysely';
+import { documentRoute } from '../lib/openapi.ts';
 
 const TYPES = ['branch', 'site', 'warehouse', 'department', 'store', 'office'] as const;
 
@@ -26,6 +28,7 @@ const createBody = z.object({
   parentId: z.uuid().nullable().optional(),
 });
 const patchBody = z.object({
+  expectedUpdatedAt: z.string().max(40).optional(),
   type: z.enum(TYPES).optional(),
   name: z.string().trim().min(1).max(120).optional(),
   code: nullableText(30),
@@ -38,7 +41,7 @@ const patchBody = z.object({
 
 export const locationJson = (l: Selectable<LocationTable>) => ({
   id: l.id, companyId: l.company_id, parentId: l.parent_id, type: l.type, name: l.name, code: l.code,
-  stateCode: l.state_code, address: l.address, pincode: l.pincode, isActive: l.is_active, projectId: l.project_id, createdAt: l.created_at,
+  stateCode: l.state_code, address: l.address, pincode: l.pincode, isActive: l.is_active, projectId: l.project_id, createdAt: l.created_at, updatedAt: l.updated_at,
 });
 
 /** Loads a location of the active company that the caller may access. */
@@ -100,6 +103,7 @@ export async function locationRoutes(app: FastifyInstance) {
     const body = parse(patchBody, req.body);
     return ctx.tx(async (tx) => {
       const before = await getLocation(tx, ctx, req.params.id);
+      assertFresh(before.updated_at, body.expectedUpdatedAt, 'location');
       await checkParent(tx, ctx, body.parentId, before.id);
       if (before.project_id && body.type && body.type !== 'site') {
         throw conflict('This site belongs to a project. Remove it from the project before changing its type.', 'CONFLICT');
@@ -116,3 +120,6 @@ export async function locationRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/locations', { body: createBody });
+documentRoute('PATCH', '/locations/:id', { body: patchBody });

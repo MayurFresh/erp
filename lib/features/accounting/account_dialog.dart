@@ -18,7 +18,7 @@ EdgeInsets dialogInset(BuildContext context) =>
 /// Creates an account (no [account]) or edits one. System accounts can
 /// only be renamed. Pops with the saved [Account].
 Future<Account?> showAccountDialog(BuildContext context, {Account? account}) =>
-    showDialog<Account>(
+    showFormDialog<Account>(
       context: context,
       builder: (_) => AccountDialog(account: account),
     );
@@ -75,11 +75,12 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       _fieldErrors = const {};
       _error = null;
     });
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() => _saving = true);
     final repo = ref.read(accountingRepositoryProvider);
     try {
@@ -258,7 +259,7 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         FilledButton(

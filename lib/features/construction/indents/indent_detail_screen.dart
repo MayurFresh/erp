@@ -147,7 +147,7 @@ class _IndentDetailScreenState extends ConsumerState<IndentDetailScreen> {
                                   .submitIndent(indent.id),
                               '${indent.number} submitted',
                             ),
-                      icon: const Icon(Icons.send),
+                      icon: const Icon(Icons.send_outlined),
                       label: Text(
                         indent.status == IndentStatus.rejected
                             ? 'Resubmit'

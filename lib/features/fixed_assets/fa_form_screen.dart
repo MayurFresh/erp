@@ -108,7 +108,7 @@ class _AssetFormState extends ConsumerState<AssetForm>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    final ok = _form.currentState!.validate();
+    final ok = validateAndReveal(_form);
     if (!_validateExtras() || !ok) return;
     final repo = ref.read(fixedAssetRepositoryProvider);
     try {
@@ -302,7 +302,7 @@ class _AssetFormState extends ConsumerState<AssetForm>
                           inputFormatters: [moneyInput()],
                           decoration: InputDecoration(
                             labelText: 'Cost (excluding GST claimed)',
-                            prefixText: '₹ ',
+                            prefixText: '$moneySymbol ',
                             errorText: serverError('cost'),
                           ),
                           validator: (v) =>
@@ -312,9 +312,9 @@ class _AssetFormState extends ConsumerState<AssetForm>
                           controller: _gstItc,
                           keyboardType: decimalKeyboard,
                           inputFormatters: [moneyInput()],
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'GST input credit (optional)',
-                            prefixText: '₹ ',
+                            prefixText: '$moneySymbol ',
                           ),
                           validator: (v) => validateMoney(
                             v,
@@ -368,11 +368,13 @@ class _AssetFormState extends ConsumerState<AssetForm>
                           where: (a) => a.subtype != 'fixed_asset',
                         );
                         if (a != null) {
-                          setState(() {
-                            _source = a;
-                            _sourceError = null;
-                            markDirty();
-                          });
+                          if (mounted) {
+                            setState(() {
+                              _source = a;
+                              _sourceError = null;
+                              markDirty();
+                            });
+                          }
                         }
                       },
                     ),
@@ -387,10 +389,10 @@ class _AssetFormState extends ConsumerState<AssetForm>
                       controller: _openingDep,
                       keyboardType: decimalKeyboard,
                       inputFormatters: [moneyInput()],
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText:
                             'Opening accumulated depreciation (optional)',
-                        prefixText: '₹ ',
+                        prefixText: '$moneySymbol ',
                         helperText: 'For an asset you already owned',
                         helperMaxLines: 2,
                       ),

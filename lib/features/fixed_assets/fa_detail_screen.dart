@@ -28,7 +28,7 @@ class FixedAssetDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     FixedAsset a,
   ) async {
-    final done = await showDialog<FixedAsset>(
+    final done = await showFormDialog<FixedAsset>(
       context: context,
       builder: (_) => DisposeAssetDialog(asset: a),
     );
@@ -211,7 +211,7 @@ class _DisposeAssetDialogState extends ConsumerState<DisposeAssetDialog> {
       DateTime.tryParse(widget.asset.putToUseDate) ?? DateTime(2017);
 
   Future<void> _submit() async {
-    final ok = _form.currentState!.validate();
+    final ok = validateAndReveal(_form);
     final needAccount = _saleValue > 0 && _account == null;
     setState(() => _accountError = needAccount ? 'Choose the account' : null);
     if (!ok || needAccount) return;
@@ -260,9 +260,9 @@ class _DisposeAssetDialogState extends ConsumerState<DisposeAssetDialog> {
                 controller: _sale,
                 keyboardType: decimalKeyboard,
                 inputFormatters: [moneyInput()],
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Sale value',
-                  prefixText: '₹ ',
+                  prefixText: '$moneySymbol ',
                   helperText: '0 for scrap',
                 ),
                 validator: (v) => validateMoney(v, label: 'Sale value', min: 0),
@@ -284,10 +284,12 @@ class _DisposeAssetDialogState extends ConsumerState<DisposeAssetDialog> {
                           a.subtype != 'accumulated_depreciation',
                     );
                     if (a != null) {
-                      setState(() {
-                        _account = a;
-                        _accountError = null;
-                      });
+                      if (mounted) {
+                        setState(() {
+                          _account = a;
+                          _accountError = null;
+                        });
+                      }
                     }
                   },
                 ),
@@ -314,7 +316,7 @@ class _DisposeAssetDialogState extends ConsumerState<DisposeAssetDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: () => Navigator.pop(context),
+        onPressed: () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       BusyButton(onPressed: _submit, label: 'Dispose'),

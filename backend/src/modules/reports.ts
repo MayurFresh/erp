@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
+import { accountTotals, balanceSheet, profitLoss, trialBalance } from '../accounting/statements.ts';
 import type { RequestContext } from '../auth/context.ts';
-import type { Tx } from '../db/database.ts';
 import { daysBetween, fyStart, isValidDate, todayIst } from '../lib/dates.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
 import { visibleProjectIds } from './subcontract-common.ts';
@@ -14,32 +14,12 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const rangeQuery = z.object({ from: dateField.optional(), to: dateField.optional(), locationId: z.uuid().optional() });
 const asOfQuery = z.object({ asOf: dateField.optional() });
+const plQuery = rangeQuery.extend({ costCentreId: z.uuid().optional() });
 
 function range(q: { from?: string; to?: string }) {
   const to = q.to ?? todayIst();
   return { from: q.from ?? fyStart(to), to };
 }
-
-interface AccountTotal { id: string; code: string; name: string; type: string; system_key: string | null; d: number; c: number }
-
-/** Debit and credit totals per account, optionally within a date range. */
-async function accountTotals(tx: Tx, companyId: string, from: string | null, to: string): Promise<AccountTotal[]> {
-  let q = tx.selectFrom('accounts as a')
-    .innerJoin('journal_lines as jl', 'jl.account_id', 'a.id')
-    .innerJoin('journal_entries as je', 'je.id', 'jl.entry_id')
-    .where('a.company_id', '=', companyId).where('je.entry_date', '<=', to);
-  if (from) q = q.where('je.entry_date', '>=', from);
-  const rows = await q.groupBy(['a.id', 'a.code', 'a.name', 'a.type', 'a.system_key'])
-    .select((eb) => ['a.id', 'a.code', 'a.name', 'a.type', 'a.system_key',
-      eb.fn.sum<number>('jl.debit').as('d'), eb.fn.sum<number>('jl.credit').as('c')])
-    .orderBy('a.code').execute();
-  return rows.map((r) => ({ ...r, d: Number(r.d), c: Number(r.c) }));
-}
-
-const section = (rows: { id: string | null; code: string | null; name: string; amount: number }[]) => {
-  const kept = rows.filter((r) => Math.abs(r.amount) >= 0.005).map((r) => ({ accountId: r.id, code: r.code, name: r.name, amount: round2(r.amount) }));
-  return { rows: kept, total: round2(kept.reduce((s, r) => s + r.amount, 0)) };
-};
 
 type RateRow = { gstRate: number | null; taxable: number; cgst: number; sgst: number; igst: number };
 const zeroRate = (gstRate: number | null): RateRow => ({ gstRate, taxable: 0, cgst: 0, sgst: 0, igst: 0 });
@@ -62,35 +42,19 @@ export async function reportRoutes(app: FastifyInstance) {
     const asOf = parse(asOfQuery, req.query).asOf ?? todayIst();
     return ctx.tx(async (tx) => {
       await systemAccounts(tx, ctx);
-      const rows = (await accountTotals(tx, ctx.companyId, null, asOf))
-        .map((a) => ({ a, bal: round2(a.d - a.c) }))
-        .filter((x) => x.bal !== 0)
-        .map(({ a, bal }) => ({ accountId: a.id, code: a.code, name: a.name, type: a.type, debit: bal > 0 ? bal : 0, credit: bal < 0 ? -bal : 0 }));
-      return {
-        asOf, rows,
-        totalDebit: round2(rows.reduce((s, r) => s + r.debit, 0)),
-        totalCredit: round2(rows.reduce((s, r) => s + r.credit, 0)),
-      };
+      return { asOf, ...trialBalance(await accountTotals(tx, ctx.companyId, null, asOf)) };
     });
   });
 
   app.get('/reports/profit-loss', async (req) => {
     const ctx = req.ctx;
     ctx.require('accounts.view');
-    const { from, to } = range(parse(rangeQuery, req.query));
+    const q = parse(plQuery, req.query);
+    const { from, to } = range(q);
+    if (q.locationId) ctx.requireLocation(q.locationId);
     return ctx.tx(async (tx) => {
-      const totals = await accountTotals(tx, ctx.companyId, from, to);
-      const credit = (a: AccountTotal) => a.c - a.d;
-      const debit = (a: AccountTotal) => a.d - a.c;
-      const pick = (f: (a: AccountTotal) => boolean, amount: (a: AccountTotal) => number) =>
-        section(totals.filter(f).map((a) => ({ id: a.id, code: a.code, name: a.name, amount: amount(a) })));
-      const direct = ['cogs', 'purchases_nonstock'];
-      const revenue = pick((a) => a.system_key === 'sales' || a.system_key === 'sales_returns', credit);
-      const cogs = pick((a) => direct.includes(a.system_key ?? ''), debit);
-      const otherIncome = pick((a) => a.type === 'income' && a.system_key !== 'sales' && a.system_key !== 'sales_returns', credit);
-      const expenses = pick((a) => a.type === 'expense' && !direct.includes(a.system_key ?? ''), debit);
-      const grossProfit = round2(revenue.total - cogs.total);
-      return { from, to, revenue, cogs, grossProfit, otherIncome, expenses, netProfit: round2(grossProfit + otherIncome.total - expenses.total) };
+      const filter = { costCentreId: q.costCentreId, locationId: q.locationId };
+      return { from, to, ...profitLoss(await accountTotals(tx, ctx.companyId, from, to, filter)) };
     });
   });
 
@@ -98,19 +62,7 @@ export async function reportRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('accounts.view');
     const asOf = parse(asOfQuery, req.query).asOf ?? todayIst();
-    return ctx.tx(async (tx) => {
-      const totals = await accountTotals(tx, ctx.companyId, null, asOf);
-      const of = (type: string, sign: 1 | -1) =>
-        totals.filter((a) => a.type === type).map((a) => ({ id: a.id, code: a.code, name: a.name, amount: sign * (a.d - a.c) }));
-      const profit = totals.filter((a) => a.type === 'income' || a.type === 'expense').reduce((s, a) => s + (a.c - a.d), 0);
-      const assets = section(of('asset', 1));
-      const liabilities = section(of('liability', -1));
-      const equity = section([...of('equity', -1), { id: null, code: null, name: 'Profit & Loss', amount: profit }]);
-      return {
-        asOf, assets, liabilities, equity,
-        totalAssets: assets.total, totalLiabilitiesAndEquity: round2(liabilities.total + equity.total),
-      };
-    });
+    return ctx.tx(async (tx) => ({ asOf, ...balanceSheet(await accountTotals(tx, ctx.companyId, null, asOf)) }));
   });
 
   app.get('/reports/sales-register', async (req) => {

@@ -47,7 +47,7 @@ class _AdvanceFormScreenState extends ConsumerState<AdvanceFormScreen>
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() => _busy = true);
     try {
       final advance = await ref
@@ -164,9 +164,9 @@ class _AdvanceFormScreenState extends ConsumerState<AdvanceFormScreen>
                                 controller: _amount,
                                 keyboardType: decimalKeyboard,
                                 inputFormatters: [decimalInput()],
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'Amount',
-                                  prefixText: '₹ ',
+                                  prefixText: '$moneySymbol ',
                                 ),
                                 validator: (v) => requiredNumber(
                                   v,

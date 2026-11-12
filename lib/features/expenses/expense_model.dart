@@ -23,6 +23,7 @@ class Expense {
     this.total = 0,
     this.paidFromAccountId = '',
     this.paidFromAccountName = '',
+    this.costCentreId,
     this.createdAt,
     this.createdBy,
     this.cancelledAt,
@@ -36,6 +37,9 @@ class Expense {
     this.reverseCharge = false,
     this.rcmSelfInvoiceNo,
   });
+
+  /// Cost centre the document is tagged to.
+  final String? costCentreId;
 
   factory Expense.fromJson(Json json) => Expense(
     id: asString(json['id']),
@@ -58,6 +62,7 @@ class Expense {
     paidFromAccountId: asString(json['paidFromAccountId']),
     paidFromAccountName: asString(json['paidFromAccountName']),
     status: DocStatus.parse(json['status']),
+    costCentreId: asStringOrNull(json['costCentreId']),
     createdAt: asDateTimeOrNull(json['createdAt']),
     createdBy: UserRef.maybe(json['createdBy']),
     cancelledAt: asDateTimeOrNull(json['cancelledAt']),
@@ -133,6 +138,7 @@ class ExpenseDraft {
     this.partyId,
     this.tdsSectionId,
     this.sendTdsSection = false,
+    this.costCentreId,
     this.reverseCharge = false,
   });
 
@@ -150,6 +156,8 @@ class ExpenseDraft {
   final double? gstRate;
   final String? partyId;
 
+  final String? costCentreId;
+
   Json toJson() =>
       withoutNulls({
         'expenseDate': expenseDate,
@@ -159,6 +167,7 @@ class ExpenseDraft {
         'amount': amount,
         'gstRate': gstRate,
         'partyId': partyId,
+        'costCentreId': costCentreId,
         'paidFromAccountId': paidFromAccountId,
       })..addAll({
         if (sendTdsSection) 'tdsSectionId': tdsSectionId,

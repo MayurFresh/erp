@@ -1,3 +1,5 @@
+import 'package:progen_erp/features/platform/notifications_screen.dart'
+    show bellPollIntervalProvider;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +24,7 @@ void main() {
         key: UniqueKey(),
         overrides: [
           sessionProvider.overrideWith(() => FakeSessionController(session)),
+          bellPollIntervalProvider.overrideWithValue(null),
         ],
         child: MaterialApp(
           theme: AppTheme.light,

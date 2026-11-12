@@ -36,7 +36,7 @@ class _UnitsScreenState extends ConsumerState<UnitsScreen> {
   _UnitsView _view = _UnitsView.list;
 
   Future<void> _add() async {
-    final saved = await showDialog<bool>(
+    final saved = await showFormDialog<bool>(
       context: context,
       builder: (_) => UnitFormDialog(projectId: _projectId),
     );
@@ -44,7 +44,7 @@ class _UnitsScreenState extends ConsumerState<UnitsScreen> {
   }
 
   Future<void> _bulk() async {
-    final saved = await showDialog<int>(
+    final saved = await showFormDialog<int>(
       context: context,
       builder: (_) => BulkUnitsDialog(projectId: _projectId),
     );
@@ -411,7 +411,7 @@ class _UnitChip extends StatelessWidget {
 /// Details of a unit with the actions the user may take.
 Future<void> showUnitActions(BuildContext context, WidgetRef ref, Unit unit) {
   final perms = ref.read(permissionsProvider);
-  return showDialog<void>(
+  return showFormDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text('Unit ${unit.code}'),
@@ -477,7 +477,7 @@ Future<void> showUnitActions(BuildContext context, WidgetRef ref, Unit unit) {
           TextButton(
             onPressed: () async {
               Navigator.of(dialogContext).pop();
-              final saved = await showDialog<bool>(
+              final saved = await showFormDialog<bool>(
                 context: context,
                 builder: (_) =>
                     UnitFormDialog(projectId: unit.projectId, unit: unit),
@@ -555,7 +555,7 @@ class _UnitFormDialogState extends ConsumerState<UnitFormDialog>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final body = <String, dynamic>{
       'code': _code.text.trim(),
       'wing': trimmedOrNull(_wing.text),
@@ -575,7 +575,13 @@ class _UnitFormDialogState extends ConsumerState<UnitFormDialog>
       } else {
         final before = original.toInputJson();
         final changes = changedFields(before, body);
-        if (changes.isNotEmpty) await repo.updateUnit(original.id, changes);
+        if (changes.isNotEmpty) {
+          await repo.updateUnit(
+            original.id,
+            changes,
+            updatedAt: original.updatedAt,
+          );
+        }
       }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
@@ -700,7 +706,7 @@ class _UnitFormDialogState extends ConsumerState<UnitFormDialog>
     ),
     actions: [
       TextButton(
-        onPressed: _saving ? null : () => Navigator.of(context).pop(),
+        onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       BusyButton(busy: _saving, onPressed: _save, label: 'Save'),
@@ -756,7 +762,7 @@ class _BulkUnitsDialogState extends ConsumerState<BulkUnitsDialog>
   );
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final codes = _codes;
     final wing = trimmedOrNull(_wing.text.toUpperCase());
     final carpet = parseNumber(_carpet.text);
@@ -910,7 +916,7 @@ class _BulkUnitsDialogState extends ConsumerState<BulkUnitsDialog>
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         BusyButton(

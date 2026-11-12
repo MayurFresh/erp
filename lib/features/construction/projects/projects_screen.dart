@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/business_profile.dart';
 
 import '../../../core/money.dart';
 import '../../../widgets/adaptive_data_list.dart';
@@ -64,7 +65,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                   style: bigButton,
                   onPressed: () => context.go('/projects/new'),
                   icon: const Icon(Icons.add),
-                  label: const Text('New project'),
+                  label: Text(context.w('New project')),
                 ),
             ],
           ),

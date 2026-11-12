@@ -13,6 +13,7 @@ import { auditOf, writeAudit } from './audit.ts';
 import { fileUrl, requireFiles } from './files.ts';
 import { getLocation } from './locations.ts';
 import { boqLinesAt } from './projects.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const STATUSES = ['draft', 'submitted', 'approved', 'rejected'] as const;
@@ -339,3 +340,7 @@ export async function dprRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/dprs', { body: createBody });
+documentRoute('PATCH', '/dprs/:id', { body: patchBody });
+documentRoute('POST', '/dprs/:id/reject', { body: reasonBody });

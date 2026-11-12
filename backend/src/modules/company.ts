@@ -4,9 +4,10 @@ import { z } from 'zod';
 import type { CompanyTable } from '../db/schema.ts';
 import { isValidDate } from '../lib/dates.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
-import { definedOnly, gstin, nullableText, stateCode } from '../lib/india.ts';
+import { definedOnly, gstinChangeOk, gstinFormat, nullableText, stateCode } from '../lib/india.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 export const companyJson = (c: Selectable<CompanyTable>) => ({
   id: c.id, name: c.name, legalName: c.legal_name, gstin: c.gstin, stateCode: c.state_code, pan: c.pan,
@@ -16,13 +17,16 @@ export const companyJson = (c: Selectable<CompanyTable>) => ({
   tan: c.tan, booksLockedUntil: c.books_locked_until, msmeBankRate: c.msme_bank_rate === null ? null : Number(c.msme_bank_rate),
   gstFiling: c.gst_filing,
   constitution: c.constitution, responsiblePerson: c.responsible_person ?? null, itrForm: c.itr_form,
+  require2fa: c.require_2fa, costCentreRequired: c.cost_centre_required, gspProvider: c.gsp_provider,
+  businessType: c.business_type, plan: c.plan, enabledModules: c.enabled_modules, terms: c.terms,
+  country: c.country, currency: c.currency, logoFileId: c.logo_file_id, brandColor: c.brand_color,
 });
 
 const blankToNull = (v: unknown) => (v === '' ? null : v);
 const patchBody = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   legalName: nullableText(160),
-  gstin: z.preprocess(blankToNull, gstin.nullable().optional()),
+  gstin: z.preprocess(blankToNull, gstinFormat.nullable().optional()),
   stateCode: stateCode.optional(),
   pan: z.preprocess(blankToNull, z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'Invalid PAN').nullable().optional()),
   address: nullableText(500),
@@ -37,7 +41,9 @@ const patchBody = z.object({
   invoiceFooter: nullableText(300),
   pincode: z.preprocess(blankToNull, z.string().trim().regex(/^[1-9][0-9]{5}$/, 'Pincode must be 6 digits').nullable().optional()),
   einvoiceEnabled: z.boolean().optional(),
-  einvoiceMode: z.enum(['manual', 'sandbox']).optional(),
+  einvoiceMode: z.enum(['manual', 'sandbox', 'gsp']).optional(),
+  require2fa: z.boolean().optional(),
+  costCentreRequired: z.boolean().optional(),
   tan: z.preprocess(blankToNull, z.string().trim().toUpperCase().regex(/^[A-Z]{4}[0-9]{5}[A-Z]$/, 'Invalid TAN').nullable().optional()),
   booksLockedUntil: z.string().refine(isValidDate, 'Use YYYY-MM-DD').nullable().optional(),
   msmeBankRate: z.coerce.number().min(0).max(100).nullable().optional(),
@@ -51,6 +57,8 @@ const patchBody = z.object({
     email: z.email(),
   }).nullable().optional(),
   itrForm: z.enum(['itr3', 'itr4', 'itr5', 'itr6']).nullable().optional(),
+  logoFileId: z.uuid().nullable().optional(),
+  brandColor: z.preprocess(blankToNull, z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use a colour like #0B6157').nullable().optional()),
 });
 
 export async function companyRoutes(app: FastifyInstance) {
@@ -64,11 +72,15 @@ export async function companyRoutes(app: FastifyInstance) {
   app.patch('/company', async (req) => {
     const ctx = req.ctx;
     const body = parse(patchBody, req.body);
-    const { booksLockedUntil, ...rest } = body;
+    const { booksLockedUntil, require2fa, ...rest } = body;
+    if (require2fa !== undefined) ctx.require('security.manage');
     if (Object.values(rest).some((v) => v !== undefined) || booksLockedUntil === undefined) ctx.require('company.manage');
     if (booksLockedUntil !== undefined) ctx.require('books.lock');
     return ctx.tx(async (tx) => {
       const before = await tx.selectFrom('companies').selectAll().where('id', '=', ctx.companyId).executeTakeFirstOrThrow();
+      if (!gstinChangeOk(body.gstin, before.gstin)) {
+        throw badRequest('Invalid GSTIN: the last character does not match the others', { gstin: 'Check the last character' });
+      }
       const state = body.stateCode ?? before.state_code;
       const g = body.gstin !== undefined ? body.gstin : before.gstin;
       if (g && g.slice(0, 2) !== state) throw badRequest('GSTIN does not match the state.', { gstin: 'Does not match the state' });
@@ -87,6 +99,8 @@ export async function companyRoutes(app: FastifyInstance) {
         constitution: body.constitution, responsible_person: body.responsiblePerson, itr_form: body.itrForm,
         books_locked_until: body.booksLockedUntil,
         pincode: body.pincode, einvoice_enabled: body.einvoiceEnabled, einvoice_mode: body.einvoiceMode,
+        require_2fa: body.require2fa, cost_centre_required: body.costCentreRequired,
+        logo_file_id: body.logoFileId, brand_color: body.brandColor,
       });
       if (!Object.keys(changes).length) return companyJson(before);
       const after = await tx.updateTable('companies').set(changes).where('id', '=', ctx.companyId).returningAll().executeTakeFirstOrThrow();
@@ -101,3 +115,5 @@ export async function companyRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('PATCH', '/company', { body: patchBody });

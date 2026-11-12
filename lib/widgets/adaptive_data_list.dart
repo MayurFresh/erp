@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../core/business_profile.dart';
+import '../core/design_tokens.dart';
+import 'layout.dart' show pageGutter;
 import 'paged_controller.dart';
 import 'states.dart';
 
@@ -76,7 +79,7 @@ class AdaptiveDataList<T> extends StatelessWidget {
                   SizedBox(
                     height: constraints.maxHeight,
                     child: EmptyView(
-                      message: emptyMessage,
+                      message: context.w(emptyMessage),
                       icon: emptyIcon,
                       action: emptyAction,
                     ),
@@ -94,7 +97,12 @@ class AdaptiveDataList<T> extends StatelessWidget {
               if (constraints.maxWidth >= tableBreakpoint) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  padding: EdgeInsets.fromLTRB(
+                    pageGutter(context),
+                    Space.xs,
+                    pageGutter(context),
+                    Space.lg,
+                  ),
                   children: [
                     Card(
                       margin: EdgeInsets.zero,
@@ -103,9 +111,10 @@ class AdaptiveDataList<T> extends StatelessWidget {
                         scrollDirection: Axis.horizontal,
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
-                            minWidth: constraints.maxWidth - 32,
+                            minWidth:
+                                constraints.maxWidth - pageGutter(context) * 2,
                           ),
-                          child: _table(c.items),
+                          child: _table(context, c.items),
                         ),
                       ),
                     ),
@@ -115,9 +124,14 @@ class AdaptiveDataList<T> extends StatelessWidget {
               }
               return ListView.separated(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+                padding: EdgeInsets.fromLTRB(
+                  pageGutter(context),
+                  Space.xs,
+                  pageGutter(context),
+                  Space.lg,
+                ),
                 itemCount: c.items.length + 1,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                separatorBuilder: (_, _) => const SizedBox(height: 6),
                 itemBuilder: (context, i) => i == c.items.length
                     ? footer
                     : cardBuilder(context, c.items[i]),
@@ -129,17 +143,24 @@ class AdaptiveDataList<T> extends StatelessWidget {
     );
   }
 
-  Widget _table(List<T> rows) {
+  Widget _table(BuildContext context, List<T> rows) {
     final tap = onTap;
     return DataTable(
       showCheckboxColumn: false,
       // Tighter than the defaults (56/24) so 7-column tables fit a laptop
       // screen next to the sidebar without horizontal scrolling.
-      columnSpacing: 24,
-      horizontalMargin: 16,
+      columnSpacing: 20,
+      horizontalMargin: 12,
+      dataRowMinHeight: 38,
+      dataRowMaxHeight: 42,
+      headingRowHeight: 36,
+      dividerThickness: 0.8,
       columns: [
         for (final column in columns)
-          DataColumn(label: Text(column.label), numeric: column.numeric),
+          DataColumn(
+            label: Text(context.w(column.label)),
+            numeric: column.numeric,
+          ),
       ],
       rows: [
         for (final row in rows)
@@ -162,7 +183,7 @@ class PagedFooter extends StatelessWidget {
     final c = controller;
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: Space.sm),
       child: Wrap(
         alignment: WrapAlignment.center,
         crossAxisAlignment: WrapCrossAlignment.center,
@@ -221,22 +242,24 @@ class ListCard extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 16)],
+            if (leading != null) ...[leading!, const SizedBox(width: 12)],
             Expanded(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   DefaultTextStyle.merge(
-                    style: Theme.of(context).textTheme.bodyLarge,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     child: title,
                   ),
                   if (subtitle != null)
                     DefaultTextStyle.merge(
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       child: subtitle!,

@@ -10,15 +10,19 @@ export const SYSTEM_ACCOUNTS: SystemAccount[] = [
   { code: '1010', name: 'Bank Account', type: 'asset', subtype: 'bank', key: 'bank' },
   { code: '1100', name: 'Accounts Receivable', type: 'asset', subtype: 'receivables', key: 'receivables' },
   { code: '1200', name: 'Inventory', type: 'asset', subtype: 'inventory', key: 'inventory' },
+  { code: '1220', name: 'Work in Progress', type: 'asset', subtype: 'inventory', key: 'wip' },
   { code: '1210', name: 'Stock in Transit', type: 'asset', subtype: 'inventory', key: 'stock_in_transit' },
   { code: '1300', name: 'Input CGST', type: 'asset', subtype: 'tax', key: 'input_cgst' },
   { code: '1301', name: 'Input SGST', type: 'asset', subtype: 'tax', key: 'input_sgst' },
   { code: '1302', name: 'Input IGST', type: 'asset', subtype: 'tax', key: 'input_igst' },
   { code: '1310', name: 'TDS Receivable', type: 'asset', subtype: 'tax', key: 'tds_receivable' },
   { code: '1320', name: 'GST Cash Ledger', type: 'asset', subtype: 'tax', key: 'gst_cash' },
+  { code: '1311', name: 'TCS Receivable', type: 'asset', subtype: 'tax', key: 'tcs_receivable' },
+  { code: '1420', name: 'Marketplace Reserve', type: 'asset', subtype: 'other', key: 'marketplace_reserve' },
   { code: '1330', name: 'Advance Income Tax', type: 'asset', subtype: 'tax', key: 'advance_tax' },
   { code: '1400', name: 'Labour Advances', type: 'asset', subtype: 'other', key: 'labour_advances' },
   { code: '1410', name: 'Contractor Advances', type: 'asset', subtype: 'other', key: 'contractor_advances' },
+  { code: '1295', name: 'Inter-company Account', type: 'asset', subtype: 'other', key: 'intercompany' },
   { code: '1500', name: 'Fixed Assets', type: 'asset', subtype: 'fixed_asset', key: 'fixed_assets' },
   { code: '1510', name: 'Accumulated Depreciation', type: 'asset', subtype: 'fixed_asset', key: 'accumulated_depreciation' },
   { code: '2000', name: 'Accounts Payable', type: 'liability', subtype: 'payables', key: 'payables' },
@@ -28,6 +32,7 @@ export const SYSTEM_ACCOUNTS: SystemAccount[] = [
   { code: '2110', name: 'TDS Payable', type: 'liability', subtype: 'tax', key: 'tds_payable' },
   { code: '2120', name: 'BOCW Cess Payable', type: 'liability', subtype: 'tax', key: 'cess_payable' },
   { code: '2130', name: 'GST Payable — Reverse Charge', type: 'liability', subtype: 'tax', key: 'rcm_payable' },
+  { code: '2140', name: 'Goods Received Not Invoiced', type: 'liability', subtype: 'other', key: 'grni' },
   { code: '2200', name: 'Retention Payable', type: 'liability', subtype: 'other', key: 'retention_payable' },
   { code: '2300', name: 'Customer Advances — Bookings', type: 'liability', subtype: 'other', key: 'booking_advances' },
   { code: '3000', name: "Owner's Capital", type: 'equity', subtype: 'other', key: 'capital' },
@@ -39,7 +44,9 @@ export const SYSTEM_ACCOUNTS: SystemAccount[] = [
   { code: '4910', name: 'Gain on Sale of Assets', type: 'income', subtype: 'other', key: 'asset_gain' },
   { code: '5000', name: 'Cost of Goods Sold', type: 'expense', subtype: 'other', key: 'cogs' },
   { code: '5100', name: 'Purchases — Non-stock Items', type: 'expense', subtype: 'other', key: 'purchases_nonstock' },
+  { code: '5110', name: 'Purchase Price Variance', type: 'expense', subtype: 'other', key: 'purchase_price_variance' },
   { code: '5200', name: 'Stock Shortage & Wastage', type: 'expense', subtype: 'other', key: 'stock_loss' },
+  { code: '5340', name: 'Conversion Cost Absorbed', type: 'expense', subtype: 'other', key: 'conversion_absorbed' },
   { code: '5300', name: 'Material Consumed at Sites', type: 'expense', subtype: 'other', key: 'material_consumed' },
   { code: '5310', name: 'Site Labour Wages', type: 'expense', subtype: 'other', key: 'site_labour' },
   { code: '5320', name: 'Subcontract Work', type: 'expense', subtype: 'other', key: 'subcontract_cost' },
@@ -47,6 +54,7 @@ export const SYSTEM_ACCOUNTS: SystemAccount[] = [
   { code: '5900', name: 'Round Off', type: 'expense', subtype: 'other', key: 'round_off' },
   { code: '5910', name: 'Interest and Late Fee on Taxes', type: 'expense', subtype: 'other', key: 'tax_interest' },
   { code: '5920', name: 'Loss on Sale of Assets', type: 'expense', subtype: 'other', key: 'asset_loss' },
+  { code: '6100', name: 'Marketplace Fees', type: 'expense', subtype: 'other', key: 'marketplace_fees' },
   { code: '6000', name: 'Rent', type: 'expense', subtype: 'other', key: null },
   { code: '6010', name: 'Salaries & Wages', type: 'expense', subtype: 'other', key: null },
   { code: '6020', name: 'Electricity', type: 'expense', subtype: 'other', key: null },
@@ -67,7 +75,9 @@ export type SystemKey =
   | 'contractor_advances' | 'tds_payable' | 'cess_payable' | 'retention_payable' | 'booking_advances'
   | 'property_sales' | 'subcontract_cost'
   | 'tds_receivable' | 'rcm_payable' | 'tax_interest'
-  | 'gst_cash' | 'advance_tax' | 'fixed_assets' | 'accumulated_depreciation' | 'asset_gain' | 'depreciation' | 'asset_loss';
+  | 'gst_cash' | 'advance_tax' | 'fixed_assets' | 'accumulated_depreciation' | 'asset_gain' | 'depreciation' | 'asset_loss'
+  | 'intercompany' | 'grni' | 'purchase_price_variance'
+  | 'marketplace_fees' | 'tcs_receivable' | 'marketplace_reserve' | 'wip' | 'conversion_absorbed';
 
 const KEYED = SYSTEM_ACCOUNTS.filter((a) => a.key !== null).length;
 

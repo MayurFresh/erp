@@ -13,6 +13,7 @@ import 're_models.dart';
 import 're_perms.dart';
 import 're_repository.dart';
 import 're_widgets.dart';
+import '../../core/app_colors.dart';
 
 /// `/payment-plans`: stage-linked payment plans per project.
 class PaymentPlansScreen extends ConsumerStatefulWidget {
@@ -95,7 +96,9 @@ class _PaymentPlansScreenState extends ConsumerState<PaymentPlansScreen> {
                   'Status',
                   (p) => Pill(
                     p.isActive ? 'Active' : 'Inactive',
-                    color: p.isActive ? Colors.green.shade700 : Colors.grey,
+                    color: p.isActive
+                        ? context.colors.success
+                        : context.colors.onNeutralContainer,
                   ),
                 ),
               ],
@@ -106,7 +109,9 @@ class _PaymentPlansScreenState extends ConsumerState<PaymentPlansScreen> {
                 details: [p.stages.map((s) => s.name).join(' → ')],
                 pills: Pill(
                   p.isActive ? 'Active' : 'Inactive',
-                  color: p.isActive ? Colors.green.shade700 : Colors.grey,
+                  color: p.isActive
+                      ? context.colors.success
+                      : context.colors.onNeutralContainer,
                 ),
               ),
             ),
@@ -204,7 +209,7 @@ class _PlanFormState extends ConsumerState<PlanForm> with ServerFieldErrors {
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     if (stagesError(_stages) != null) return;
     final stages = [
       for (final s in _stages) {'name': s.name, 'pct': s.pct},
@@ -365,9 +370,9 @@ class _PlanFormState extends ConsumerState<PlanForm> with ServerFieldErrors {
                       Chip(
                         key: const Key('plan-sum'),
                         avatar: Icon(
-                          ok ? Icons.check_circle : Icons.error_outline,
+                          ok ? Icons.check_circle_outline : Icons.error_outline,
                           color: ok
-                              ? Colors.green.shade700
+                              ? context.colors.success
                               : theme.colorScheme.error,
                         ),
                         label: Text('Σ ${formatPlain(sum)}% of 100%'),

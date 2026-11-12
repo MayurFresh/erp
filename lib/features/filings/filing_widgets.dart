@@ -5,13 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../core/api_exception.dart';
 import '../../core/json.dart';
 import '../../core/money.dart';
-import '../../core/validators.dart';
 import '../../widgets/busy.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../compliance/compliance_widgets.dart';
 import 'filing_models.dart';
 import 'filings_repository.dart';
+import '../../core/app_colors.dart';
+import '../../widgets/form_support.dart';
 
 IconData _checkIcon(String status) => switch (status) {
   'pass' => Icons.check_circle_outline,
@@ -21,8 +22,8 @@ IconData _checkIcon(String status) => switch (status) {
 };
 
 Color _checkColor(BuildContext context, String status) => switch (status) {
-  'pass' => Colors.green.shade700,
-  'warn' => Colors.orange.shade800,
+  'pass' => context.colors.success,
+  'warn' => context.colors.warning,
   'fail' => Theme.of(context).colorScheme.error,
   _ => Theme.of(context).colorScheme.onSurfaceVariant,
 };
@@ -72,7 +73,7 @@ class UnverifiedBadge extends StatelessWidget {
     return Tooltip(
       message: items.join('\n'),
       child: InkWell(
-        onTap: () => showDialog<void>(
+        onTap: () => showFormDialog<void>(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Unverified figures'),
@@ -99,7 +100,7 @@ class UnverifiedBadge extends StatelessWidget {
             ],
           ),
         ),
-        child: Pill('Unverified', color: Colors.orange.shade800),
+        child: Pill('Unverified', color: context.colors.warning),
       ),
     );
   }
@@ -115,7 +116,7 @@ Future<Filing?> showMarkFiledDialog(
   String arnLabel = 'ARN',
   Map<String, dynamic> extra = const {},
   FilingErrorHandler? onError,
-}) => showDialog<Filing>(
+}) => showFormDialog<Filing>(
   context: context,
   builder: (_) => _MarkFiledDialog(
     ref: ref,
@@ -171,7 +172,7 @@ class _MarkFiledDialogState extends State<_MarkFiledDialog> with DirtyTracking {
 
   Future<void> _submit() async {
     final today = DateTime.now();
-    final ok = _form.currentState!.validate();
+    final ok = validateAndReveal(_form);
     final late = DateTime(
       _filedOn.year,
       _filedOn.month,
@@ -212,7 +213,7 @@ class _MarkFiledDialogState extends State<_MarkFiledDialog> with DirtyTracking {
           final checks = asJsonList(
             e.details['checks'],
           ).map(PrefileCheck.fromJson).toList();
-          final again = await showDialog<bool>(
+          final again = await showFormDialog<bool>(
             context: context,
             builder: (_) => AlertDialog(
               title: const Text('Checks failed'),
@@ -244,7 +245,7 @@ class _MarkFiledDialogState extends State<_MarkFiledDialog> with DirtyTracking {
           continue;
         }
         if (e.code == 'ALREADY_FILED') {
-          await showDialog<void>(
+          await showFormDialog<void>(
             context: context,
             builder: (_) => AlertDialog(
               title: const Text('Already filed'),
@@ -352,7 +353,7 @@ class _MarkFiledDialogState extends State<_MarkFiledDialog> with DirtyTracking {
 
 /// Asks for a mandatory reason; null when dismissed.
 Future<String?> askReason(BuildContext context, String title) =>
-    showDialog<String>(
+    showFormDialog<String>(
       context: context,
       builder: (_) => _ReasonDialog(title: title),
     );
@@ -397,7 +398,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
       ),
       FilledButton(
         onPressed: () {
-          if (_form.currentState!.validate()) {
+          if (validateAndReveal(_form)) {
             Navigator.of(context).pop(_reason.text.trim());
           }
         },

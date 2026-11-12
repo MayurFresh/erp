@@ -1,7 +1,11 @@
+import '../controls/cost_centre_widgets.dart';
+import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
+import '../../core/json.dart';
 import '../../core/money.dart';
 import '../../core/providers.dart';
 import '../../widgets/form_support.dart';
@@ -37,6 +41,8 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
         DirtyTracking<InvoiceCreateScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notes = TextEditingController();
+  String? _costCentreId;
+  Json _custom = const {};
   final List<LineDraft> _lines = [];
   String? _locationId;
   Party? _party;
@@ -86,6 +92,8 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
       partyId: party.id,
       invoiceDate: apiDate(_date),
       notes: trimmedOrNull(_notes.text),
+      costCentreId: _costCentreId,
+      custom: _custom,
       lines: [for (final line in _lines) line.toDraft()],
     );
   }
@@ -97,17 +105,21 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
   Future<void> _pickParty() async {
     final party = await pickParty(context, ref, type: PartyType.customer);
     if (party == null) return;
-    setState(() {
-      _party = party;
-      _fieldErrors = Map.of(_fieldErrors)..remove('partyId');
-    });
+    if (mounted) {
+      setState(() {
+        _party = party;
+        _fieldErrors = Map.of(_fieldErrors)..remove('partyId');
+      });
+    }
     schedulePreview();
   }
 
   Future<void> _addLine() async {
     final item = await pickItem(context, ref);
     if (item == null) return;
-    setState(() => _lines.add(LineDraft(item, defaultRate: item.salePrice)));
+    if (mounted) {
+      setState(() => _lines.add(LineDraft(item, defaultRate: item.salePrice)));
+    }
     schedulePreview();
   }
 
@@ -123,17 +135,18 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
   Future<void> _pickDate() async {
     final picked = await pickDocDate(context, _date);
     if (picked == null) return;
-    setState(() => _date = picked);
+    if (mounted) setState(() => _date = picked);
     schedulePreview();
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       _saveError = null;
       _fieldErrors = const {};
       _lineErrors = const {};
     });
-    final valid = _formKey.currentState!.validate();
+    final valid = validateAndReveal(_formKey);
     if (_lines.isEmpty) {
       markSaved();
       showInfoSnackBar(context, 'Add at least one item.');
@@ -183,7 +196,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
             children: [
               LocationField(
                 value: _locationId,
-                label: 'Billing location',
+                label: context.w('Billing location'),
                 errorText: _fieldErrors['locationId'],
                 onChanged: (v) {
                   setState(() {
@@ -194,11 +207,12 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
                 },
               ),
               PickerField(
-                label: 'Customer',
+                label: context.w('Customer'),
                 value: _party?.name,
                 onTap: _pickParty,
                 errorText: _fieldErrors['partyId'],
-                validator: () => _party == null ? 'Choose a customer' : null,
+                validator: () =>
+                    _party == null ? context.w('Choose a customer') : null,
               ),
             ],
           ),
@@ -214,11 +228,19 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
           FormRow(
             children: [
               PickerField(
-                label: 'Invoice date',
+                label: context.w('Invoice date'),
                 value: formatDate(_date),
                 icon: Icons.calendar_today_outlined,
                 errorText: _fieldErrors['invoiceDate'],
                 onTap: _pickDate,
+              ),
+              CostCentreField(
+                value: _costCentreId,
+                errorText: _fieldErrors['costCentreId'],
+                onChanged: (v) => setState(() {
+                  _costCentreId = v;
+                  markDirty();
+                }),
               ),
               TextFormField(
                 controller: _notes,
@@ -237,9 +259,23 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
       key: _formKey,
       onChanged: markDirty,
       child: DocFormLayout(
-        title: 'New invoice',
+        bottomBar: DocSaveBar(
+          busy: _saving,
+          onPressed: _save,
+          label: context.w('Save invoice'),
+        ),
+        title: context.w('New invoice'),
         main: [
           details,
+          CustomFieldsSection(
+            entity: 'invoice',
+            values: _custom,
+            errors: _fieldErrors,
+            onChanged: (v) => setState(() {
+              _custom = v;
+              markDirty();
+            }),
+          ),
           DocLinesSection(
             lines: _lines,
             previewLines: preview?.lines,
@@ -253,6 +289,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
         summary: SectionCard(
           title: 'Summary',
           child: DocSummaryPanel(
+            hideSave: true,
             ready: buildDraft() != null,
             preview: preview,
             previewError: previewError,

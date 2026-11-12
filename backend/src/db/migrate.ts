@@ -40,6 +40,14 @@ export async function migrate(ownerUrl: string, appRole: string, log = console.l
     await client.query(`grant usage, select on all sequences in schema public to ${role}`);
     await client.query(`grant execute on function auth_find_user_by_email(text) to ${role}`);
     await client.query(`revoke insert, update, delete on schema_migrations from ${role}`);
+    for (const fn of ['platform_is_admin(uuid)', 'platform_tenants(uuid, uuid)', 'platform_active_users(uuid, int)',
+      'platform_locate(uuid, text, uuid)', 'platform_user_is_admin(uuid, uuid)',
+      'platform_audit_write(uuid, text, uuid, text, text, jsonb)', 'platform_audit_list(uuid, int, timestamptz, uuid)',
+      'auth_tenant_status(uuid)', 'auth_find_api_key(text)']) {
+      await client.query(`grant execute on function ${fn} to ${role}`);
+    }
+    // Platform tables are reachable only through the functions above.
+    await client.query(`revoke all on platform_admins, platform_audit from ${role}`);
   } finally {
     await client.end();
   }

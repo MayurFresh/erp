@@ -8,7 +8,10 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors.ts';
 import { nullableText, optionalText } from '../lib/india.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { checkPassword } from './auth.ts';
 import { userRows } from './users.ts';
+import { assertUserSlot } from './business.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const patchUserBody = z.object({
   name: z.string().trim().min(2).max(80).optional(),
@@ -17,7 +20,7 @@ const patchUserBody = z.object({
   roleId: z.uuid().optional(),
   locationIds: z.array(z.uuid()).max(500).nullable().optional(),
 });
-const passwordBody = z.object({ password: z.string().min(8, 'Use at least 8 characters').max(128) });
+const passwordBody = z.object({ password: z.string().max(128) });
 const patchRoleBody = z.object({
   name: z.string().trim().min(2).max(60).optional(),
   description: optionalText(200),
@@ -26,14 +29,14 @@ const patchRoleBody = z.object({
 });
 
 /** The user's role rows in the active company, with the permissions they grant. */
-async function memberRoles(tx: Tx, ctx: RequestContext, userId: string) {
+export async function memberRoles(tx: Tx, ctx: RequestContext, userId: string) {
   return tx.selectFrom('user_roles as ur').innerJoin('roles as r', 'r.id', 'ur.role_id')
     .select(['ur.id', 'r.name', 'r.permissions', 'ur.location_ids'])
     .where('ur.user_id', '=', userId).where('ur.company_id', '=', ctx.companyId).execute();
 }
 
 /** Callers may only manage users whose access is within their own. */
-function requireNotMorePowerful(ctx: RequestContext, roles: { permissions: string[] }[]) {
+export function requireNotMorePowerful(ctx: RequestContext, roles: { permissions: string[] }[]) {
   const extra = roles.flatMap((r) => r.permissions).filter((p) => !ctx.can(p));
   if (extra.length) throw forbidden('This user has access you do not have, so you cannot change them.');
 }
@@ -60,6 +63,10 @@ export async function userAdminRoutes(app: FastifyInstance) {
       requireNotMorePowerful(ctx, current);
       const isOwner = current.some((r) => r.name === 'Owner');
 
+      if (body.isActive === true) {
+        const target = await tx.selectFrom('users').select('is_active').where('id', '=', id).executeTakeFirst();
+        if (target && !target.is_active) await assertUserSlot(tx, ctx);
+      }
       if (body.isActive === false && id === ctx.userId) throw badRequest('You cannot deactivate yourself.', { isActive: 'Not allowed' });
 
       let newRole: { id: string; name: string; permissions: string[]; is_system: boolean } | undefined;
@@ -111,12 +118,14 @@ export async function userAdminRoutes(app: FastifyInstance) {
     ctx.require('users.manage');
     const id = parse(z.uuid(), req.params.id);
     const { password } = parse(passwordBody, req.body);
-    const hash = await bcrypt.hash(password, 10);
     await ctx.tx(async (tx) => {
       const current = await memberRoles(tx, ctx, id);
       if (!current.length) throw notFound('User');
       requireNotMorePowerful(ctx, current);
-      await tx.updateTable('users').set({ password_hash: hash }).where('id', '=', id).execute();
+      const target = await tx.selectFrom('users').select('email').where('id', '=', id).executeTakeFirstOrThrow();
+      checkPassword(password, target.email, 'password');
+      const hash = await bcrypt.hash(password, 10);
+      await tx.updateTable('users').set({ password_hash: hash, password_changed_at: new Date(), failed_logins: 0, locked_until: null }).where('id', '=', id).execute();
       await tx.updateTable('refresh_tokens').set({ revoked_at: new Date() }).where('user_id', '=', id).where('revoked_at', 'is', null).execute();
       await writeAudit(tx, auditOf(ctx), 'user', id, 'reset_password');
     });
@@ -149,3 +158,7 @@ export async function userAdminRoutes(app: FastifyInstance) {
     }
   });
 }
+
+documentRoute('PATCH', '/users/:id', { body: patchUserBody });
+documentRoute('POST', '/users/:id/password', { body: passwordBody });
+documentRoute('PATCH', '/roles/:id', { body: patchRoleBody });

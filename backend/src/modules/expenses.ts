@@ -6,6 +6,7 @@ import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
 import { financialYear, isValidDate, todayIst } from '../lib/dates.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
+import { documentRoute } from '../lib/openapi.ts';
 import { computeGst } from '../lib/gst.ts';
 import { moneyField, percentField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
@@ -15,6 +16,8 @@ import { assertGstRates } from '../lib/rates.ts';
 import { calcTds, cancelDeduction, insertDeduction } from '../lib/tds.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { createOrSubmit, registerApprovalDoc } from './approvals.ts';
+import { resolveCostCentre } from './cost-centres.ts';
 import { getLocation } from './locations.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -30,6 +33,7 @@ const createBody = z.object({
   paidFromAccountId: z.uuid(),
   tdsSectionId: z.uuid().nullable().optional(),
   reverseCharge: z.boolean().optional(),
+  costCentreId: z.uuid().nullable().optional(),
 });
 const cancelBody = z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) });
 const listQuery = pagingQuery.extend({
@@ -63,7 +67,7 @@ const expenseJson = (r: ExpenseRow) => ({
   tdsAmount: r.tds_amount, netPaid: Math.round((r.total - r.tds_amount) * 100) / 100, reverseCharge: r.reverse_charge,
   rcmSelfInvoiceNo: r.rcm_self_invoice_no,
   status: r.status, createdAt: r.created_at, createdBy: { id: r.created_by, name: r.created_by_name },
-  cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason,
+  cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason, costCentreId: r.cost_centre_id,
 });
 
 async function loadExpense(tx: Tx, ctx: RequestContext, id: string) {
@@ -71,6 +75,88 @@ async function loadExpense(tx: Tx, ctx: RequestContext, id: string) {
   if (!row || !ctx.canAccessLocation(row.location_id)) throw notFound('Expense');
   return expenseJson(row);
 }
+
+type CreateBody = z.infer<typeof createBody>;
+
+/** Creates an expense (shared by the route and a final approval). */
+export async function createExpense(ctx: RequestContext, tx: Tx, body: CreateBody) {
+  const costCentreId = await resolveCostCentre(tx, ctx, body.costCentreId);
+  const location = await getLocation(tx, ctx, body.locationId);
+  const accounts = await tx.selectFrom('accounts').select(['id', 'name', 'type', 'subtype', 'is_active', 'system_key'])
+    .where('company_id', '=', ctx.companyId).where('id', 'in', [body.accountId, body.paidFromAccountId]).execute();
+  const head = accounts.find((a) => a.id === body.accountId);
+  const paidFrom = accounts.find((a) => a.id === body.paidFromAccountId);
+  if (!head || head.type !== 'expense' || !head.is_active || head.system_key === 'cogs') {
+    throw badRequest('Choose an active expense head.', { accountId: 'Not an expense account' });
+  }
+  if (!paidFrom || !['cash', 'bank'].includes(paidFrom.subtype) || !paidFrom.is_active) {
+    throw badRequest('Choose an active cash or bank account.', { paidFromAccountId: 'Not a cash or bank account' });
+  }
+  let party: { id: string; name: string; state_code: string | null; tds_section_id: string | null } | undefined;
+  if (body.partyId) {
+    party = await tx.selectFrom('parties').select(['id', 'name', 'state_code', 'type', 'tds_section_id'])
+      .where('id', '=', body.partyId).where('company_id', '=', ctx.companyId).executeTakeFirst();
+    if (!party) throw badRequest('Vendor not found.', { partyId: 'Not found' });
+  }
+  const date = body.expenseDate ?? todayIst();
+  if (date > todayIst()) throw badRequest('Date cannot be in the future.', { expenseDate: 'In the future' });
+
+  if (!party && (body.reverseCharge || body.tdsSectionId)) {
+    throw badRequest('Choose a vendor to apply TDS or reverse charge.', { partyId: 'Required' });
+  }
+  const gstRate = body.gstRate ?? 0;
+  await assertGstRates(tx, date, [{ rate: gstRate, field: 'gstRate', anyKind: true }], ctx.companyId);
+  const g = computeGst(location.state_code, party?.state_code ?? location.state_code,
+    [{ qty: 1, rate: body.amount, discountPct: 0, gstRate }]);
+  const line = g.lines[0]!;
+  const sectionId = body.tdsSectionId !== undefined ? body.tdsSectionId : party?.tds_section_id ?? null;
+  const tds = sectionId && party ? await calcTds(tx, ctx.companyId, { partyId: party.id, sectionId, date, gross: body.amount }) : null;
+  const tdsAmount = tds?.amount ?? 0;
+  const reverseCharge = body.reverseCharge ?? false;
+  const taxTotal = Math.round((line.cgst + line.sgst + line.igst) * 100) / 100;
+  const total = reverseCharge ? body.amount : line.lineTotal;
+  const fy = financialYear(date);
+  const number = await nextNumber(tx, ctx, 'expense', fy);
+  const rcmNo = reverseCharge ? await nextNumber(tx, ctx, 'rcm_invoice', fy) : null;
+  const row = await tx.insertInto('expenses').values({
+    tenant_id: ctx.tenantId, company_id: ctx.companyId, number, expense_date: date, location_id: location.id,
+    account_id: head.id, party_id: party?.id ?? null, description: body.description, amount: body.amount, gst_rate: gstRate,
+    cgst: line.cgst, sgst: line.sgst, igst: line.igst, total, paid_from_account_id: paidFrom.id,
+    tds_section_id: tds?.sectionId ?? null, tds_base: tds?.base ?? 0, tds_rate: tds?.rate ?? 0, tds_amount: tdsAmount,
+    reverse_charge: reverseCharge, rcm_self_invoice_no: rcmNo, cost_centre_id: costCentreId,
+    created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
+  }).returning('id').executeTakeFirstOrThrow();
+
+  const acc = await systemAccounts(tx, ctx);
+  await postJournal(tx, auditOf(ctx), {
+    date, voucherType: 'expense', voucherId: row.id, number, narration: `${head.name}: ${body.description}`,
+    lines: [
+      { accountId: head.id, amount: body.amount, locationId: location.id, partyId: null, costCentreId },
+      { accountId: acc.input_cgst, amount: line.cgst, locationId: location.id },
+      { accountId: acc.input_sgst, amount: line.sgst, locationId: location.id },
+      { accountId: acc.input_igst, amount: line.igst, locationId: location.id },
+      { accountId: paidFrom.id, amount: -Math.round((total - tdsAmount) * 100) / 100, locationId: location.id },
+      { accountId: acc.tds_payable, amount: -tdsAmount, locationId: location.id },
+      { accountId: acc.rcm_payable, amount: reverseCharge ? -taxTotal : 0, locationId: location.id },
+    ],
+  });
+  if (tds && party) {
+    await insertDeduction(tx, ctx, {
+      sourceType: 'expense', sourceId: row.id, number, date, partyId: party.id, sectionId: tds.sectionId,
+      sectionCode: tds.sectionCode, gross: tds.gross, base: tds.base, rate: tds.rate, amount: tds.amount,
+    });
+  }
+  await writeAudit(tx, auditOf(ctx), 'expense', row.id, 'create', null, { number, amount: body.amount, total });
+  return loadExpense(tx, ctx, row.id);
+}
+
+registerApprovalDoc('expense', {
+  permission: 'expenses.create',
+  create: async (ctx, tx, payload) => {
+    const d = await createExpense(ctx, tx, parse(createBody, payload));
+    return { id: d.id, number: d.number };
+  },
+});
 
 export async function expenseRoutes(app: FastifyInstance) {
   app.get('/expenses', async (req) => {
@@ -107,76 +193,10 @@ export async function expenseRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('expenses.create');
     const body = parse(createBody, req.body);
-    const expense = await ctx.tx(async (tx) => {
-      const location = await getLocation(tx, ctx, body.locationId);
-      const accounts = await tx.selectFrom('accounts').select(['id', 'name', 'type', 'subtype', 'is_active', 'system_key'])
-        .where('company_id', '=', ctx.companyId).where('id', 'in', [body.accountId, body.paidFromAccountId]).execute();
-      const head = accounts.find((a) => a.id === body.accountId);
-      const paidFrom = accounts.find((a) => a.id === body.paidFromAccountId);
-      if (!head || head.type !== 'expense' || !head.is_active || head.system_key === 'cogs') {
-        throw badRequest('Choose an active expense head.', { accountId: 'Not an expense account' });
-      }
-      if (!paidFrom || !['cash', 'bank'].includes(paidFrom.subtype) || !paidFrom.is_active) {
-        throw badRequest('Choose an active cash or bank account.', { paidFromAccountId: 'Not a cash or bank account' });
-      }
-      let party: { id: string; name: string; state_code: string | null; tds_section_id: string | null } | undefined;
-      if (body.partyId) {
-        party = await tx.selectFrom('parties').select(['id', 'name', 'state_code', 'type', 'tds_section_id'])
-          .where('id', '=', body.partyId).where('company_id', '=', ctx.companyId).executeTakeFirst();
-        if (!party) throw badRequest('Vendor not found.', { partyId: 'Not found' });
-      }
-      const date = body.expenseDate ?? todayIst();
-      if (date > todayIst()) throw badRequest('Date cannot be in the future.', { expenseDate: 'In the future' });
-
-      if (!party && (body.reverseCharge || body.tdsSectionId)) {
-        throw badRequest('Choose a vendor to apply TDS or reverse charge.', { partyId: 'Required' });
-      }
-      const gstRate = body.gstRate ?? 0;
-      await assertGstRates(tx, date, [{ rate: gstRate, field: 'gstRate', anyKind: true }]);
-      const g = computeGst(location.state_code, party?.state_code ?? location.state_code,
-        [{ qty: 1, rate: body.amount, discountPct: 0, gstRate }]);
-      const line = g.lines[0]!;
-      const sectionId = body.tdsSectionId !== undefined ? body.tdsSectionId : party?.tds_section_id ?? null;
-      const tds = sectionId && party ? await calcTds(tx, ctx.companyId, { partyId: party.id, sectionId, date, gross: body.amount }) : null;
-      const tdsAmount = tds?.amount ?? 0;
-      const reverseCharge = body.reverseCharge ?? false;
-      const taxTotal = Math.round((line.cgst + line.sgst + line.igst) * 100) / 100;
-      const total = reverseCharge ? body.amount : line.lineTotal;
-      const fy = financialYear(date);
-      const number = await nextNumber(tx, ctx, 'expense', fy);
-      const rcmNo = reverseCharge ? await nextNumber(tx, ctx, 'rcm_invoice', fy) : null;
-      const row = await tx.insertInto('expenses').values({
-        tenant_id: ctx.tenantId, company_id: ctx.companyId, number, expense_date: date, location_id: location.id,
-        account_id: head.id, party_id: party?.id ?? null, description: body.description, amount: body.amount, gst_rate: gstRate,
-        cgst: line.cgst, sgst: line.sgst, igst: line.igst, total, paid_from_account_id: paidFrom.id,
-        tds_section_id: tds?.sectionId ?? null, tds_base: tds?.base ?? 0, tds_rate: tds?.rate ?? 0, tds_amount: tdsAmount,
-        reverse_charge: reverseCharge, rcm_self_invoice_no: rcmNo,
-        created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
-      }).returning('id').executeTakeFirstOrThrow();
-
-      const acc = await systemAccounts(tx, ctx);
-      await postJournal(tx, auditOf(ctx), {
-        date, voucherType: 'expense', voucherId: row.id, number, narration: `${head.name}: ${body.description}`,
-        lines: [
-          { accountId: head.id, amount: body.amount, locationId: location.id, partyId: null },
-          { accountId: acc.input_cgst, amount: line.cgst, locationId: location.id },
-          { accountId: acc.input_sgst, amount: line.sgst, locationId: location.id },
-          { accountId: acc.input_igst, amount: line.igst, locationId: location.id },
-          { accountId: paidFrom.id, amount: -Math.round((total - tdsAmount) * 100) / 100, locationId: location.id },
-          { accountId: acc.tds_payable, amount: -tdsAmount, locationId: location.id },
-          { accountId: acc.rcm_payable, amount: reverseCharge ? -taxTotal : 0, locationId: location.id },
-        ],
-      });
-      if (tds && party) {
-        await insertDeduction(tx, ctx, {
-          sourceType: 'expense', sourceId: row.id, number, date, partyId: party.id, sectionId: tds.sectionId,
-          sectionCode: tds.sectionCode, gross: tds.gross, base: tds.base, rate: tds.rate, amount: tds.amount,
-        });
-      }
-      await writeAudit(tx, auditOf(ctx), 'expense', row.id, 'create', null, { number, amount: body.amount, total });
-      return loadExpense(tx, ctx, row.id);
-    });
-    return reply.status(201).send(expense);
+    const r = await ctx.tx((tx) => createOrSubmit(ctx, tx, 'expense', body, (t) => createExpense(ctx, t, body),
+      (d) => ({ amount: d.total, date: d.expenseDate, partyId: d.partyId, locationId: d.locationId, narration: d.description })));
+    if (r.request) return reply.status(202).send({ approvalRequest: r.request });
+    return reply.status(201).send(r.doc);
   });
 
   app.post<{ Params: { id: string } }>('/expenses/:id/cancel', async (req) => {
@@ -197,3 +217,6 @@ export async function expenseRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/expenses', { summary: 'Record an expense', body: createBody });
+documentRoute('POST', '/expenses/:id/cancel', { summary: 'Cancel an expense', body: cancelBody });

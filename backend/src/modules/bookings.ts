@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { assertFresh } from '../lib/stale.ts';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import type { RequestContext } from '../auth/context.ts';
@@ -17,6 +18,7 @@ import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getProject } from './projects.ts';
 import { getUnit } from './units.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -33,6 +35,7 @@ const createBody = z.object({
   notes: optionalText(1000),
 });
 const patchBody = z.object({
+  expectedUpdatedAt: z.string().max(40).optional(),
   notes: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().trim().max(1000).nullable().optional()),
   gstPct: percentField.max(28).optional(),
   agreementValue: moneyField.optional(),
@@ -127,7 +130,7 @@ async function loadBookings(tx: Tx, ids: string[]) {
         due: round2(open.reduce((s, d) => s + Math.max(d.total - d.amount_paid, 0), 0)),
         undemanded: round2(b.agreement_value - demanded),
       },
-      createdAt: b.created_at, createdBy: { id: b.created_by, name: b.created_by_name },
+      createdAt: b.created_at, updatedAt: b.updated_at, createdBy: { id: b.created_by, name: b.created_by_name },
       cancelledAt: b.cancelled_at, cancelReason: b.cancel_reason,
     };
   });
@@ -267,6 +270,7 @@ export async function bookingRoutes(app: FastifyInstance) {
     const body = parse(patchBody, req.body);
     return ctx.tx(async (tx) => {
       const before = await getBooking(tx, ctx, id, true);
+      assertFresh(before.updated_at, body.expectedUpdatedAt, 'booking');
       if (before.status === 'cancelled') throw conflict('This booking is cancelled.', 'CONFLICT');
       const old = (await loadBookings(tx, [id]))[0]!;
       const financial = body.gstPct !== undefined || body.agreementValue !== undefined;
@@ -528,3 +532,11 @@ export async function bookingRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/bookings', { body: createBody });
+documentRoute('PATCH', '/bookings/:id', { body: patchBody });
+documentRoute('POST', '/bookings/:id/agreement', { body: agreementBody });
+documentRoute('POST', '/bookings/:id/demands', { body: demandBody });
+documentRoute('POST', '/bookings/:id/possession', { body: possessionBody });
+documentRoute('POST', '/bookings/:id/cancel', { body: reasonBody });
+documentRoute('POST', '/demands/:id/cancel', { body: reasonBody });

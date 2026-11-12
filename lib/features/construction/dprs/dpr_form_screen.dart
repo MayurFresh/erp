@@ -73,6 +73,7 @@ class _DprFormScreenState extends ConsumerState<DprFormScreen>
   }
 
   Future<void> _load(String id) async {
+    if (_loading) return;
     setState(() => _loading = true);
     try {
       final dpr = await ref.read(constructionRepositoryProvider).dpr(id);
@@ -153,6 +154,7 @@ class _DprFormScreenState extends ConsumerState<DprFormScreen>
   }
 
   Future<void> _attachPhoto({required bool camera}) async {
+    if (_busy) return;
     final source = ref.read(photoSourceProvider);
     final unavailable = source.unavailableMessage;
     if (unavailable != null) {
@@ -179,7 +181,7 @@ class _DprFormScreenState extends ConsumerState<DprFormScreen>
   }
 
   Future<void> _save({required bool submit}) async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final location = _locationId;
     if (location == null) return;
     if (_date.isAfter(today())) {

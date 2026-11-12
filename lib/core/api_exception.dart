@@ -61,10 +61,12 @@ class ApiException implements Exception {
       case inUse:
         return "This record is used by other documents, so it can't be "
             'deleted. Deactivate it instead.';
+      case staleEdit:
+        return 'Someone else changed this while you were editing. Reload to see the latest version.';
       case tryAgain:
         return 'The server is busy. Please try again.';
       case requestInProgress:
-        return 'This request is already being processed. Please wait.';
+        return 'This request is already being processed. Wait a moment and try again.';
       case idempotencyMismatch:
         return 'This request conflicts with an earlier one. '
             'Reload and try again.';
@@ -87,6 +89,7 @@ class ApiException implements Exception {
   static const offline = networkError;
   static const inUse = 'IN_USE';
   static const tryAgain = 'TRY_AGAIN';
+  static const staleEdit = 'STALE_EDIT';
   static const requestInProgress = 'REQUEST_IN_PROGRESS';
   static const idempotencyMismatch = 'IDEMPOTENCY_MISMATCH';
   static const payloadTooLarge = 'PAYLOAD_TOO_LARGE';
@@ -121,4 +124,30 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException($statusCode, $code, $message)';
+}
+
+/// A create that needs approval: the server answered `202 { approvalRequest }`
+/// and nothing has been posted yet. Thrown by `ApiClient` so every save flow
+/// can show "Sent for approval (APR/…)" and close the form.
+class ApprovalPendingException extends ApiException {
+  ApprovalPendingException({
+    required this.requestId,
+    required this.number,
+    this.docType = '',
+  }) : super(202, pendingCode, 'Sent for approval ($number)');
+
+  static const pendingCode = 'APPROVAL_PENDING';
+
+  factory ApprovalPendingException.fromBody(Json body) {
+    final request = asJson(body['approvalRequest']);
+    return ApprovalPendingException(
+      requestId: asString(request['id']),
+      number: asString(request['number'], 'pending'),
+      docType: asString(request['docType']),
+    );
+  }
+
+  final String requestId;
+  final String number;
+  final String docType;
 }

@@ -20,6 +20,7 @@ import '../reports/report_widgets.dart' show tabularFigures;
 import 'it_models.dart';
 import 'it_repository.dart';
 import 'it_widgets.dart';
+import '../../core/app_colors.dart';
 
 /// `/tax-payments`: advance and self-assessment tax paid by challan.
 class TaxPaymentsScreen extends ConsumerStatefulWidget {
@@ -51,7 +52,7 @@ class _TaxPaymentsScreenState extends ConsumerState<TaxPaymentsScreen> {
   }
 
   Future<void> _record() async {
-    final p = await showDialog<TaxPayment>(
+    final p = await showFormDialog<TaxPayment>(
       context: context,
       builder: (_) => TaxPaymentDialog(initialTaxYear: _taxYear),
     );
@@ -149,8 +150,8 @@ class _TaxPaymentsScreenState extends ConsumerState<TaxPaymentsScreen> {
                     : Pill(
                         p.cancelled ? 'Cancelled' : 'Posted',
                         color: p.cancelled
-                            ? Colors.red.shade700
-                            : Colors.green.shade700,
+                            ? context.colors.danger
+                            : context.colors.success,
                       ),
               ),
             ],
@@ -218,7 +219,7 @@ class _TaxPaymentDialogState extends ConsumerState<TaxPaymentDialog>
 
   Future<void> _submit() async {
     setState(() => serverErrors = const {});
-    final ok = _form.currentState!.validate();
+    final ok = validateAndReveal(_form);
     setState(
       () => _accountError = _account == null ? 'Choose cash or bank' : null,
     );
@@ -293,7 +294,7 @@ class _TaxPaymentDialogState extends ConsumerState<TaxPaymentDialog>
                   inputFormatters: [moneyInput()],
                   decoration: InputDecoration(
                     labelText: 'Amount',
-                    prefixText: '₹ ',
+                    prefixText: '$moneySymbol ',
                     errorText: serverError('amount'),
                   ),
                   validator: (v) => validateMoney(v, min: 0.01),
@@ -331,11 +332,13 @@ class _TaxPaymentDialogState extends ConsumerState<TaxPaymentDialog>
                       where: (a) => a.subtype == 'bank' || a.subtype == 'cash',
                     );
                     if (a != null) {
-                      setState(() {
-                        _account = a;
-                        _accountError = null;
-                        markDirty();
-                      });
+                      if (mounted) {
+                        setState(() {
+                          _account = a;
+                          _accountError = null;
+                          markDirty();
+                        });
+                      }
                     }
                   },
                 ),

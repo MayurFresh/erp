@@ -12,6 +12,7 @@ import 're_models.dart';
 import 're_perms.dart';
 import 're_repository.dart';
 import 're_widgets.dart';
+import '../../core/app_colors.dart';
 
 /// `/bookings/:id`: schedule, totals and the sales actions.
 class BookingDetailScreen extends ConsumerWidget {
@@ -47,7 +48,7 @@ class _BookingBody extends ConsumerWidget {
   ], money: true);
 
   Future<void> _raiseDemand(BuildContext context, WidgetRef ref) async {
-    final demand = await showDialog<Demand>(
+    final demand = await showFormDialog<Demand>(
       context: context,
       builder: (_) => RaiseDemandDialog(booking: booking),
     );
@@ -60,7 +61,7 @@ class _BookingBody extends ConsumerWidget {
   }
 
   Future<void> _agreement(BuildContext context, WidgetRef ref) async {
-    final done = await showDialog<bool>(
+    final done = await showFormDialog<bool>(
       context: context,
       builder: (_) => AgreementDialog(booking: booking),
     );
@@ -71,7 +72,7 @@ class _BookingBody extends ConsumerWidget {
   }
 
   Future<void> _possession(BuildContext context, WidgetRef ref) async {
-    final done = await showDialog<bool>(
+    final done = await showFormDialog<bool>(
       context: context,
       builder: (_) => PossessionDialog(booking: booking),
     );
@@ -270,8 +271,8 @@ class _StageRow extends ConsumerWidget {
                   Pill(
                     stage.isDemanded ? 'Demanded' : 'Not demanded',
                     color: stage.isDemanded
-                        ? Colors.green.shade700
-                        : Colors.grey,
+                        ? context.colors.success
+                        : context.colors.onNeutralContainer,
                   ),
                 ],
               ),
@@ -304,6 +305,7 @@ class _RaiseDemandDialogState extends ConsumerState<RaiseDemandDialog> {
       .fold(0, (a, s) => a + s.amount);
 
   Future<void> _submit() async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       final demand = await ref
@@ -384,7 +386,7 @@ class _RaiseDemandDialogState extends ConsumerState<RaiseDemandDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         BusyButton(
@@ -420,7 +422,7 @@ class _AgreementDialogState extends ConsumerState<AgreementDialog> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() => _busy = true);
     try {
       await ref
@@ -467,7 +469,7 @@ class _AgreementDialogState extends ConsumerState<AgreementDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: _busy ? null : () => Navigator.of(context).pop(),
+        onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       BusyButton(busy: _busy, onPressed: _submit, label: 'Record'),
@@ -490,6 +492,7 @@ class _PossessionDialogState extends ConsumerState<PossessionDialog> {
   bool _busy = false;
 
   Future<void> _submit() async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       await ref
@@ -533,7 +536,7 @@ class _PossessionDialogState extends ConsumerState<PossessionDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         BusyButton(busy: _busy, onPressed: _submit, label: 'Record'),

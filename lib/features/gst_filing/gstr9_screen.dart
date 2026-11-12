@@ -13,6 +13,7 @@ import '../filings/filing_widgets.dart';
 import 'gst_filing_models.dart';
 import '../filings/filing_models.dart' show contractFy;
 import 'gst_filing_repository.dart';
+import '../../core/app_colors.dart';
 
 /// `/gst/gstr9?fy=`: the annual return pack.
 class Gstr9Screen extends ConsumerStatefulWidget {
@@ -111,7 +112,7 @@ class _Pack extends StatelessWidget {
             Text('Turnover ${formatMoney(p.turnover)}'),
             Pill(
               p.mandatory ? 'GSTR-9 required' : 'GSTR-9 optional',
-              color: p.mandatory ? Colors.orange.shade800 : null,
+              color: p.mandatory ? context.colors.warning : null,
             ),
             if (p.needs9c) const Pill('GSTR-9C needed (CA)'),
             UnverifiedBadge(p.unverified),
@@ -247,7 +248,7 @@ class _Pack extends StatelessWidget {
 
 Widget _filed(bool v) => Icon(
   v ? Icons.check_circle_outline : Icons.cancel_outlined,
-  color: v ? Colors.green.shade700 : Colors.red.shade700,
+  color: v ? AppColors.light.success : AppColors.light.danger,
   semanticLabel: v ? 'filed' : 'not filed',
 );
 

@@ -12,6 +12,7 @@ import { likeTerm } from '../lib/paging.ts';
 import { nextNumber } from '../lib/series.ts';
 import { docDate, money, name, notes, parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const fyField = z.string().regex(/^\d{4}-\d{2}$/, 'Use a financial year such as 2026-27');
@@ -505,3 +506,10 @@ export async function fixedAssetRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/fixed-assets/it-openings', { body: openingBody });
+documentRoute('POST', '/fixed-assets', { body: createBody });
+documentRoute('PATCH', '/fixed-assets/:id', { body: patchBody });
+documentRoute('POST', '/fixed-assets/depreciation-runs', { body: runBody });
+documentRoute('POST', '/fixed-assets/depreciation-runs/:id/cancel', { body: cancelBody });
+documentRoute('POST', '/fixed-assets/:id/dispose', { body: disposeBody });

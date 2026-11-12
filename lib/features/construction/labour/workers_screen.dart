@@ -17,6 +17,7 @@ import '../common/c_widgets.dart';
 import '../data/construction_repository.dart';
 import '../models/common_models.dart';
 import '../models/labour_models.dart';
+import '../../../core/app_colors.dart';
 
 /// Worker register for all sites.
 class WorkersScreen extends ConsumerStatefulWidget {
@@ -74,12 +75,14 @@ class _WorkersScreenState extends ConsumerState<WorkersScreen> {
                       type: PartyType.vendor,
                     );
                     if (party != null) {
-                      setState(
-                        () => _contractor = NamedRef(
-                          id: party.id,
-                          name: party.name,
-                        ),
-                      );
+                      if (mounted) {
+                        setState(
+                          () => _contractor = NamedRef(
+                            id: party.id,
+                            name: party.name,
+                          ),
+                        );
+                      }
                     }
                   },
                   onDeleted: _contractor == null
@@ -246,7 +249,9 @@ class _WorkerListState extends ConsumerState<WorkerList> {
         ],
         pills: Pill(
           worker.isActive ? 'Active' : 'Inactive',
-          color: worker.isActive ? Colors.green.shade700 : Colors.blueGrey,
+          color: worker.isActive
+              ? context.colors.success
+              : context.colors.onNeutralContainer,
         ),
       ),
     );

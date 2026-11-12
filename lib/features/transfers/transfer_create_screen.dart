@@ -61,7 +61,7 @@ class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
       if (mounted) showInfoSnackBar(context, '${item.name} is already added.');
       return;
     }
-    setState(() => _lines.add(_TransferLineDraft(item)));
+    if (mounted) setState(() => _lines.add(_TransferLineDraft(item)));
   }
 
   void _removeLine(_TransferLineDraft line) {
@@ -71,15 +71,16 @@ class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
 
   Future<void> _pickDate() async {
     final picked = await pickDocDate(context, _date);
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null && mounted) setState(() => _date = picked);
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       serverErrors = const {};
       _error = null;
     });
-    final valid = _formKey.currentState!.validate();
+    final valid = validateAndReveal(_formKey);
     if (_lines.isEmpty) {
       markSaved();
       showInfoSnackBar(context, 'Add at least one item.');
@@ -124,6 +125,20 @@ class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            OutlinedButton(
+              onPressed: _saving ? null : () => leave('/transfers'),
+              child: const Text('Cancel'),
+            ),
+            BusyButton(
+              busy: _saving,
+              onPressed: _save,
+              icon: Icons.local_shipping_outlined,
+              label: 'Send transfer',
+            ),
+          ],
+        ),
         maxWidth: 900,
         children: [
           Text('New transfer', style: theme.textTheme.headlineSmall),
@@ -212,23 +227,6 @@ class _TransferCreateScreenState extends ConsumerState<TransferCreateScreen>
             ApiErrorBox(error: _error!, subject: 'the transfer'),
             const SizedBox(height: 16),
           ],
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _saving ? null : () => leave('/transfers'),
-                child: const Text('Cancel'),
-              ),
-              BusyButton(
-                busy: _saving,
-                onPressed: _save,
-                icon: Icons.local_shipping_outlined,
-                label: 'Send transfer',
-              ),
-            ],
-          ),
         ],
       ),
     );

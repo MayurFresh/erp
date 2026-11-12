@@ -33,8 +33,8 @@ const List<NavEntry> incomeTaxNavEntries = [
   NavEntry(
     path: '/itr-pack',
     label: 'ITR pack',
-    icon: Icons.description_outlined,
-    selectedIcon: Icons.description,
+    icon: Icons.folder_zip_outlined,
+    selectedIcon: Icons.folder_zip,
     permission: TaxPerm.taxView,
   ),
   NavEntry(

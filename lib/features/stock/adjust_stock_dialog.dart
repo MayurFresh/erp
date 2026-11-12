@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/money.dart';
 
 import '../../core/providers.dart';
 import '../../widgets/form_support.dart';
@@ -53,19 +54,22 @@ class _AdjustStockDialogState extends ConsumerState<AdjustStockDialog>
   Future<void> _pickItem() async {
     final item = await pickItem(context, ref, stockOnly: true);
     if (item != null) {
-      setState(() {
-        _item = item;
-        serverErrors = Map.of(serverErrors)..remove('itemId');
-      });
+      if (mounted) {
+        setState(() {
+          _item = item;
+          serverErrors = Map.of(serverErrors)..remove('itemId');
+        });
+      }
     }
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       serverErrors = const {};
       _error = null;
     });
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final qty = parseNumber(_qty.text)!;
     setState(() => _saving = true);
     try {
@@ -187,7 +191,7 @@ class _AdjustStockDialogState extends ConsumerState<AdjustStockDialog>
                     controller: _rate,
                     decoration: InputDecoration(
                       labelText: 'Rate (optional)',
-                      prefixText: '₹ ',
+                      prefixText: '$moneySymbol ',
                       helperText: _add ? 'Default: average cost' : null,
                       helperMaxLines: 2,
                     ),
@@ -219,7 +223,7 @@ class _AdjustStockDialogState extends ConsumerState<AdjustStockDialog>
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         BusyButton(busy: _saving, onPressed: _save, label: 'Save'),

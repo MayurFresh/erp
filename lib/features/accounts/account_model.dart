@@ -11,6 +11,7 @@ class Account {
     this.isSystem = false,
     this.isActive = true,
     this.balance = 0,
+    this.updatedAt,
   });
 
   factory Account.fromJson(Json json) => Account(
@@ -23,8 +24,10 @@ class Account {
     isSystem: asBool(json['isSystem']),
     isActive: asBool(json['isActive'], true),
     balance: asDouble(json['balance']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
   );
 
+  final DateTime? updatedAt;
   final String id;
   final String code;
   final String name;

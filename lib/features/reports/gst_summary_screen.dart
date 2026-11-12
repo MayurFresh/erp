@@ -7,6 +7,7 @@ import 'report_models.dart';
 import 'report_period.dart';
 import 'report_widgets.dart';
 import 'reports_repository.dart';
+import '../../core/app_colors.dart';
 
 /// `/reports/gst-summary`: outward supplies by rate with B2B / B2C and
 /// credit notes, inward supplies and expenses, the HSN summary and the net
@@ -157,10 +158,10 @@ class NetPayableCard extends StatelessWidget {
     final theme = Theme.of(context);
     final credit = net.total < -kMoneyEpsilon;
     final bg = credit
-        ? Colors.green.withValues(alpha: 0.12)
+        ? context.colors.success.withValues(alpha: 0.12)
         : theme.colorScheme.primaryContainer;
     final fg = credit
-        ? Colors.green.shade800
+        ? context.colors.success
         : theme.colorScheme.onPrimaryContainer;
     Widget head(String label, double v) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,

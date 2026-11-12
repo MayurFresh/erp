@@ -134,6 +134,8 @@ void main() {
       ],
     });
     expect(app.router.state.uri.path, '/receipts/pay1');
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pumpAndSettle();
     app.expectClean('receipt');
   });
 
@@ -303,10 +305,10 @@ void main() {
     // No dashboard permission: home is the first permitted section.
     expect(find.text('Items'), findsWidgets);
     expect(find.text('Stock'), findsOneWidget);
-    expect(find.text('INVENTORY'), findsOneWidget);
+    expect(find.text('Inventory'), findsOneWidget);
     // Groups without permitted entries are hidden.
-    expect(find.text('SALES'), findsNothing);
-    expect(find.text('OVERVIEW'), findsNothing);
+    expect(find.text('Sales'), findsNothing);
+    expect(find.text('Overview'), findsNothing);
     expect(find.text('Dashboard'), findsNothing);
     expect(find.text('Transfers'), findsNothing);
     expect(find.text('New item'), findsNothing);

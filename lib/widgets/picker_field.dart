@@ -24,6 +24,7 @@ class PickerField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyLarge;
     return FormField<String>(
       validator: (_) => validator?.call(),
       builder: (field) => InkWell(
@@ -31,15 +32,23 @@ class PickerField extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
         child: InputDecorator(
           isEmpty: value == null,
+          baseStyle: style,
           decoration: InputDecoration(
             labelText: label,
             enabled: enabled,
             errorText: errorText ?? field.errorText,
             suffixIcon: Icon(icon),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 24,
+            ),
           ),
-          child: value == null
-              ? null
-              : Text(value!, maxLines: 1, overflow: TextOverflow.ellipsis),
+          child: Text(
+            value ?? '',
+            style: style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );

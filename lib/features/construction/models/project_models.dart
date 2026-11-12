@@ -37,6 +37,8 @@ class Project {
     this.budgetTotal = 0,
     this.progressPct = 0,
     this.createdAt,
+    this.updatedAt,
+    this.custom = const {},
   });
 
   factory Project.fromJson(Json json) => Project(
@@ -57,6 +59,8 @@ class Project {
     budgetTotal: asDouble(json['budgetTotal']),
     progressPct: asDouble(json['progressPct']),
     createdAt: asDateTimeOrNull(json['createdAt']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
+    custom: asJson(json['custom']),
   );
 
   final String id;
@@ -80,6 +84,10 @@ class Project {
   /// Amount-weighted BOQ progress, 0–100.
   final double progressPct;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  /// Custom field values (`key → value`).
+  final Json custom;
 
   String get displayName => code.isEmpty ? name : '$name ($code)';
 

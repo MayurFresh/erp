@@ -107,7 +107,7 @@ class _DprDetailScreenState extends ConsumerState<DprDetailScreen> {
                                   .submitDpr(dpr.id),
                               'Report submitted',
                             ),
-                      icon: const Icon(Icons.send),
+                      icon: const Icon(Icons.send_outlined),
                       label: Text(dpr.isRejected ? 'Resubmit' : 'Submit'),
                     ),
                   if (dpr.status == DprStatus.submitted &&

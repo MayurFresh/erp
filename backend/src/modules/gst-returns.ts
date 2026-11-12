@@ -37,13 +37,13 @@ const ddmmyyyy = (d: string) => `${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(0,
 export interface OutLine extends Tax { rate: number; hsn: string; description: string; unit: string; qty: number }
 export interface OutDoc {
   id: string; number: string; date: string; partyName: string; gstin: string; pos: string; supply: string; value: number;
-  cancelled: boolean; invoiceId: string; invoiceNumber: string; lines: OutLine[];
+  cancelled: boolean; invoiceId: string; invoiceNumber: string; lines: OutLine[]; reverseCharge?: boolean;
 }
 
 /** Posted-or-cancelled invoices and credit notes dated in the period, with their lines. */
 export async function loadOutward(tx: Tx, companyId: string, from: string, to: string) {
   const invs = await tx.selectFrom('invoices as i').innerJoin('parties as p', 'p.id', 'i.party_id')
-    .select(['i.id', 'i.number', 'i.invoice_date', 'p.name', 'p.gstin', 'i.place_of_supply', 'i.supply_type', 'i.total', 'i.status'])
+    .select(['i.id', 'i.number', 'i.invoice_date', 'p.name', 'p.gstin', 'i.place_of_supply', 'i.supply_type', 'i.total', 'i.status', 'i.reverse_charge'])
     .where('i.company_id', '=', companyId).where('i.invoice_date', '>=', from).where('i.invoice_date', '<=', to)
     .orderBy('i.number').execute();
   const live = invs.filter((i) => i.status === 'posted');
@@ -57,13 +57,13 @@ export async function loadOutward(tx: Tx, companyId: string, from: string, to: s
   });
   const invoices: OutDoc[] = live.map((i) => ({
     id: i.id, number: i.number, date: i.invoice_date, partyName: i.name, gstin: i.gstin ?? '', pos: i.place_of_supply, supply: i.supply_type,
-    value: i.total, cancelled: false, invoiceId: i.id, invoiceNumber: i.number,
+    value: i.total, cancelled: false, invoiceId: i.id, invoiceNumber: i.number, reverseCharge: i.reverse_charge,
     lines: invLines.filter((l) => l.invoice_id === i.id).map(toLine),
   }));
 
   const cns = await tx.selectFrom('credit_notes as n').innerJoin('invoices as i', 'i.id', 'n.invoice_id').innerJoin('parties as p', 'p.id', 'n.party_id')
     .select(['n.id', 'n.number', 'n.note_date', 'p.name', 'p.gstin', 'n.place_of_supply', 'n.supply_type', 'n.total', 'n.status', 'i.id as invoice_id',
-      'i.number as invoice_number', 'i.total as invoice_total'])
+      'i.number as invoice_number', 'i.total as invoice_total', 'i.reverse_charge'])
     .where('n.company_id', '=', companyId).where('n.note_date', '>=', from).where('n.note_date', '<=', to)
     .orderBy('n.number').execute();
   const liveCn = cns.filter((n) => n.status === 'posted');
@@ -73,7 +73,7 @@ export async function loadOutward(tx: Tx, companyId: string, from: string, to: s
     : [];
   const creditNotes: (OutDoc & { invoiceValue: number })[] = liveCn.map((n) => ({
     id: n.id, number: n.number, date: n.note_date, partyName: n.name, gstin: n.gstin ?? '', pos: n.place_of_supply, supply: n.supply_type,
-    value: n.total, cancelled: false, invoiceId: n.invoice_id, invoiceNumber: n.invoice_number, invoiceValue: n.invoice_total,
+    value: n.total, cancelled: false, invoiceId: n.invoice_id, invoiceNumber: n.invoice_number, invoiceValue: n.invoice_total, reverseCharge: n.reverse_charge,
     lines: cnLines.filter((l) => l.credit_note_id === n.id).map(toLine),
   }));
   return {
@@ -136,7 +136,7 @@ export async function buildGstr1(tx: Tx, ctx: RequestContext, period: string) {
   for (const inv of o.invoices) {
     const kind = inv.gstin ? 'b2b' : isB2cl(inv, inv.value) ? 'b2cl' : 'b2cs';
     class_.set(inv.id, kind);
-    if (kind === 'b2b') b2b.push({ invoiceId: inv.id, number: inv.number, date: inv.date, partyName: inv.partyName, gstin: inv.gstin, placeOfSupply: inv.pos, invoiceValue: inv.value, rates: ratesOf(inv.lines) });
+    if (kind === 'b2b') b2b.push({ invoiceId: inv.id, number: inv.number, date: inv.date, partyName: inv.partyName, gstin: inv.gstin, placeOfSupply: inv.pos, invoiceValue: inv.value, reverseCharge: inv.reverseCharge === true, rates: ratesOf(inv.lines) });
     else if (kind === 'b2cl') b2cl.push({ invoiceId: inv.id, number: inv.number, date: inv.date, placeOfSupply: inv.pos, invoiceValue: inv.value, rates: ratesOf(inv.lines) });
     for (const l of inv.lines) {
       if (kind === 'b2cs') bumpB2cs(inv.pos, inv.supply, l.rate, l, 1);
@@ -147,7 +147,7 @@ export async function buildGstr1(tx: Tx, ctx: RequestContext, period: string) {
   for (const cn of o.creditNotes) {
     // A note follows the class its invoice had (the invoice may be dated in an earlier period).
     const kind = cn.gstin ? 'b2b' : isB2cl(cn, cn.invoiceValue) ? 'b2cl' : 'b2cs';
-    if (kind === 'b2b') cdnr.push({ creditNoteId: cn.id, number: cn.number, date: cn.date, invoiceNumber: cn.invoiceNumber, partyName: cn.partyName, gstin: cn.gstin, placeOfSupply: cn.pos, noteValue: cn.value, rates: ratesOf(cn.lines) });
+    if (kind === 'b2b') cdnr.push({ creditNoteId: cn.id, number: cn.number, date: cn.date, invoiceNumber: cn.invoiceNumber, partyName: cn.partyName, gstin: cn.gstin, placeOfSupply: cn.pos, noteValue: cn.value, reverseCharge: cn.reverseCharge === true, rates: ratesOf(cn.lines) });
     else if (kind === 'b2cl') cdnur.push({ creditNoteId: cn.id, number: cn.number, date: cn.date, invoiceNumber: cn.invoiceNumber, placeOfSupply: cn.pos, noteValue: cn.value, rates: ratesOf(cn.lines) });
     for (const l of cn.lines) {
       if (kind === 'b2cs') bumpB2cs(cn.pos, cn.supply, l.rate, l, -1);
@@ -182,7 +182,7 @@ export async function buildGstr1(tx: Tx, ctx: RequestContext, period: string) {
 type Gstr1 = Awaited<ReturnType<typeof buildGstr1>>;
 
 /** Unofficial GSTN offline-tool shaped JSON. */
-function gstnJson(g: Gstr1) {
+export function gstnJson(g: Gstr1) {
   const itms = (rates: RateRow[]) => rates.map((r, i) => ({ num: i + 1, itm_det: { rt: r.rate, txval: r.taxable, iamt: r.igst, camt: r.cgst, samt: r.sgst, csamt: 0 } }));
   const byCtin = <T extends { gstin: string }>(rows: T[]) => {
     const m = new Map<string, T[]>();
@@ -194,10 +194,10 @@ function gstnJson(g: Gstr1) {
   return {
     _note: 'Unofficial; check with the GST offline tool before upload',
     gstin: g.gstin, fp: `${g.period.slice(5, 7)}${g.period.slice(0, 4)}`,
-    b2b: byCtin(g.b2b).map(([ctin, invs]) => ({ ctin, inv: invs.map((i) => ({ inum: i.number, idt: ddmmyyyy(i.date), val: i.invoiceValue, pos: i.placeOfSupply, rchrg: 'N', inv_typ: 'R', itms: itms(i.rates) })) })),
+    b2b: byCtin(g.b2b).map(([ctin, invs]) => ({ ctin, inv: invs.map((i) => ({ inum: i.number, idt: ddmmyyyy(i.date), val: i.invoiceValue, pos: i.placeOfSupply, rchrg: i.reverseCharge ? 'Y' : 'N', inv_typ: 'R', itms: itms(i.rates) })) })),
     b2cl: [...new Set(g.b2cl.map((i) => i.placeOfSupply))].map((pos) => ({ pos, inv: g.b2cl.filter((i) => i.placeOfSupply === pos).map((i) => ({ inum: i.number, idt: ddmmyyyy(i.date), val: i.invoiceValue, itms: itms(i.rates) })) })),
     b2cs: g.b2cs.map((r) => ({ sply_ty: r.supplyType === 'inter' ? 'INTER' : 'INTRA', pos: r.placeOfSupply, typ: 'OE', rt: r.rate, txval: r.taxable, iamt: r.igst, camt: r.cgst, samt: r.sgst, csamt: 0 })),
-    cdnr: byCtin(g.cdnr).map(([ctin, notes]) => ({ ctin, nt: notes.map((n) => ({ ntty: 'C', nt_num: n.number, nt_dt: ddmmyyyy(n.date), val: n.noteValue, pos: n.placeOfSupply, rchrg: 'N', inv_typ: 'R', itms: itms(n.rates) })) })),
+    cdnr: byCtin(g.cdnr).map(([ctin, notes]) => ({ ctin, nt: notes.map((n) => ({ ntty: 'C', nt_num: n.number, nt_dt: ddmmyyyy(n.date), val: n.noteValue, pos: n.placeOfSupply, rchrg: n.reverseCharge ? 'Y' : 'N', inv_typ: 'R', itms: itms(n.rates) })) })),
     cdnur: g.cdnur.map((n) => ({ typ: 'B2CL', ntty: 'C', nt_num: n.number, nt_dt: ddmmyyyy(n.date), val: n.noteValue, pos: n.placeOfSupply, itms: itms(n.rates) })),
     hsn: { data: hsnRows },
     doc_issue: { doc_det: g.docs.map((d, i) => ({ doc_num: d.kind === 'invoice' ? 1 : 5 + i, docs: [{ num: 1, from: d.from, to: d.to, totnum: d.total, cancel: d.cancelled, net_issue: d.total - d.cancelled }] })) },

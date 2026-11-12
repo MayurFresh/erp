@@ -14,6 +14,7 @@ import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getLocation } from './locations.ts';
 import { boqLinesAt } from './projects.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -359,3 +360,8 @@ export async function indentRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/indents', { body: createBody });
+documentRoute('PUT', '/indents/:id', { body: updateBody });
+documentRoute('POST', '/indents/:id/approve', { body: approveBody });
+documentRoute('POST', '/indents/:id/reject', { body: reasonBody });

@@ -24,13 +24,23 @@ export async function setupTestApp(): Promise<TestEnv> {
   const owner = new pg.Client({ connectionString: ownerUrl });
   await owner.connect();
   // truncate ... cascade also empties the shared masters (their tenant_id references tenants), so put the system rows back.
+  // One transaction, so a run that stops halfway can't lose the system rows for every later run.
   const system: Record<string, unknown[]> = {};
-  for (const t of ['gst_rates', 'tds_sections']) system[t] = (await owner.query(`select * from ${t} where tenant_id is null`)).rows;
-  await owner.query('truncate tenants cascade');
-  for (const [t, rows] of Object.entries(system)) {
-    if (rows.length) await owner.query(`insert into ${t} select * from json_populate_recordset(null::${t}, $1::json)`, [JSON.stringify(rows)]);
+  try {
+    await owner.query('begin');
+    for (const t of ['gst_rates', 'tds_sections']) system[t] = (await owner.query(`select * from ${t} where tenant_id is null`)).rows;
+    if (!system.gst_rates!.length) throw new Error(`${dbName} has no system GST rates left. Drop and recreate this test database.`);
+    await owner.query('truncate tenants cascade');
+    for (const [t, rows] of Object.entries(system)) {
+      if (rows.length) await owner.query(`insert into ${t} select * from json_populate_recordset(null::${t}, $1::json)`, [JSON.stringify(rows)]);
+    }
+    await owner.query('commit');
+  } catch (err) {
+    await owner.query('rollback').catch(() => {});
+    throw err;
+  } finally {
+    await owner.end();
   }
-  await owner.end();
 
   const config = loadConfig({ ...process.env, DATABASE_URL: testUrl, LOG_LEVEL: 'silent', UPLOAD_DIR: TEST_UPLOAD_DIR });
   const db = createDb(testUrl, 5);
@@ -47,8 +57,8 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** Small JSON client over fastify.inject. */
 export function client(app: FastifyInstance, token?: string, companyId?: string) {
-  return async (method: Method, url: string, body?: unknown) => {
-    const headers: Record<string, string> = {};
+  return async (method: Method, url: string, body?: unknown, extra?: Record<string, string>) => {
+    const headers: Record<string, string> = { ...extra };
     if (token) headers.authorization = `Bearer ${token}`;
     if (companyId) headers['x-company-id'] = companyId;
     const res = await app.inject({ method, url: `/api/v1${url}`, headers, payload: body as object | undefined });

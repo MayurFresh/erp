@@ -20,7 +20,7 @@ void main() {
 
   testWidgets('renders the sign-in form', (tester) async {
     await pumpLogin(tester);
-    expect(find.text('Progen ERP'), findsOneWidget);
+    expect(find.text('Progen'), findsOneWidget);
     expect(find.text('Sign in'), findsWidgets);
     expect(find.byKey(const Key('login.email')), findsOneWidget);
     expect(find.byKey(const Key('login.password')), findsOneWidget);

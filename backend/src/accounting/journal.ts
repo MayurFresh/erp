@@ -8,10 +8,13 @@ export type VoucherType =
   | 'issue' | 'wages'
   | 'labour_advance' | 'contractor_advance' | 'ra_bill' | 'retention_release' | 'demand' | 'possession'
   | 'tds_challan' | 'bank_entry'
-  | 'gst_payment' | 'gst_setoff' | 'tax_payment' | 'asset_capitalise' | 'depreciation' | 'asset_disposal';
+  | 'gst_payment' | 'gst_setoff' | 'tax_payment' | 'asset_capitalise' | 'depreciation' | 'asset_disposal'
+  | 'intercompany' | 'opening' | 'settlement';
 
 /** A journal line. A signed `amount` is a debit when positive and a credit when negative. */
-export interface JLine { accountId: string; amount: number; partyId?: string | null; locationId?: string | null }
+export interface JLine {
+  accountId: string; amount: number; partyId?: string | null; locationId?: string | null; costCentreId?: string | null;
+}
 
 export interface JEntry {
   date: string; voucherType: VoucherType; voucherId: string | null; number: string | null; narration: string | null; lines: JLine[];
@@ -46,7 +49,7 @@ export async function postJournal(tx: Tx, who: Who, e: JEntry): Promise<string> 
 
   await tx.insertInto('journal_lines').values(lines.map((l, i) => ({
     tenant_id: who.tenantId, entry_id: entry.id, line_no: i + 1, account_id: l.accountId,
-    party_id: l.partyId ?? null, location_id: l.locationId ?? null,
+    party_id: l.partyId ?? null, location_id: l.locationId ?? null, cost_centre_id: l.costCentreId ?? null,
     debit: l.paise > 0 ? l.paise / 100 : 0, credit: l.paise < 0 ? -l.paise / 100 : 0,
   }))).execute();
   return entry.id;
@@ -64,7 +67,7 @@ export async function reverseEntry(tx: Tx, who: Who, entryId: string, date: stri
   }).returning('id').executeTakeFirstOrThrow();
   await tx.insertInto('journal_lines').values(lines.map((l) => ({
     tenant_id: who.tenantId, entry_id: reversal.id, line_no: l.line_no, account_id: l.account_id,
-    party_id: l.party_id, location_id: l.location_id, debit: l.credit, credit: l.debit,
+    party_id: l.party_id, location_id: l.location_id, cost_centre_id: l.cost_centre_id, debit: l.credit, credit: l.debit,
   }))).execute();
   return reversal.id;
 }

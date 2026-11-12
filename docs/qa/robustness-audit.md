@@ -1,0 +1,21 @@
+# Robustness audit (track C, v1.8.2)
+
+Method: read the code, grep for patterns, reproduce with tests where a test can show it.
+
+| Area | Found | Status |
+| --- | --- | --- |
+| Double tap | Every tap made a new `Idempotency-Key`, so two quick taps on any submit created two records. | Fixed centrally: `ApiClient` sends one request for identical mutations that overlap. Test: `test/unit/api_client_test.dart`. |
+| Double tap | 26 async handlers (save, post, approve, cancel) had no re-entry guard, so a second call ran `Navigator.pop` or `context.go` twice. | Fixed: `if (_saving) return;` style guard added at the top of each handler that sets a busy flag. |
+| Retry after dropped connection | A retry after offline, timeout or 5xx used a new key and could post twice. | Fixed: the next identical POST reuses the failed one's key. Test in `api_client_test.dart`. |
+| Unsaved changes | Guard only covered pop. Sidebar, `context.go` and browser back left the form silently. | Fixed centrally: `DirtyRegistry` plus go_router `onEnter` asks "Discard changes?". Forms only declare dirty (existing `track`). A save in the last 5 s skips the prompt. Test: `test/widget/busy_guard_test.dart`. |
+| Unsaved changes | 32 files with a form lacked a guard (dialogs). | Fixed: `showFormDialog` + `DirtyDialogGuard` in `form_support.dart` wrap about 29 dialogs; a changed field asks "Discard changes?" on Cancel, tap outside or Esc. Test: `test/widget/dialog_guard_test.dart`. |
+| Concurrent edit | No edit route checked for changes by someone else. `parties`, `accounts`, `locations` had no `updated_at`. | Fixed for parties, items, accounts, locations, sales orders, purchase orders: migration 019, `expectedUpdatedAt`, `409 STALE_EDIT`, Reload action on party and item forms. Migration 020 and the client now send the stamp for projects, workers, units and cost centres too. The account dialog has no Reload action yet. Test: `backend/test/concurrency.test.ts`. |
+| Concurrent edit | Other edit routes. | Fixed for work orders and RA bills (client and server, migration 020). Server only, no client send yet: projects, bookings, units, workers, cost centres. DPRs not covered. Reload action on party, item, location, sales order, PO, work order and RA bill forms; the account dialog shows the plain message. Contract in `docs/API.md`. |
+| Edit of locked documents | Direct link to the edit page of a non-draft purchase or sales order showed a form that the server then refused. | Fixed: both forms redirect to the detail page with a message. Server already refused (`NOT_EDITABLE`). |
+| Entry (server) | Zero lines, negative, zero, huge, 4-decimal and text quantities, far future dates, locked period, spaces-only names, unbalanced journals. | Checked, all give 4xx. No 500. Test: `concurrency.test.ts`. |
+| Entry (GSTIN) | Seed GSTINs failed the checksum. | Seed fixed. Client and server check the checksum only when the GSTIN was changed in the edit, so a saved legacy value still saves. Server enforcement stays production or `ENFORCE_GSTIN_CHECKSUM=1`. Tests: `concurrency.test.ts`, `validators_test.dart`. |
+| Entry (client) | No scroll to the first error. | Fixed: `validateAndReveal(formKey)` replaces `validate()` in 69 submit handlers. Duplicate-line warnings left. |
+| Backend races | Two receipts on one invoice, parallel cancels, parallel stock issues were covered. Not covered: number series, cancel against allocate, same-key concurrent create on each route. | Added tests, all pass: ten parallel invoices get ten numbers, cancel racing a receipt never leaves money on a cancelled invoice, same-key double POST creates one record on nine create routes. No server fix was needed. |
+| Loading and pickers | `PagedController` and the search picker already ignore stale results and show retry. Form dropdowns that fail to load show a Reload icon. | No change. |
+| Leaving during a save | `setState` after `await` without `mounted` in lib/features (except dashboard and reports). | Fixed in about 40 files by grep audit. |
+| Session and network | Needed proof at form level. | Tests: 401 gives one refresh and one replay with the form kept; offline and timeout keep the form and the retry reuses the key; 5xx shows a plain message. `test/widget/session_network_test.dart`, `api_client_test.dart`. |

@@ -1,3 +1,4 @@
+import '../controls/cost_centre_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,8 @@ import '../documents/document_models.dart';
 import '../documents/document_widgets.dart';
 import 'credit_note_model.dart';
 import 'credit_notes_repository.dart';
+import '../reports/pdf_actions.dart';
+import 'credit_note_pdf.dart';
 
 class CreditNoteDetailScreen extends ConsumerWidget {
   const CreditNoteDetailScreen({super.key, required this.creditNoteId});
@@ -79,6 +82,18 @@ class CreditNoteDetailScreen extends ConsumerWidget {
               ],
             ),
             actions: [
+              ...pdfDocActions(
+                context,
+                ref,
+                fileName: creditNoteFileName(note),
+                build: (p) async => buildCreditNotePdf(
+                  note,
+                  p.company,
+                  party: await p.party(note.partyId),
+                  brand: p.brand,
+                  theme: p.theme,
+                ),
+              ),
               if (perms.can(Perm.invoicesView))
                 DocAction(
                   label: 'Open invoice',
@@ -139,6 +154,7 @@ class CreditNoteDetailScreen extends ConsumerWidget {
               ),
             ],
           ),
+          CostCentreCard(costCentreId: note.costCentreId),
           SectionCard(
             title: 'Lines',
             child: TaxLinesView(

@@ -216,8 +216,20 @@ class RealEstateRepository {
       ).data;
 
   /// Sends the changed fields; `null` clears an optional one.
-  Future<Unit> updateUnit(String id, Json changes) async =>
-      Unit.fromJson(await _api.patchJson('/units/$id', body: changes));
+  Future<Unit> updateUnit(
+    String id,
+    Json changes, {
+    DateTime? updatedAt,
+  }) async => Unit.fromJson(
+    await _api.patchJson(
+      '/units/$id',
+      body: {
+        ...changes,
+        if (updatedAt != null)
+          'expectedUpdatedAt': updatedAt.toUtc().toIso8601String(),
+      },
+    ),
+  );
 
   Future<Unit> setUnitHold(String id, bool hold) =>
       updateUnit(id, {'status': hold ? 'hold' : 'available'});

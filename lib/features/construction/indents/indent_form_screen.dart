@@ -59,6 +59,7 @@ class _IndentFormScreenState extends ConsumerState<IndentFormScreen>
   }
 
   Future<void> _load(String id) async {
+    if (_loading) return;
     setState(() => _loading = true);
     try {
       final indent = await ref.read(constructionRepositoryProvider).indent(id);
@@ -91,7 +92,7 @@ class _IndentFormScreenState extends ConsumerState<IndentFormScreen>
   }
 
   Future<void> _save({required bool submit}) async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final location = _locationId;
     if (location == null) return;
     if (_lines.isEmpty) {

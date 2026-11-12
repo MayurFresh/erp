@@ -47,7 +47,7 @@ class _AccountLedgerScreenState extends ConsumerState<AccountLedgerScreen> {
           ? PartyType.vendor
           : PartyType.customer,
     );
-    if (party != null) setState(() => _party = party);
+    if (party != null && mounted) setState(() => _party = party);
   }
 
   void _open(LedgerLine line) {

@@ -18,6 +18,7 @@ import { nextNumber } from '../lib/series.ts';
 import { docDate, notes, parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { addTax, buildGstr1, buildGstr3b, itcReversalRows, loadOutward, round2, zeroTax, type OutDoc, type Tax } from './gst-returns.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const periodField = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
 const fyField = z.string().regex(/^\d{4}-\d{2}$/, 'Use a financial year such as 2026-27').refine((v) => (Number(v.slice(0, 4)) + 1) % 100 === Number(v.slice(5)), 'Not a financial year');
@@ -555,3 +556,7 @@ export async function gstFilingRoutes(app: FastifyInstance) {
   });
 }
 void isValidDate; void addDays;
+
+documentRoute('POST', '/gst/ledger-balances', { body: snapshotBody });
+documentRoute('POST', '/gst/payments', { body: paymentBody });
+documentRoute('POST', '/gst/payments/:id/cancel', { body: cancelBody });

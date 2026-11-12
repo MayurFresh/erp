@@ -37,8 +37,8 @@ const List<NavEntry> gstFilingNavEntries = [
   NavEntry(
     path: '/filings',
     label: 'Filing register',
-    icon: Icons.fact_check_outlined,
-    selectedIcon: Icons.fact_check,
+    icon: Icons.event_note_outlined,
+    selectedIcon: Icons.event_note,
     permission: TaxPerm.complianceView,
   ),
 ];

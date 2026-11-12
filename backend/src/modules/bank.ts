@@ -9,6 +9,7 @@ import { badRequest, conflict, notFound } from '../lib/errors.ts';
 import { nextNumber } from '../lib/series.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const AUTO_DAYS = 3;
@@ -418,3 +419,5 @@ export async function bankRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/bank-statements', { body: importBody });

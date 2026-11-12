@@ -10,6 +10,7 @@ import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
 import '../compliance/tax_perms.dart';
+import '../platform/admin_security_screens.dart' show Require2faTile;
 import 'settings_models.dart';
 import 'settings_repository.dart';
 import '../../widgets/busy.dart';
@@ -64,7 +65,7 @@ class _CompanyProfileFormState extends ConsumerState<CompanyProfileForm>
   }
 
   String? _gstinError(String? value) {
-    final format = validateGstin(value);
+    final format = validateGstin(value, original: _company.gstin);
     if (format != null) return format;
     final code = stateCodeFromGstin(value);
     if (code != null && code != _company.stateCode) {
@@ -76,7 +77,7 @@ class _CompanyProfileFormState extends ConsumerState<CompanyProfileForm>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final changes = companyPatch(_company, {
       for (final MapEntry(:key, :value) in _c.entries) key: value.text,
       'constitution': _constitution ?? '',
@@ -177,6 +178,17 @@ class _CompanyProfileFormState extends ConsumerState<CompanyProfileForm>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: (canEdit || canLock)
+            ? FormActionBar(
+                children: [
+                  BusyButton(
+                    busy: _saving,
+                    onPressed: _save,
+                    label: 'Save changes',
+                  ),
+                ],
+              )
+            : null,
         maxWidth: 960,
         children: [
           Text('Company profile', style: theme.textTheme.headlineSmall),
@@ -200,6 +212,8 @@ class _CompanyProfileFormState extends ConsumerState<CompanyProfileForm>
                 ),
               ),
             ),
+          if (ref.watch(permissionsProvider).can(Perm.securityManage))
+            const SectionCard(title: 'Security', child: Require2faTile()),
           SectionCard(
             title: 'Business',
             child: Column(
@@ -296,11 +310,15 @@ class _CompanyProfileFormState extends ConsumerState<CompanyProfileForm>
                   ],
                 ),
                 const SizedBox(height: 16),
-                _field(
-                  'website',
-                  'Website',
-                  enabled: canEdit,
-                  keyboard: TextInputType.url,
+                FormRow(
+                  children: [
+                    _field(
+                      'website',
+                      'Website',
+                      enabled: canEdit,
+                      keyboard: TextInputType.url,
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -409,7 +427,9 @@ class _CompanyProfileFormState extends ConsumerState<CompanyProfileForm>
                             helpText: 'Lock books up to and including',
                           );
                           if (picked != null) {
-                            setState(() => _lockedUntil = apiDate(picked));
+                            if (mounted) {
+                              setState(() => _lockedUntil = apiDate(picked));
+                            }
                           }
                         },
                         icon: const Icon(Icons.lock_outline),
@@ -604,15 +624,6 @@ class _CompanyProfileFormState extends ConsumerState<CompanyProfileForm>
               ],
             ),
           ),
-          if (canEdit || canLock)
-            Align(
-              alignment: Alignment.centerRight,
-              child: BusyButton(
-                busy: _saving,
-                onPressed: _save,
-                label: 'Save changes',
-              ),
-            ),
         ],
       ),
     );

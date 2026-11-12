@@ -1,0 +1,109 @@
+vendor,plan,price,currency,unit,billing,key_limits,date_checked,source
+Zoho Inventory (India),Free,0,INR,per organization per month,annual toggle,50 orders; 1 user; 1 location,2026-11-03,https://www.zoho.com/in/inventory/pricing/
+Zoho Inventory (India),Standard,999,INR,per organization per month,billed annually,excl GST; 500 orders; 3 users; 2 locations,2026-11-03,https://www.zoho.com/in/inventory/pricing/
+Zoho Inventory (India),Premium,2299,INR,per organization per month,billed annually,excl GST; 3000 orders; 5 users; 4 locations; 500 bins/location,2026-11-03,https://www.zoho.com/in/inventory/pricing/
+Zoho Inventory (India),Plus,4999,INR,per organization per month,billed annually,excl GST; 7500 orders; 10 users; 6 locations,2026-11-03,https://www.zoho.com/in/inventory/pricing/
+Zoho Inventory (India),Enterprise,7499,INR,per organization per month,billed annually,excl GST; 15000 orders; 10 users; 10 locations; 5000 bins,2026-11-03,https://www.zoho.com/in/inventory/pricing/
+Zoho Books,all plans,UNVERIFIED,,,,,2026-11-03,not fetched
+Odoo (India page),Standard,580 (page ambiguous: 725 also shown),INR,per user per month,unclear billing period,,2026-11-03,https://www.odoo.com/pricing
+Odoo (India page),Custom,1080 (page ambiguous: 1350 also shown),INR,per user per month,unclear,,2026-11-03,https://www.odoo.com/pricing
+Odoo (India page),Light user,195,INR,per user per month,,,2026-11-03,https://www.odoo.com/pricing
+ERPNext / Frappe Cloud,Sites,5 USD (INR 410),USD/INR,per month onwards,,single site shared server,2026-11-03,https://frappe.io/erpnext/pricing
+ERPNext / Frappe Cloud,Servers entry,20 USD (INR 1800),USD/INR,per month onwards,,VM; limited uptime guarantee,2026-11-03,https://frappe.io/erpnext/pricing
+ERPNext / Frappe Cloud,Servers higher,125 USD (INR 5400),USD/INR,per month onwards,,,2026-11-03,https://frappe.io/erpnext/pricing
+ERPNext,Self-host,free software (GPL-3.0),,,,own server cost,2026-11-03,https://frappe.io/erpnext/pricing
+ERPNext,Enterprise,UNVERIFIED (contact sales),,,,,2026-11-03,https://frappe.io/erpnext/pricing
+TallyPrime,Silver single PC 12 months,8100 (list 9000),INR,per licence per year,12 months,excl 18% GST,2026-11-03,https://tallysolutions.com/tally-prime/
+TallyPrime,Silver lifetime,22500,INR,one time,,excl GST,2026-11-03,https://tallysolutions.com/tally-prime/
+TallyPrime,Gold multi-user 12 months,24300 (list 27000),INR,per licence per year,12 months,excl GST; unlimited users on same LAN,2026-11-03,https://tallysolutions.com/tally-prime/
+TallyPrime,Gold lifetime,67500,INR,one time,,excl GST,2026-11-03,https://tallysolutions.com/tally-prime/
+Busy,Standard (perpetual),16500,INR,one time,,excl GST; GST POS batch inventory,2026-11-03,https://busy.in/pricing
+Busy,Enterprise (perpetual),22000,INR,one time,,excl GST; multi-branch,2026-11-03,https://busy.in/pricing
+Busy,Magic Smart (360 days),8000,INR,per year,,excl GST; e-invoice up to 10000 docs,2026-11-03,https://busy.in/pricing
+Busy,Magic Power,12000,INR,per year,,excl GST; multiple GSTINs; 20000 docs,2026-11-03,https://busy.in/pricing
+Busy,Magic Power+,50000,INR,per year,,excl GST; 50000 docs; 10 users,2026-11-03,https://busy.in/pricing
+Cin7 Core,Standard,349,USD,per month,,excl tax,2026-11-03,https://www.cin7.com/pricing/
+Cin7 Core,Pro,599,USD,per month,,excl tax,2026-11-03,https://www.cin7.com/pricing/
+Cin7 Core,Advanced,1199,USD,per month,,excl tax,2026-11-03,https://www.cin7.com/pricing/
+Cin7 Omni,custom,UNVERIFIED (quote),,,,,2026-11-03,https://www.cin7.com/pricing/
+Linnworks,order-volume tiers,UNVERIFIED (quote; tiers by monthly orders with overage),,,,100+ channels claim,2026-11-03,https://www.linnworks.com/pricing/
+Shiprocket,Lite,0,INR,per month,,up to 5 orders; avg shipment INR 45,2026-11-03,https://www.shiprocket.in/pricing/
+Shiprocket,Business,199,INR,per month,,5-50 orders; avg INR 41,2026-11-03,https://www.shiprocket.in/pricing/
+Shiprocket,Advanced,499,INR,per month,,50-200 orders; avg INR 39,2026-11-03,https://www.shiprocket.in/pricing/
+Shiprocket,Pro,799,INR,per month,,listed 3000-10000 orders; avg INR 36 (as shown),2026-11-03,https://www.shiprocket.in/pricing/
+Unicommerce,Growth (10-5000 orders/mo) and Enterprise (5000 to 50 lakh),UNVERIFIED (quote),,,,,2026-11-03,https://unicommerce.com/
+EasyEcom,Starter/Growth/Enterprise recharge slabs; per-order charge,UNVERIFIED (official page lists no amounts; third parties conflict),,,,,2026-11-03,https://support.easyecom.io/portal/en/kb/articles/easyecom-pricing
+Vinculum / Increff / Ginesys,all,UNVERIFIED,,,,,2026-11-03,vendor sites show no prices
+NetSuite / SAP Business One,all,UNVERIFIED (partner blogs conflict; no official list read),,,,,2026-11-03,partner blogs only
+Odoo (India),One App Free,0,INR,per organization per month,yearly or monthly,"One app, unlimited users; multi-company allowed",2026-11-03,https://www.odoo.com/pricing
+Odoo (India),Standard (yearly),580,INR,per user per month,yearly,All apps; list shown struck-through at 760; discount for 12 months on initial users; Odoo Online only,2026-11-03,https://www.odoo.com/pricing
+Odoo (India),Standard (monthly),725,INR,per user per month,monthly,List shown struck-through at 950,2026-11-03,https://www.odoo.com/pricing
+Odoo (India),Custom (yearly),1080,INR,per user per month,yearly,"Adds Studio, Agentic AI, multi-company, external API; Online, Odoo.sh or on-premise",2026-11-03,https://www.odoo.com/pricing
+Odoo (India),Custom (monthly),1350,INR,per user per month,monthly,List shown struck-through at 1690,2026-11-03,https://www.odoo.com/pricing
+Odoo (India),Light user,195,INR,per user per month,quote required,Price needs an Odoo advisor quote,2026-11-03,https://www.odoo.com/pricing
+ERPNext on Frappe Cloud,Sites (starting),5,USD,per site per month,monthly,Starting price; page also shows Rs 410; shared servers,2026-11-03,https://frappe.io/erpnext/pricing
+ERPNext on Frappe Cloud,Servers entry (starting),20,USD,per month,monthly,"Page also shows Rs 1,800; incident support only",2026-11-03,https://frappe.io/erpnext/pricing
+ERPNext on Frappe Cloud,Servers higher tier (starting),125,USD,per month,monthly,"Page also shows Rs 5,400; dedicated isolation",2026-11-03,https://frappe.io/erpnext/pricing
+ERPNext (self-host),GPL-3.0,0,INR,software licence,none,Own server cost; 14-day cloud trial,2026-11-03,https://frappe.io/erpnext/pricing
+Zoho Books (India),Free,0,INR,per organization per month,none,"1 user plus accountant; under Rs 25 lakh revenue; 1,000 invoices per year",2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Standard (yearly),749,INR,per organization per month,annual,"3 users; 5,000 invoices per year; e-invoicing from this plan",2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Standard (monthly),899,INR,per organization per month,monthly,3 users,2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Professional (yearly),1499,INR,per organization per month,annual,"5 users; 10,000 invoices per year",2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Professional (monthly),1799,INR,per organization per month,monthly,5 users,2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Premium (yearly),2999,INR,per organization per month,annual,"10 users; 25,000 invoices per year",2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Premium (monthly),3599,INR,per organization per month,monthly,10 users,2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Elite (yearly),4999,INR,per organization per month,annual,"15 users; 1,00,000 invoices per year",2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Elite (monthly),5999,INR,per organization per month,monthly,15 users,2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Ultimate (yearly),7999,INR,per organization per month,annual,"25 users; 1,00,000 invoices per year",2026-11-03,https://www.zoho.com/in/books/pricing/
+Zoho Books (India),Ultimate (monthly),9599,INR,per organization per month,monthly,25 users,2026-11-03,https://www.zoho.com/in/books/pricing/
+Dynamics 365 Business Central (India),Essentials,6655,INR,per user per month,yearly,GST extra; Copilot included; final price at checkout,2026-11-03,https://www.microsoft.com/en-in/dynamics-365/products/business-central/pricing
+Dynamics 365 Business Central (India),Premium,9150,INR,per user per month,yearly,Adds service and manufacturing; GST extra,2026-11-03,https://www.microsoft.com/en-in/dynamics-365/products/business-central/pricing
+Dynamics 365 Business Central (India),Team Members,665,INR,per user per month,yearly,"Limited access: read, approve, update select data",2026-11-03,https://www.microsoft.com/en-in/dynamics-365/products/business-central/pricing
+TallyPrime,Silver (perpetual),22500,INR,one-time per licence,one-time,"Single user, one computer; ex 18% GST; includes 1 year TSS",2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+TallyPrime,Gold (perpetual),67500,INR,one-time per licence,one-time,Unlimited users on LAN; ex GST; includes 1 year TSS,2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+TallyPrime,Silver rental (12 months),8100,INR,per year,annual,"Monthly Rs 750; 3 months Rs 2,138; TSS included",2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+TallyPrime,Gold rental (12 months),24300,INR,per year,annual,"Monthly Rs 2,250; 3 months Rs 6,413; TSS included",2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+TallyPrime,TSS renewal Silver,4500,INR,per year,annual,"2-year option Rs 8,100; ex GST",2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+TallyPrime,TSS renewal Gold,13500,INR,per year,annual,"2-year option Rs 24,300; ex GST",2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+TallyPrime,TSS renewal Auditor Edition,6750,INR,per year,annual,"2-year option Rs 12,150; ex GST",2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+TallyPrime,WhatsApp add-on,1300,INR,per year,annual,Plus prepaid messaging wallet from Rs 675; ex GST,2026-11-03,https://tallysolutions.com/business-guides/tallyprime-total-cost-of-ownership-india/
+myBillBook,Plus (monthly),291,INR,per month,monthly,"1 business, 1 user plus 1 CA; page FAQ says plan starts at Rs 349",2026-11-03,https://mybillbook.in/pricing
+myBillBook,Plus (yearly),3490,INR,per year,annual,"List shown struck-through at 4,833",2026-11-03,https://mybillbook.in/pricing
+myBillBook,Pro (monthly),333,INR,per month,monthly,"Adds desktop app, godowns, bulk invoice download",2026-11-03,https://mybillbook.in/pricing
+myBillBook,Pro (yearly),3990,INR,per year,annual,"List shown struck-through at 7,982",2026-11-03,https://mybillbook.in/pricing
+myBillBook,"Pro Max (starting, billed annually)",570,INR,per month,annual,"2 businesses, 3 users plus CA; e-invoice, e-way bill, POS; starts-at price",2026-11-03,https://mybillbook.in/pricing
+Shopify India,Basic,1994,INR,per month,monthly,2% third-party gateway fee; no extra staff accounts,2026-11-03,https://www.shopify.com/in/pricing
+Shopify India,Basic,1499,INR,per month,yearly (billed annually),same,2026-11-03,https://www.shopify.com/in/pricing
+Shopify India,Grow,7447,INR,per month,monthly,1% third-party fee; 5 staff,2026-11-03,https://www.shopify.com/in/pricing
+Shopify India,Grow,5599,INR,per month,yearly,same,2026-11-03,https://www.shopify.com/in/pricing
+Shopify India,Advanced,30164,INR,per month,monthly,0.6% third-party fee; 15 staff,2026-11-03,https://www.shopify.com/in/pricing
+Shopify India,Advanced,22680,INR,per month,yearly,same,2026-11-03,https://www.shopify.com/in/pricing
+Shopify India,Plus,from 175000,INR,per month,not stated,0.2% third-party fee; unlimited staff; 20 locations,2026-11-03,https://www.shopify.com/in/pricing
+Shopify India,POS Pro add-on,7000,INR,per location per month,not stated,add-on; tax treatment not stated on page,2026-11-03,https://www.shopify.com/in/pricing
+Cin7,Omni,custom,USD,quote,quote,8 users; 5 integrations; contact sales,2026-11-03,https://www.cin7.com/pricing/
+ShipStation,Starter 50 shipments,14.99,USD,per month,monthly,3 users; 50 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Starter 100 shipments,29.99,USD,per month,monthly,3 users; 100 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Starter 500 shipments,39.99,USD,per month,monthly,3 users; 500 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Starter 1000 shipments,79.99,USD,per month,monthly,3 users; 1000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Starter 2000 shipments,119.99,USD,per month,monthly,3 users; 2000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Starter 5000 shipments,174.99,USD,per month,monthly,3 users; 5000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Standard 50 shipments,29.99,USD,per month,monthly,10 users; 50 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Standard 100 shipments,59.99,USD,per month,monthly,10 users; 100 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Standard 500 shipments,89.99,USD,per month,monthly,10 users; 500 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Standard 1000 shipments,149.99,USD,per month,monthly,10 users; 1000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Standard 10000 shipments,449.99,USD,per month,monthly,10 users; 10000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Standard 100000 shipments,3599.99,USD,per month,monthly,10 users; 100000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Premium 50 shipments,349.99,USD,per month,monthly,15 users; 50 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Premium 100 shipments,399.99,USD,per month,monthly,15 users; 100 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Premium 1000 shipments,599.99,USD,per month,monthly,15 users; 1000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+ShipStation,Premium 100000 shipments,7499.99,USD,per month,monthly,15 users; 100000 shipments per month; 30-day free trial; annual toggle shows 20% saving (annual prices not captured),2026-11-03,https://www.shipstation.com/pricing/
+Shippo,Starter,0,USD,per month,monthly,"30 labels per month; 1 user; 5 cents per label with own carrier account; tracking, rating and address validation API calls billed separately",2026-11-03,https://goshippo.com/pricing
+Shippo,Pro,17,USD,per month,monthly,"1-200 labels; up to 5 users; own carrier labels free; page structured data says 19 USD, 205 USD per year shown",2026-11-03,https://goshippo.com/pricing
+Shippo,Premier,custom,USD,quote,quote,contact sales,2026-11-03,https://goshippo.com/pricing
+Katana,Free,0,USD,per account,none,"$ shown, currency not stated; up to 30 SKUs; unlimited users, integrations, locations; only Shopify integrates",2026-11-03,https://katanamrp.com/pricing/
+MaintainX,Basic,0,USD,per user per month,free forever,"$ shown, currency not stated; 2 work orders with procedures per month; 1 custom dashboard",2026-11-03,https://www.getmaintainx.com/pricing
+MaintainX,Essential,20,USD,per user per month,annual (monthly is $25),"$ shown, currency not stated; 3 work orders with procedures per month; 3 custom dashboards",2026-11-03,https://www.getmaintainx.com/pricing
+MaintainX,Premium,65,USD,per user per month,annual (monthly is $75),"$ shown, currency not stated; unlimited work orders with procedures",2026-11-03,https://www.getmaintainx.com/pricing
+Shopmonkey,Basic,215,USD,per shop per month,annual label not confirmed (page also shows $239),"$ shown, currency not stated; 3 users included; +$20 per extra user; 2 inspection templates",2026-11-03,https://www.shopmonkey.io/pricing
+Shopmonkey,Clever,359,USD,per shop per month,annual label not confirmed (page also shows $399),"$ shown, currency not stated; 4 users included; unlimited digital inspections",2026-11-03,https://www.shopmonkey.io/pricing
+Shopmonkey,Genius,449,USD,per shop per month,annual label not confirmed (page also shows $499),"$ shown, currency not stated; 5 users included; unlimited digital inspections",2026-11-03,https://www.shopmonkey.io/pricing

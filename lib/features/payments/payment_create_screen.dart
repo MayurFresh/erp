@@ -173,13 +173,13 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
     );
     if (party == null) return;
     clearServerError('partyId');
-    setState(() => _party = party);
+    if (mounted) setState(() => _party = party);
     _loadDocs(party.id);
   }
 
   Future<void> _pickDate() async {
     final picked = await pickDocDate(context, _date);
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null && mounted) setState(() => _date = picked);
   }
 
   String? _defaultAccount(List<Account> accounts) {
@@ -189,11 +189,12 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       serverErrors = const {};
       _saveError = null;
     });
-    final valid = _formKey.currentState!.validate();
+    final valid = validateAndReveal(_formKey);
     final docs = _docs;
     final allocations = _allocations;
     final allocError = docs == null
@@ -226,6 +227,14 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
       context.go('${_kind.basePath}/${payment.id}');
     } catch (e) {
       if (!mounted) return;
+      if (handleApprovalPending(
+        context,
+        e,
+        listPath: _kind.basePath,
+        onSaved: markSaved,
+      )) {
+        return;
+      }
       setState(() => _saveError = e);
       showSubmitError(e);
     } finally {
@@ -281,7 +290,7 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
                 controller: _amount,
                 decoration: InputDecoration(
                   labelText: receipt ? 'Amount received' : 'Amount paid',
-                  prefixText: '₹ ',
+                  prefixText: '$moneySymbol ',
                 ),
                 keyboardType: decimalKeyboard,
                 inputFormatters: [decimalInput()],
@@ -310,13 +319,13 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
             const SizedBox(height: 16),
             TextFormField(
               controller: _tds,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'TDS deducted by customer (optional)',
                 helperText:
                     'Settles invoices along with the amount received and '
                     'is claimed back as TDS receivable',
                 helperMaxLines: 2,
-                prefixText: '₹ ',
+                prefixText: '$moneySymbol ',
               ),
               keyboardType: decimalKeyboard,
               inputFormatters: [decimalInput()],
@@ -420,13 +429,6 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
             const SizedBox(height: 12),
             ApiErrorBox(error: _saveError!, subject: 'the form'),
           ],
-          const SizedBox(height: 16),
-          BusyButton(
-            busy: _saving,
-            onPressed: _save,
-            icon: Icons.save_outlined,
-            label: 'Save ${_kind.label.toLowerCase()}',
-          ),
         ],
       ),
     );
@@ -435,6 +437,11 @@ class _PaymentCreateScreenState extends ConsumerState<PaymentCreateScreen>
       key: _formKey,
       onChanged: markDirty,
       child: DocFormLayout(
+        bottomBar: DocSaveBar(
+          busy: _saving,
+          onPressed: _save,
+          label: 'Save ${_kind.label.toLowerCase()}',
+        ),
         title: 'Record ${_kind.label.toLowerCase()}',
         main: [details, allocationCard],
         summary: summary,

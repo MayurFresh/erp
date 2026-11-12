@@ -134,6 +134,8 @@ class Invoice implements TaxSummary {
     this.amountDue,
     this.paymentStatus,
     this.notes,
+    this.costCentreId,
+    this.custom = const {},
     this.createdAt,
     this.createdBy,
     this.cancelledAt,
@@ -142,7 +144,21 @@ class Invoice implements TaxSummary {
     this.settlements,
     this.einvoice,
     this.ewaybill,
+    this.reverseCharge = false,
+    this.rcmTax = 0,
   });
+
+  /// Tax is payable by the recipient; none is on the invoice.
+  final bool reverseCharge;
+
+  /// The tax the recipient pays under reverse charge.
+  final double rcmTax;
+
+  /// Cost centre the document is tagged to.
+  final String? costCentreId;
+
+  /// Custom field values (`key → value`).
+  final Json custom;
 
   factory Invoice.fromJson(Json json) => Invoice(
     id: asStringOrNull(json['id']),
@@ -170,6 +186,8 @@ class Invoice implements TaxSummary {
     amountDue: asDoubleOrNull(json['amountDue']),
     paymentStatus: PaymentStatus.parse(json['paymentStatus']),
     notes: asStringOrNull(json['notes']),
+    costCentreId: asStringOrNull(json['costCentreId']),
+    custom: asJson(json['custom']),
     createdAt: asDateTimeOrNull(json['createdAt']),
     createdBy: UserRef.maybe(json['createdBy']),
     cancelledAt: asDateTimeOrNull(json['cancelledAt']),
@@ -177,6 +195,8 @@ class Invoice implements TaxSummary {
     lines: TaxLine.listOrNull(json['lines']),
     settlements: Settlement.listOrNull(json['settlements']),
     einvoice: EInvoice.maybe(json['einvoice']),
+    reverseCharge: json['reverseCharge'] == true,
+    rcmTax: asDouble(json['rcmTax']),
     ewaybill: EWayBill.maybe(json['ewaybill']),
   );
 
@@ -262,6 +282,8 @@ class InvoiceDraft {
     required this.partyId,
     required this.lines,
     this.invoiceDate,
+    this.costCentreId,
+    this.custom = const {},
     this.notes,
   });
 
@@ -273,11 +295,16 @@ class InvoiceDraft {
   final String? notes;
   final List<InvoiceDraftLine> lines;
 
+  final String? costCentreId;
+  final Json custom;
+
   Json toJson() => withoutNulls({
     'locationId': locationId,
     'partyId': partyId,
     'invoiceDate': invoiceDate,
     'notes': notes,
+    'costCentreId': costCentreId,
+    if (custom.isNotEmpty) 'custom': custom,
     'lines': [for (final line in lines) line.toJson()],
   });
 }

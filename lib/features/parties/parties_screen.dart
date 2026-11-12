@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
 import '../../core/india_states.dart';
 import '../../core/money.dart';
@@ -47,6 +48,7 @@ class _PartiesScreenState extends ConsumerState<PartiesScreen> {
     ref.listen(revisionProvider(DataKind.parties), (_, _) => _paged.refresh());
     ref.listen(activeCompanyIdProvider, (_, _) => _paged.refresh());
     final perms = ref.watch(permissionsProvider);
+    final isIndia = ref.watch(businessProfileProvider).isIndia;
 
     void open(Party party) => context.go('/parties/${party.id}');
 
@@ -61,7 +63,7 @@ class _PartiesScreenState extends ConsumerState<PartiesScreen> {
               FilledButton.icon(
                 onPressed: () => context.go('/parties/new'),
                 icon: const Icon(Icons.add),
-                label: const Text('New party'),
+                label: Text(context.w('New party')),
               ),
           ],
         ),
@@ -69,13 +71,16 @@ class _PartiesScreenState extends ConsumerState<PartiesScreen> {
           children: [
             SegmentedButton<PartyType?>(
               showSelectedIcon: false,
-              segments: const [
+              segments: [
                 ButtonSegment(value: null, label: Text('All')),
                 ButtonSegment(
                   value: PartyType.customer,
-                  label: Text('Customers'),
+                  label: Text(context.w('Customers')),
                 ),
-                ButtonSegment(value: PartyType.vendor, label: Text('Vendors')),
+                ButtonSegment(
+                  value: PartyType.vendor,
+                  label: Text(context.w('Vendors')),
+                ),
               ],
               selected: {_type},
               onSelectionChanged: (s) {
@@ -86,7 +91,9 @@ class _PartiesScreenState extends ConsumerState<PartiesScreen> {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
               child: SearchField(
-                hintText: 'Search name, GSTIN or phone',
+                hintText: isIndia
+                    ? 'Search name, GSTIN or phone'
+                    : 'Search name or phone',
                 onChanged: (q) {
                   _query = q;
                   _paged.refresh();
@@ -105,8 +112,10 @@ class _PartiesScreenState extends ConsumerState<PartiesScreen> {
             columns: [
               TableColumnSpec('Name', (p) => Text(p.name), maxWidth: 220),
               TableColumnSpec('Type', (p) => _TypePill(type: p.type)),
-              TableColumnSpec('GSTIN', (p) => Text(p.gstin ?? '—')),
-              TableColumnSpec('State', (p) => Text(stateLabel(p.stateCode))),
+              if (isIndia) ...[
+                TableColumnSpec('GSTIN', (p) => Text(p.gstin ?? '—')),
+                TableColumnSpec('State', (p) => Text(stateLabel(p.stateCode))),
+              ],
               TableColumnSpec('Phone', (p) => Text(p.phone ?? '—')),
               TableColumnSpec(
                 'Email',
@@ -132,8 +141,8 @@ class _PartiesScreenState extends ConsumerState<PartiesScreen> {
                 children: [
                   Text(
                     [
-                      if (p.gstin != null) p.gstin!,
-                      if (p.stateCode != null)
+                      if (isIndia && p.gstin != null) p.gstin!,
+                      if (isIndia && p.stateCode != null)
                         stateName(p.stateCode) ?? p.stateCode!,
                       if (p.phone != null) p.phone!,
                     ].join(' · '),
@@ -163,8 +172,8 @@ class _TypePill extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Pill(
       switch (type) {
-        PartyType.customer => 'Customer',
-        PartyType.vendor => 'Vendor',
+        PartyType.customer => context.w('Customer'),
+        PartyType.vendor => context.w('Vendor'),
         PartyType.both => 'Both',
       },
       color: switch (type) {

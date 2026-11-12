@@ -16,6 +16,7 @@ import '../company/company_model.dart';
 import '../company/company_repository.dart';
 import 'invoice_model.dart';
 import 'invoices_repository.dart';
+import '../../widgets/form_support.dart';
 
 /// Permission for IRNs and e-way bills (API v1.3).
 const String kEinvoiceManage = 'einvoice.manage';
@@ -69,7 +70,7 @@ Future<void> showProblemsDialog(
   Object error,
 ) {
   final lines = describeApiProblems(error);
-  return showDialog<void>(
+  return showFormDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
@@ -149,7 +150,7 @@ class _EInvoiceSectionState extends ConsumerState<EInvoiceSection> {
     final id = _invoice.id!;
     final repo = ref.read(invoicesRepositoryProvider);
     if (company.einvoiceSandbox) {
-      final ok = await showDialog<bool>(
+      final ok = await showFormDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Generate test IRN?'),
@@ -177,7 +178,7 @@ class _EInvoiceSectionState extends ConsumerState<EInvoiceSection> {
       );
       return;
     }
-    final body = await showDialog<Json>(
+    final body = await showFormDialog<Json>(
       context: context,
       builder: (_) => ManualIrnDialog(invoiceId: id),
     );
@@ -190,7 +191,7 @@ class _EInvoiceSectionState extends ConsumerState<EInvoiceSection> {
   }
 
   Future<void> _cancel({required bool ewb}) async {
-    final result = await showDialog<(String, String)>(
+    final result = await showFormDialog<(String, String)>(
       context: context,
       builder: (_) => CancelWithCodeDialog(
         title: ewb ? 'Cancel e-way bill?' : 'Cancel IRN?',
@@ -215,7 +216,7 @@ class _EInvoiceSectionState extends ConsumerState<EInvoiceSection> {
   }
 
   Future<void> _generateEwb(Company company) async {
-    final body = await showDialog<Json>(
+    final body = await showFormDialog<Json>(
       context: context,
       builder: (_) => EwayBillDialog(manual: !company.einvoiceSandbox),
     );
@@ -415,13 +416,13 @@ class _EInvoiceSectionState extends ConsumerState<EInvoiceSection> {
               ? null
               : () => _generateEwb(company),
           icon: const Icon(Icons.local_shipping_outlined),
-          label: const Text('Generate e-way bill'),
+          label: Text('Generate e-way bill'),
         ),
       if (can && ewb != null && ewb.isActive && ewb.canCancelAt(now))
         OutlinedButton.icon(
           onPressed: _busy ? null : () => _cancel(ewb: true),
           icon: const Icon(Icons.block),
-          label: const Text('Cancel e-way bill'),
+          label: Text('Cancel e-way bill'),
         ),
       if (can &&
           posted &&
@@ -490,7 +491,7 @@ class _ManualIrnDialogState extends State<ManualIrnDialog> {
   static final _hex64 = RegExp(r'^[0-9a-fA-F]{64}$');
 
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     Navigator.of(context).pop(<String, dynamic>{
       'irn': _irn.text.trim().toLowerCase(),
       'ackNo': _ackNo.text.trim(),
@@ -562,7 +563,7 @@ class _ManualIrnDialogState extends State<ManualIrnDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: () => Navigator.of(context).pop(),
+        onPressed: () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       FilledButton(onPressed: _submit, child: const Text('Record IRN')),
@@ -648,7 +649,7 @@ class _CancelWithCodeDialogState extends State<CancelWithCodeDialog> {
             foregroundColor: scheme.onError,
           ),
           onPressed: () {
-            if (_formKey.currentState!.validate()) {
+            if (validateAndReveal(_formKey)) {
               Navigator.of(context).pop((_code, _remark.text.trim()));
             }
           },
@@ -702,7 +703,7 @@ class _EwayBillDialogState extends State<EwayBillDialog> {
   }
 
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     String? text(TextEditingController c) {
       final t = c.text.trim();
       return t.isEmpty ? null : t;
@@ -724,7 +725,7 @@ class _EwayBillDialogState extends State<EwayBillDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Generate e-way bill'),
+    title: Text('Generate e-way bill'),
     scrollable: true,
     content: SizedBox(
       width: 480,
@@ -824,7 +825,7 @@ class _EwayBillDialogState extends State<EwayBillDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: () => Navigator.of(context).pop(),
+        onPressed: () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       FilledButton(onPressed: _submit, child: const Text('Generate')),

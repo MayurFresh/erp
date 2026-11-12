@@ -32,10 +32,12 @@ class Party {
     this.creditDays = 0,
     this.balance,
     this.createdAt,
+    this.updatedAt,
     this.udyamNo,
     this.msmeCategory,
     this.tdsSectionId,
     this.tdsSectionCode,
+    this.custom = const {},
   });
 
   factory Party.fromJson(Json json) => Party(
@@ -54,10 +56,12 @@ class Party {
     creditDays: asInt(json['creditDays']),
     balance: asDoubleOrNull(json['balance']),
     createdAt: asDateTimeOrNull(json['createdAt']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
     udyamNo: asStringOrNull(json['udyamNo']),
     msmeCategory: asStringOrNull(json['msmeCategory']),
     tdsSectionId: asStringOrNull(json['tdsSectionId']),
     tdsSectionCode: asStringOrNull(json['tdsSectionCode']),
+    custom: asJson(json['custom']),
   );
 
   final String id;
@@ -83,6 +87,7 @@ class Party {
   /// `+` they owe us, `−` we owe them; `null` if the server omits it.
   final double? balance;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   /// `UDYAM-XX-00-0000000` (API v1.4).
   final String? udyamNo;
@@ -91,6 +96,9 @@ class Party {
   final String? msmeCategory;
   final String? tdsSectionId;
   final String? tdsSectionCode;
+
+  /// Custom field values (`key → value`).
+  final Json custom;
 
   /// Micro and small suppliers must be paid within 45 days (MSMED Act s.15).
   bool get isMsmeMicroSmall =>

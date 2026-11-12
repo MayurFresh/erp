@@ -1,3 +1,4 @@
+import { assertFresh } from '../lib/stale.ts';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
@@ -12,6 +13,8 @@ import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { nextNumber } from '../lib/series.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { createOrSubmit, registerApprovalDoc } from './approvals.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -32,6 +35,7 @@ const createBody = z.object({
   subtype: z.enum(['cash', 'bank', 'other']).optional(),
 });
 const patchBody = z.object({
+  expectedUpdatedAt: z.string().max(40).optional(),
   name: z.string().trim().min(2).max(120).optional(),
   code: z.string().trim().regex(/^\d{3,6}$/, 'Use 3–6 digits').optional(),
   isActive: z.boolean().optional(),
@@ -43,6 +47,7 @@ const journalQuery = pagingQuery.extend({
   voucherType: z.enum(['sales', 'purchase', 'receipt', 'payment', 'credit_note', 'expense', 'stock', 'transfer', 'journal',
     'issue', 'wages', 'labour_advance', 'contractor_advance', 'ra_bill', 'retention_release', 'demand', 'possession',
     'tds_challan', 'bank_entry', 'gst_payment', 'gst_setoff', 'tax_payment', 'asset_capitalise', 'depreciation',
+    'intercompany', 'opening', 'settlement',
     'asset_disposal']).optional(),
 });
 const journalBody = z.object({
@@ -53,6 +58,7 @@ const journalBody = z.object({
     partyId: z.uuid().nullable().optional(),
     debit: moneyField.optional(),
     credit: moneyField.optional(),
+    costCentreId: z.uuid().nullable().optional(),
   })).min(2, 'At least two lines').max(50),
 });
 const cancelBody = z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) });
@@ -65,11 +71,11 @@ async function balances(tx: Tx, companyId: string, asOf: string): Promise<Map<st
   return new Map(rows.map((r) => [r.account_id, round2(Number(r.d) - Number(r.c))]));
 }
 
-type AccountRow = { id: string; code: string; name: string; type: string; subtype: string; system_key: string | null; is_system: boolean; is_active: boolean };
+type AccountRow = { id: string; code: string; name: string; type: string; subtype: string; system_key: string | null; is_system: boolean; is_active: boolean; updated_at?: Date };
 
 const accountJson = (a: AccountRow, balance: number) => ({
   id: a.id, code: a.code, name: a.name, type: a.type, subtype: a.subtype, systemKey: a.system_key,
-  isSystem: a.is_system, isActive: a.is_active, balance,
+  isSystem: a.is_system, isActive: a.is_active, balance, updatedAt: a.updated_at,
 });
 
 /** Loads entries with their lines and names, in the order of `ids`. */
@@ -80,7 +86,7 @@ export async function loadEntries(tx: Tx, ids: string[]) {
   const lines = await tx.selectFrom('journal_lines as jl')
     .innerJoin('accounts as a', 'a.id', 'jl.account_id')
     .leftJoin('parties as p', 'p.id', 'jl.party_id')
-    .select(['jl.entry_id', 'jl.line_no', 'jl.account_id', 'a.code', 'a.name', 'jl.party_id', 'p.name as party_name', 'jl.debit', 'jl.credit'])
+    .select(['jl.entry_id', 'jl.line_no', 'jl.account_id', 'a.code', 'a.name', 'jl.party_id', 'p.name as party_name', 'jl.debit', 'jl.credit', 'jl.cost_centre_id'])
     .where('jl.entry_id', 'in', ids).orderBy('jl.line_no').execute();
   const reversals = await tx.selectFrom('journal_entries').select(['id', 'reverses_id'])
     .where('reverses_id', 'in', ids).execute();
@@ -93,7 +99,7 @@ export async function loadEntries(tx: Tx, ids: string[]) {
       createdBy: e.created_by ? { id: e.created_by, name: e.created_by_name! } : null,
       lines: lines.filter((l) => l.entry_id === id).map((l) => ({
         accountId: l.account_id, accountCode: l.code, accountName: l.name, partyId: l.party_id, partyName: l.party_name,
-        debit: l.debit, credit: l.credit,
+        debit: l.debit, credit: l.credit, costCentreId: l.cost_centre_id,
       })),
     };
   });
@@ -103,6 +109,71 @@ function canPickAccounts(ctx: RequestContext) {
   return ctx.can('payments.create') || ctx.can('expenses.create');
 }
 
+type JournalBody = z.infer<typeof journalBody>;
+
+/** Creates a manual journal (shared by the route and a final approval). */
+export async function createJournal(ctx: RequestContext, tx: Tx, body: JournalBody) {
+  const date = body.date ?? todayIst();
+  if (date > todayIst()) throw badRequest('Date cannot be in the future.', { date: 'In the future' });
+  const accountIds = [...new Set(body.lines.map((l) => l.accountId))];
+  const accounts = await tx.selectFrom('accounts').select(['id', 'type', 'subtype', 'is_active', 'system_key'])
+    .where('company_id', '=', ctx.companyId).where('id', 'in', accountIds).execute();
+  const partyIds = [...new Set(body.lines.map((l) => l.partyId).filter((p): p is string => !!p))];
+  const parties = partyIds.length
+    ? await tx.selectFrom('parties').select('id').where('company_id', '=', ctx.companyId).where('id', 'in', partyIds).execute()
+    : [];
+  const ccIds = [...new Set(body.lines.map((l) => l.costCentreId).filter((x): x is string => !!x))];
+  const ccs = ccIds.length
+    ? await tx.selectFrom('cost_centres').select(['id', 'is_active']).where('company_id', '=', ctx.companyId).where('id', 'in', ccIds).execute()
+    : [];
+  const ccRequired = (await tx.selectFrom('companies').select('cost_centre_required').where('id', '=', ctx.companyId).executeTakeFirst())?.cost_centre_required ?? false;
+  let debit = 0;
+  let credit = 0;
+  const lines = body.lines.map((l, i) => {
+    const account = accounts.find((a) => a.id === l.accountId);
+    if (!account || !account.is_active) throw badRequest(`Line ${i + 1}: account not found or inactive.`, { [`lines.${i}.accountId`]: 'Invalid' });
+    if (account.system_key === 'intercompany') {
+      throw badRequest(`Line ${i + 1}: use an inter-company entry for this account.`, { [`lines.${i}.accountId`]: 'Use an inter-company entry' });
+    }
+    const d = l.debit ?? 0;
+    const c = l.credit ?? 0;
+    if ((d > 0) === (c > 0)) throw badRequest(`Line ${i + 1}: enter either a debit or a credit.`, { [`lines.${i}.debit`]: 'One side only' });
+    if (l.partyId) {
+      if (!['receivables', 'payables'].includes(account.subtype)) {
+        throw badRequest(`Line ${i + 1}: a party can only be set on receivable or payable accounts.`, { [`lines.${i}.partyId`]: 'Not allowed here' });
+      }
+      if (!parties.some((p) => p.id === l.partyId)) throw badRequest(`Line ${i + 1}: party not found.`, { [`lines.${i}.partyId`]: 'Not found' });
+    }
+    const pnl = account.type === 'income' || account.type === 'expense';
+    if (l.costCentreId) {
+      if (!pnl) throw badRequest(`Line ${i + 1}: cost centres apply to income and expense accounts only.`, { [`lines.${i}.costCentreId`]: 'Not allowed here' });
+      const cc = ccs.find((x) => x.id === l.costCentreId);
+      if (!cc) throw badRequest(`Line ${i + 1}: cost centre not found.`, { [`lines.${i}.costCentreId`]: 'Not found' });
+      if (!cc.is_active) throw badRequest(`Line ${i + 1}: cost centre is inactive.`, { [`lines.${i}.costCentreId`]: 'Inactive' });
+    } else if (pnl && ccRequired) {
+      throw badRequest(`Line ${i + 1}: choose a cost centre.`, { [`lines.${i}.costCentreId`]: 'Required' });
+    }
+    debit += Math.round(d * 100);
+    credit += Math.round(c * 100);
+    return { accountId: account.id, amount: d > 0 ? d : -c, partyId: l.partyId ?? null, costCentreId: l.costCentreId ?? null };
+  });
+  if (debit !== credit) {
+    throw badRequest(`Debits (₹${debit / 100}) and credits (₹${credit / 100}) must be equal.`, { lines: 'Not balanced' });
+  }
+  const number = await nextNumber(tx, ctx, 'journal', financialYear(date));
+  const id = await postJournal(tx, auditOf(ctx), { date, voucherType: 'journal', voucherId: null, number, narration: body.narration, lines });
+  await writeAudit(tx, auditOf(ctx), 'journal', id, 'create', null, { number, narration: body.narration, total: debit / 100 });
+  return (await loadEntries(tx, [id]))[0]!;
+}
+
+registerApprovalDoc('journal', {
+  permission: 'accounts.journal',
+  create: async (ctx, tx, payload) => {
+    const d = await createJournal(ctx, tx, parse(journalBody, payload));
+    return { id: d.id, number: d.number };
+  },
+});
+
 export async function accountRoutes(app: FastifyInstance) {
   app.get('/accounts', async (req) => {
     const ctx = req.ctx;
@@ -111,7 +182,7 @@ export async function accountRoutes(app: FastifyInstance) {
     const q = parse(listQuery, req.query);
     return ctx.tx(async (tx) => {
       await systemAccounts(tx, ctx);
-      let base = tx.selectFrom('accounts').select(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active'])
+      let base = tx.selectFrom('accounts').select(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active', 'updated_at'])
         .where('company_id', '=', ctx.companyId);
       if (!full) {
         // Pickers for receipts, payments and expenses: cash, bank and expense heads only.
@@ -150,7 +221,7 @@ export async function accountRoutes(app: FastifyInstance) {
         const row = await tx.insertInto('accounts').values({
           tenant_id: ctx.tenantId, company_id: ctx.companyId, code, name: body.name, type: body.type, subtype,
           system_key: null, is_system: false,
-        }).returning(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active']).executeTakeFirstOrThrow();
+        }).returning(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active', 'updated_at']).executeTakeFirstOrThrow();
         await writeAudit(tx, auditOf(ctx), 'account', row.id, 'create', null, row);
         return row;
       });
@@ -168,9 +239,10 @@ export async function accountRoutes(app: FastifyInstance) {
     const body = parse(patchBody, req.body);
     try {
       return await ctx.tx(async (tx) => {
-        const before = await tx.selectFrom('accounts').select(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active'])
+        const before = await tx.selectFrom('accounts').select(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active', 'updated_at'])
           .where('id', '=', id).where('company_id', '=', ctx.companyId).executeTakeFirst();
         if (!before) throw notFound('Account');
+        assertFresh(before.updated_at, body.expectedUpdatedAt, 'account');
         if (before.is_system && (body.code !== undefined || body.isActive !== undefined)) {
           throw forbidden('System accounts can only be renamed.');
         }
@@ -178,7 +250,7 @@ export async function accountRoutes(app: FastifyInstance) {
           .filter(([, v]) => v !== undefined));
         if (!Object.keys(changes).length) return accountJson(before, (await balances(tx, ctx.companyId, todayIst())).get(id) ?? 0);
         const after = await tx.updateTable('accounts').set(changes).where('id', '=', id)
-          .returning(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active']).executeTakeFirstOrThrow();
+          .returning(['id', 'code', 'name', 'type', 'subtype', 'system_key', 'is_system', 'is_active', 'updated_at']).executeTakeFirstOrThrow();
         await writeAudit(tx, auditOf(ctx), 'account', id, 'update', before, after);
         return accountJson(after, (await balances(tx, ctx.companyId, todayIst())).get(id) ?? 0);
       });
@@ -234,43 +306,10 @@ export async function accountRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('accounts.journal');
     const body = parse(journalBody, req.body);
-    const entry = await ctx.tx(async (tx) => {
-      const date = body.date ?? todayIst();
-      if (date > todayIst()) throw badRequest('Date cannot be in the future.', { date: 'In the future' });
-      const accountIds = [...new Set(body.lines.map((l) => l.accountId))];
-      const accounts = await tx.selectFrom('accounts').select(['id', 'subtype', 'is_active'])
-        .where('company_id', '=', ctx.companyId).where('id', 'in', accountIds).execute();
-      const partyIds = [...new Set(body.lines.map((l) => l.partyId).filter((p): p is string => !!p))];
-      const parties = partyIds.length
-        ? await tx.selectFrom('parties').select('id').where('company_id', '=', ctx.companyId).where('id', 'in', partyIds).execute()
-        : [];
-      let debit = 0;
-      let credit = 0;
-      const lines = body.lines.map((l, i) => {
-        const account = accounts.find((a) => a.id === l.accountId);
-        if (!account || !account.is_active) throw badRequest(`Line ${i + 1}: account not found or inactive.`, { [`lines.${i}.accountId`]: 'Invalid' });
-        const d = l.debit ?? 0;
-        const c = l.credit ?? 0;
-        if ((d > 0) === (c > 0)) throw badRequest(`Line ${i + 1}: enter either a debit or a credit.`, { [`lines.${i}.debit`]: 'One side only' });
-        if (l.partyId) {
-          if (!['receivables', 'payables'].includes(account.subtype)) {
-            throw badRequest(`Line ${i + 1}: a party can only be set on receivable or payable accounts.`, { [`lines.${i}.partyId`]: 'Not allowed here' });
-          }
-          if (!parties.some((p) => p.id === l.partyId)) throw badRequest(`Line ${i + 1}: party not found.`, { [`lines.${i}.partyId`]: 'Not found' });
-        }
-        debit += Math.round(d * 100);
-        credit += Math.round(c * 100);
-        return { accountId: account.id, amount: d > 0 ? d : -c, partyId: l.partyId ?? null };
-      });
-      if (debit !== credit) {
-        throw badRequest(`Debits (₹${debit / 100}) and credits (₹${credit / 100}) must be equal.`, { lines: 'Not balanced' });
-      }
-      const number = await nextNumber(tx, ctx, 'journal', financialYear(date));
-      const id = await postJournal(tx, auditOf(ctx), { date, voucherType: 'journal', voucherId: null, number, narration: body.narration, lines });
-      await writeAudit(tx, auditOf(ctx), 'journal', id, 'create', null, { number, narration: body.narration, total: debit / 100 });
-      return (await loadEntries(tx, [id]))[0];
-    });
-    return reply.status(201).send(entry);
+    const r = await ctx.tx((tx) => createOrSubmit(ctx, tx, 'journal', body, (t) => createJournal(ctx, t, body),
+      (d) => ({ amount: round2(d.lines.reduce((x, l) => x + l.debit, 0)), date: d.date, partyId: null, locationId: null, narration: d.narration })));
+    if (r.request) return reply.status(202).send({ approvalRequest: r.request });
+    return reply.status(201).send(r.doc);
   });
 
   app.post<{ Params: { id: string } }>('/journals/:id/cancel', async (req) => {
@@ -293,3 +332,8 @@ export async function accountRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/accounts', { body: createBody });
+documentRoute('PATCH', '/accounts/:id', { body: patchBody });
+documentRoute('POST', '/journals', { body: journalBody });
+documentRoute('POST', '/journals/:id/cancel', { body: cancelBody });

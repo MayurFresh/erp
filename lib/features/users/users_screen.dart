@@ -12,6 +12,7 @@ import '../locations/location_model.dart';
 import '../locations/locations_repository.dart';
 import 'user_models.dart';
 import 'users_repository.dart';
+import '../../core/app_colors.dart';
 
 class UsersScreen extends ConsumerStatefulWidget {
   const UsersScreen({super.key});
@@ -95,7 +96,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
               TableColumnSpec(
                 'Status',
                 (u) => u.isActive
-                    ? const Pill('Active', color: Colors.green)
+                    ? Pill('Active', color: context.colors.success)
                     : Pill(
                         'Inactive',
                         color: Theme.of(context).colorScheme.outline,

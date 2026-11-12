@@ -4,8 +4,8 @@
 export function csvCell(v: unknown): string {
   if (v === null || v === undefined) return '';
   let s = typeof v === 'number' ? String(v) : String(v);
-  // Spreadsheet formula injection guard for text cells.
-  if (typeof v === 'string' && /^[=+@]/.test(s)) s = `'${s}`;
+  // Spreadsheet formula injection guard for text cells; plain negative numbers stay as they are.
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s) && !/^-\d+(\.\d+)?$/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

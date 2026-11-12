@@ -33,6 +33,8 @@ class Purchase implements TaxSummary {
     this.amountDue = 0,
     this.paymentStatus,
     this.notes,
+    this.costCentreId,
+    this.custom = const {},
     this.createdAt,
     this.createdBy,
     this.cancelledAt,
@@ -50,6 +52,12 @@ class Purchase implements TaxSummary {
     this.msmeDueDate,
     this.msmeCategory,
   });
+
+  /// Cost centre the document is tagged to.
+  final String? costCentreId;
+
+  /// Custom field values (`key → value`).
+  final Json custom;
 
   factory Purchase.fromJson(Json json) => Purchase(
     id: asStringOrNull(json['id']),
@@ -79,6 +87,8 @@ class Purchase implements TaxSummary {
     amountDue: asDouble(json['amountDue']),
     paymentStatus: PaymentStatus.parse(json['paymentStatus']),
     notes: asStringOrNull(json['notes']),
+    costCentreId: asStringOrNull(json['costCentreId']),
+    custom: asJson(json['custom']),
     createdAt: asDateTimeOrNull(json['createdAt']),
     createdBy: UserRef.maybe(json['createdBy']),
     cancelledAt: asDateTimeOrNull(json['cancelledAt']),
@@ -179,6 +189,8 @@ class PurchaseDraft {
     this.billDate,
     this.supplierInvoiceNo,
     this.supplierInvoiceDate,
+    this.costCentreId,
+    this.custom = const {},
     this.notes,
     this.tdsSectionId,
     this.reverseCharge = false,
@@ -196,6 +208,9 @@ class PurchaseDraft {
   final String? notes;
   final List<DraftLine> lines;
 
+  final String? costCentreId;
+  final Json custom;
+
   Json toJson() => withoutNulls({
     'locationId': locationId,
     'partyId': partyId,
@@ -203,6 +218,8 @@ class PurchaseDraft {
     'supplierInvoiceNo': supplierInvoiceNo,
     'supplierInvoiceDate': supplierInvoiceDate,
     'notes': notes,
+    'costCentreId': costCentreId,
+    if (custom.isNotEmpty) 'custom': custom,
     'lines': [for (final line in lines) line.toJson()],
   })..addAll({'tdsSectionId': tdsSectionId, 'reverseCharge': reverseCharge});
 }

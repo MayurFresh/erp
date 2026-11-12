@@ -1,12 +1,12 @@
 {
     "name": "Progen ERP",
-    "short_name": "Progen ERP",
+    "short_name": "Progen",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#3F51B5",
-    "theme_color": "#3F51B5",
-    "description": "GST-ready ERP for Indian businesses.",
-    "orientation": "portrait-primary",
+    "background_color": "#F6F5F2",
+    "theme_color": "#0B6157",
+    "description": "GST invoicing, stock, books and site costing for Indian businesses.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

@@ -22,6 +22,14 @@ const reportKinds = [
 /// `from`/`to` as `YYYY-MM-DD`, plus an optional location.
 typedef PeriodKey = ({String from, String to, String? locationId});
 
+/// Profit & loss query: a period plus optional location and cost centre.
+typedef ProfitLossKey = ({
+  String from,
+  String to,
+  String? locationId,
+  String? costCentreId,
+});
+
 extension on Ref {
   ReportsRepository reports() {
     watch(activeCompanyIdProvider);
@@ -36,8 +44,13 @@ final trialBalanceProvider = FutureProvider.autoDispose
     );
 
 final profitLossProvider = FutureProvider.autoDispose
-    .family<ProfitLoss, PeriodKey>(
-      (ref, k) => ref.reports().profitLoss(from: k.from, to: k.to),
+    .family<ProfitLoss, ProfitLossKey>(
+      (ref, k) => ref.reports().profitLoss(
+        from: k.from,
+        to: k.to,
+        locationId: k.locationId,
+        costCentreId: k.costCentreId,
+      ),
     );
 
 final balanceSheetProvider = FutureProvider.autoDispose
@@ -89,13 +102,22 @@ class ReportsRepository {
         await _api.getJson('/reports/trial-balance', query: {'asOf': asOf}),
       );
 
-  Future<ProfitLoss> profitLoss({String? from, String? to}) async =>
-      ProfitLoss.fromJson(
-        await _api.getJson(
-          '/reports/profit-loss',
-          query: {'from': from, 'to': to},
-        ),
-      );
+  Future<ProfitLoss> profitLoss({
+    String? from,
+    String? to,
+    String? locationId,
+    String? costCentreId,
+  }) async => ProfitLoss.fromJson(
+    await _api.getJson(
+      '/reports/profit-loss',
+      query: {
+        'from': from,
+        'to': to,
+        'locationId': locationId,
+        'costCentreId': costCentreId,
+      },
+    ),
+  );
 
   Future<BalanceSheet> balanceSheet({String? asOf}) async =>
       BalanceSheet.fromJson(

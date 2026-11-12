@@ -11,8 +11,9 @@ import '../data/construction_repository.dart';
 import '../models/common_models.dart';
 import '../models/subcontract_models.dart';
 import 'c_widgets.dart';
+import '../../../core/app_colors.dart';
 
-Color _amber() => Colors.orange.shade800;
+Color _amber() => AppColors.light.warning;
 
 Widget labourAdvanceStatusPill(
   BuildContext context,
@@ -21,7 +22,7 @@ Widget labourAdvanceStatusPill(
   status.label,
   color: switch (status) {
     LabourAdvanceStatus.open => _amber(),
-    LabourAdvanceStatus.recovered => Colors.green.shade700,
+    LabourAdvanceStatus.recovered => context.colors.success,
     LabourAdvanceStatus.cancelled => Theme.of(context).colorScheme.error,
   },
 );
@@ -30,8 +31,8 @@ Widget workOrderStatusPill(BuildContext context, WorkOrderStatus status) =>
     Pill(
       status.label,
       color: switch (status) {
-        WorkOrderStatus.draft => Colors.blueGrey,
-        WorkOrderStatus.active => Colors.green.shade700,
+        WorkOrderStatus.draft => context.colors.onNeutralContainer,
+        WorkOrderStatus.active => context.colors.success,
         WorkOrderStatus.closed => Theme.of(context).colorScheme.primary,
         WorkOrderStatus.cancelled => Theme.of(context).colorScheme.error,
       },
@@ -40,9 +41,9 @@ Widget workOrderStatusPill(BuildContext context, WorkOrderStatus status) =>
 Widget raBillStatusPill(BuildContext context, RaBillStatus status) => Pill(
   status.label,
   color: switch (status) {
-    RaBillStatus.draft => Colors.blueGrey,
+    RaBillStatus.draft => context.colors.onNeutralContainer,
     RaBillStatus.submitted => _amber(),
-    RaBillStatus.approved => Colors.green.shade700,
+    RaBillStatus.approved => context.colors.success,
     RaBillStatus.cancelled => Theme.of(context).colorScheme.error,
   },
 );
@@ -51,8 +52,8 @@ Widget raPaymentPill(BuildContext context, RaPaymentStatus status) => Pill(
   status.label,
   color: switch (status) {
     RaPaymentStatus.unpaid => _amber(),
-    RaPaymentStatus.partial => Colors.blue.shade700,
-    RaPaymentStatus.paid => Colors.green.shade700,
+    RaPaymentStatus.partial => context.colors.info,
+    RaPaymentStatus.paid => context.colors.success,
   },
 );
 
@@ -216,7 +217,7 @@ Future<AmountEntry?> showAmountDialog(
     );
     return null;
   }
-  return showDialog<AmountEntry>(
+  return showFormDialog<AmountEntry>(
     context: context,
     builder: (context) => _AmountDialog(
       title: title,
@@ -273,7 +274,7 @@ class _AmountDialogState extends State<_AmountDialog> {
   }
 
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     Navigator.of(context).pop(
       AmountEntry(
         amount: double.parse(_amount.text.trim()),
@@ -303,9 +304,9 @@ class _AmountDialogState extends State<_AmountDialog> {
               autofocus: true,
               keyboardType: decimalKeyboard,
               inputFormatters: [decimalInput()],
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Amount',
-                prefixText: '₹ ',
+                prefixText: '$moneySymbol ',
               ),
               validator: (v) {
                 final error = requiredNumber(v, label: 'Amount', min: 0.01);
@@ -352,7 +353,7 @@ class _AmountDialogState extends State<_AmountDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: () => Navigator.of(context).pop(),
+        onPressed: () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       FilledButton(onPressed: _submit, child: Text(widget.confirmLabel)),

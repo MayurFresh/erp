@@ -120,6 +120,7 @@ class FakeBackend implements HttpClientAdapter {
           'purchasesThisMonth',
         ]),
       ),
+      ('GET', '/analytics/overview') when v11 => (200, analytics),
       ('GET', '/items') => (200, page([item, untrackedItem])),
       ('GET', '/items/i1') => (200, item),
       ('GET', '/parties') => (
@@ -879,6 +880,38 @@ class FakeBackend implements HttpClientAdapter {
     'other',
     'cogs',
   );
+
+  static final analytics = {
+    'from': '2026-10-01',
+    'to': '2026-10-31',
+    'previousFrom': '2026-09-01',
+    'previousTo': '2026-09-30',
+    'kpis': {
+      'current': {'sales': 412000, 'purchases': 250000, 'expenses': 40000, 'receivables': 264910, 'payables': 8000, 'cashAndBank': 150000.5, 'netProfit': 52000},
+      'previous': {'sales': 368000, 'purchases': 210000, 'expenses': 35000, 'receivables': 200000, 'payables': 9000, 'cashAndBank': 120000, 'netProfit': 41000},
+    },
+    'trend': [
+      {'month': '2026-08', 'sales': 300000, 'purchases': 180000, 'expenses': 30000},
+      {'month': '2026-09', 'sales': 368000, 'purchases': 210000, 'expenses': 35000},
+      {'month': '2026-10', 'sales': 412000, 'purchases': 250000, 'expenses': 40000},
+    ],
+    'cashFlow': [
+      {'month': '2026-09', 'cashIn': 300000, 'cashOut': 220000},
+      {'month': '2026-10', 'cashIn': 350000, 'cashOut': 260000},
+    ],
+    'topCustomers': [
+      {'partyId': 'p1', 'name': 'Mumbai Infra Projects LLP', 'amount': 150000, 'invoices': 4, 'share': 36},
+    ],
+    'topItems': [
+      {'itemId': 'i1', 'name': 'Portland Cement 53 Grade 50kg', 'unit': 'bag', 'qty': 120, 'amount': 50400},
+    ],
+    'salesByLocation': [],
+    'expensesByCategory': [],
+    'ageing': {
+      'receivables': {'notDue': 150000, 'd1_30': 60000, 'd31_60': 30000, 'd61_90': 14910, 'd90plus': 10000, 'total': 264910},
+      'payables': {'notDue': 8000, 'd1_30': 0, 'd31_60': 0, 'd61_90': 0, 'd90plus': 0, 'total': 8000},
+    },
+  };
 
   static final dashboard = {
     'salesToday': 1021,

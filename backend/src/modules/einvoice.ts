@@ -1,15 +1,15 @@
-import { randomInt } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
-import { addDays, todayIst } from '../lib/dates.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
-import { buildEinvoicePayload, irnOf, sandboxQr } from '../lib/einvoice-payload.ts';
+import { buildEinvoicePayload } from '../lib/einvoice-payload.ts';
+import { callGsp, resolveGsp } from '../lib/gsp/registry.ts';
 import { GSTIN_PATTERN } from '../lib/india.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { loadInvoice } from './invoices.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const DAY_MS = 24 * 3600 * 1000;
 const REASONS = { '1': 'Duplicate', '2': 'Data entry mistake', '3': 'Order cancelled', '4': 'Other' } as const;
@@ -88,18 +88,12 @@ export async function einvoiceRoutes(app: FastifyInstance) {
       validated(d);
 
       const sandbox = d.company.einvoice_mode === 'sandbox';
+      const viaAdapter = sandbox || d.company.einvoice_mode === 'gsp';
       let irn: string, ackNo: string, ackDate: Date, qr: string;
-      if (sandbox) {
-        irn = irnOf(d.company.gstin!, d.invoice.fy, d.invoice.number);
-        ackNo = String(randomInt(1, 10) * 10 ** 14 + randomInt(0, 10 ** 14));
-        ackDate = new Date();
-        const hsnTotals = new Map<string, number>();
-        for (const l of d.lines) hsnTotals.set(l.hsn_code!, (hsnTotals.get(l.hsn_code!) ?? 0) + l.taxable_value);
-        const mainHsn = [...hsnTotals.entries()].sort((a, b) => b[1] - a[1])[0]![0];
-        qr = sandboxQr({
-          sellerGstin: d.company.gstin!, buyerGstin: d.party.gstin, docNo: d.invoice.number, docDate: d.invoice.invoice_date,
-          totalValue: d.invoice.total, itemCount: d.lines.length, mainHsn, irn,
-        });
+      if (viaAdapter) {
+        const g = await resolveGsp(tx, d.company, 'einvoice');
+        const r = await callGsp(g.provider, () => g.adapter.generateIrn(g.call, validated(d)));
+        irn = r.irn; ackNo = r.ackNo; ackDate = r.ackDate; qr = r.signedQr;
       } else {
         const missing: Record<string, string> = {};
         for (const k of ['irn', 'ackNo', 'ackDate', 'signedQrCode'] as const) if (body[k] === undefined) missing[k] = 'Required';
@@ -132,6 +126,12 @@ export async function einvoiceRoutes(app: FastifyInstance) {
       }
       if (invoice.ewb_status === 'active') throw conflict('Cancel the e-way bill first.', 'EWB_ACTIVE');
       const reason = `${REASONS[body.reasonCode]}: ${body.remark}`;
+      const co = await company(tx, ctx);
+      const mode = invoice.irn_sandbox ? 'sandbox' : co.einvoice_mode;
+      if (mode !== 'manual') {
+        const g = await resolveGsp(tx, { ...co, einvoice_mode: mode }, 'einvoice');
+        await callGsp(g.provider, () => g.adapter.cancelIrn(g.call, invoice.irn!, body.reasonCode, body.remark));
+      }
       await tx.updateTable('invoices').set({ irn_status: 'cancelled', irn_cancelled_at: new Date(), irn_cancel_reason: reason })
         .where('id', '=', id).execute();
       await writeAudit(tx, auditOf(ctx), 'einvoice', id, 'cancel', { irn: invoice.irn, status: 'active' }, { status: 'cancelled', reason });
@@ -154,11 +154,13 @@ export async function einvoiceRoutes(app: FastifyInstance) {
 
       const sandbox = d.company.einvoice_mode === 'sandbox';
       let ewbNo: string, ewbDate: Date, validUntil: Date;
-      if (sandbox) {
-        ewbNo = String(randomInt(1, 10) * 10 ** 11 + randomInt(0, 10 ** 11));
-        ewbDate = new Date();
-        const days = Math.max(1, Math.ceil(body.distanceKm / 200));
-        validUntil = new Date(`${addDays(todayIst(), days)}T23:59:59+05:30`);
+      if (sandbox || d.company.einvoice_mode === 'gsp') {
+        const g = await resolveGsp(tx, d.company, 'ewaybill');
+        const r = await callGsp(g.provider, () => g.adapter.generateEwb(g.call, {
+          irn: invoice.irn!, transportMode: body.transportMode, distanceKm: body.distanceKm,
+          vehicleNo: body.vehicleNo, transporterGstin: body.transporterGstin,
+        }));
+        ewbNo = r.ewbNo; ewbDate = r.ewbDate; validUntil = r.validUntil ?? new Date(ewbDate.getTime() + Math.max(1, Math.ceil(body.distanceKm / 200)) * 86_400_000);
       } else {
         const missing: Record<string, string> = {};
         for (const k of ['ewbNo', 'ewbDate', 'validUntil'] as const) if (body[k] === undefined) missing[k] = 'Required';
@@ -185,6 +187,11 @@ export async function einvoiceRoutes(app: FastifyInstance) {
       const { invoice } = await loadForUpdate(tx, ctx, id, true);
       if (invoice.ewb_status !== 'active') throw conflict('This invoice has no active e-way bill.', 'CONFLICT');
       if (!within24h(invoice.ewb_date)) throw conflict('An e-way bill can be cancelled only within 24 hours of generation.', 'EWB_CANCEL_WINDOW');
+      const co = await company(tx, ctx);
+      if (co.einvoice_mode !== 'manual') {
+        const g = await resolveGsp(tx, co, 'ewaybill');
+        await callGsp(g.provider, () => g.adapter.cancelEwb(g.call, invoice.ewb_no!, body.reasonCode, body.remark));
+      }
       await tx.updateTable('invoices').set({ ewb_status: 'cancelled', ewb_cancelled_at: new Date() }).where('id', '=', id).execute();
       await writeAudit(tx, auditOf(ctx), 'einvoice', id, 'ewaybill_cancel', { ewbNo: invoice.ewb_no, status: 'active' },
         { status: 'cancelled', reason: `${REASONS[body.reasonCode]}: ${body.remark}` });
@@ -192,3 +199,8 @@ export async function einvoiceRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/invoices/:id/einvoice', { body: irnBody });
+documentRoute('POST', '/invoices/:id/einvoice/cancel', { body: cancelBody });
+documentRoute('POST', '/invoices/:id/ewaybill', { body: ewbBody });
+documentRoute('POST', '/invoices/:id/ewaybill/cancel', { body: cancelBody });

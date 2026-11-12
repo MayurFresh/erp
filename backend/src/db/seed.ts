@@ -7,6 +7,13 @@ import { createDb } from './database.ts';
 import { seedCompliance } from './seed-compliance.ts';
 import { seedGstFiling } from './seed-gst-filing.ts';
 import { seedTax } from './seed-tax.ts';
+import { seedControls } from './seed-controls.ts';
+import { seedO2c } from './seed-o2c.ts';
+import { seedP2p } from './seed-p2p.ts';
+import { seedPlatformAdmin } from './seed-platform-admin.ts';
+import { withDatabase } from './migrate.ts';
+import { seedPlatform } from './seed-platform.ts';
+import { runJobsOnce } from '../lib/jobs.ts';
 import { seedRealEstate } from './seed-realestate.ts';
 import { seedSubcontracts } from './seed-subcontracts.ts';
 
@@ -15,7 +22,7 @@ const config = loadConfig();
 const db = createDb(config.DATABASE_URL, 2);
 const app = await buildApp({ config, db, logger: false, authRateLimit: false });
 
-type Method = 'GET' | 'POST' | 'PUT' | 'PATCH';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 const daysAgo = (n: number) => addDays(todayIst(), -n);
 
 async function call(method: Method, url: string, body?: unknown, token?: string, companyId?: string) {
@@ -35,7 +42,7 @@ try {
   } else {
     const auth = await call('POST', '/auth/signup', {
       businessName: 'Demo Builders & Traders', name: 'Demo Owner', email: 'owner@demo.in', password: PASSWORD,
-      phone: '9800000001', stateCode: '24', gstin: '24AAACD1234F1Z5',
+      phone: '9800000001', stateCode: '24', gstin: '24AAACD1234F1ZD',
     });
     const token: string = auth.accessToken;
     const me = await call('GET', '/me', undefined, token);
@@ -82,10 +89,10 @@ try {
     await stock(siteA.id, sand.id, 30, 1200);
     await stock(siteA.id, bricks.id, 20000, 7.2);
 
-    const patel = await api('POST', '/parties', { type: 'customer', name: 'Patel Constructions', gstin: '24AABCP1234C1Z9', phone: '9825000011', creditLimit: 500000, creditDays: 30 });
+    const patel = await api('POST', '/parties', { type: 'customer', name: 'Patel Constructions', gstin: '24AABCP1234C1Z6', phone: '9825000011', creditLimit: 500000, creditDays: 30 });
     const mumbai = await api('POST', '/parties', { type: 'customer', name: 'Mumbai Infra Projects', gstin: '27AAPFU0939F1ZV', phone: '9820000022', creditLimit: 1000000, creditDays: 45 });
     const walkIn = await api('POST', '/parties', { type: 'customer', name: 'Walk-in Customer', stateCode: '24' });
-    const shree = await api('POST', '/parties', { type: 'vendor', name: 'Shree Cement Dealers', gstin: '24AAKFS5678D1ZQ', phone: '9879000033', creditDays: 15 });
+    const shree = await api('POST', '/parties', { type: 'vendor', name: 'Shree Cement Dealers', gstin: '24AAKFS5678D1ZY', phone: '9879000033', creditDays: 15 });
     const tata = await api('POST', '/parties', { type: 'vendor', name: 'Mumbai Steel Suppliers', gstin: '27AABCT3518Q1ZW', phone: '9821000044', creditDays: 30 });
 
     const accounts = (await api('GET', '/accounts')).data as { id: string; code: string }[];
@@ -166,7 +173,7 @@ try {
       phone: '9898000066', tdsSectionId: section('194J(a)') });
     await api('POST', '/expenses', { locationId: ho.id, accountId: acct('6060'), partyId: mehta.id, description: 'Statutory audit and tax filing fees',
       amount: 60000, paidFromAccountId: acct('1010') });
-    const microVendor = await api('POST', '/parties', { type: 'vendor', name: 'Bhavani Bricks (Micro)', stateCode: '24', gstin: '24AAGFB4321K1Z3',
+    const microVendor = await api('POST', '/parties', { type: 'vendor', name: 'Bhavani Bricks (Micro)', stateCode: '24', gstin: '24AAGFB4321K1ZQ',
       phone: '9898000088', creditDays: 30, udyamNo: 'UDYAM-GJ-01-0001234', msmeCategory: 'micro' });
     await api('POST', '/purchases', { locationId: siteA.id, partyId: microVendor.id, billDate: daysAgo(50), supplierInvoiceNo: 'BB/0412',
       lines: [{ itemId: bricks.id, qty: 10000, rate: 7 }] });
@@ -236,6 +243,13 @@ try {
     await seedCompliance({ api });
     await seedGstFiling({ api });
     await seedTax({ api });
+    const runJobs = async () => { while ((await runJobsOnce({ db, config })) > 0) { /* drain */ } };
+    const apiFor = (id: string) => (method: Method, url: string, body?: unknown) => call(method, url, body, token, id);
+    await seedPlatform({ api, as, apiFor });
+    await seedControls({ api, as, runJobs });
+    await seedP2p({ api, as, runJobs });
+    await seedO2c({ api, as, runJobs });
+    await runJobs();
 
     // Last of all: lock the books up to the last 31 March on or before (today - 1 year). Nothing seeded falls inside it.
     const lockBase = addDays(todayIst(), -365);
@@ -248,6 +262,13 @@ try {
   sales@demo.in       Sales Executive (Central Warehouse and Site R1, no cost prices)
   supervisor@demo.in  Site Supervisor (Site A — Tower 1 only)
   pm@demo.in          Project Manager (all locations)`);
+  }
+  // The platform super admin lives in its own tenant with no company.
+  if (process.env.DATABASE_ADMIN_URL) {
+    const made = await seedPlatformAdmin(withDatabase(process.env.DATABASE_ADMIN_URL, new URL(config.DATABASE_URL).pathname.slice(1)), PASSWORD);
+    console.log(made === 'created' ? `Platform admin created: superadmin@demo.in / ${PASSWORD}` : 'Platform admin already exists: superadmin@demo.in');
+  } else {
+    console.log('DATABASE_ADMIN_URL is not set, so the platform admin (superadmin@demo.in) was not created.');
   }
 } finally {
   await app.close();

@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api_exception.dart';
+import '../../core/business_profile.dart';
 import '../../core/india_states.dart';
 import '../../core/money.dart';
 import '../../widgets/layout.dart';
+import '../../widgets/status_chip.dart';
 import '../../widgets/states.dart';
 import 'document_models.dart';
+import '../../widgets/form_support.dart';
 
 class DocStatusPill extends StatelessWidget {
   const DocStatusPill({super.key, required this.status});
@@ -16,11 +19,12 @@ class DocStatusPill extends StatelessWidget {
   final DocStatus status;
 
   @override
-  Widget build(BuildContext context) => Pill(
-    status.label,
-    color: status == DocStatus.cancelled
-        ? Theme.of(context).colorScheme.error
-        : Colors.green,
+  Widget build(BuildContext context) => StatusChip(
+    status.name,
+    label: status.label,
+    tone: status == DocStatus.cancelled
+        ? StatusTone.danger
+        : StatusTone.success,
   );
 }
 
@@ -30,17 +34,15 @@ class PaymentStatusPill extends StatelessWidget {
   final PaymentStatus status;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Pill(
-      status.label,
-      color: switch (status) {
-        PaymentStatus.paid => Colors.green,
-        PaymentStatus.partial => Colors.orange.shade800,
-        PaymentStatus.unpaid => scheme.error,
-      },
-    );
-  }
+  Widget build(BuildContext context) => StatusChip(
+    status.name,
+    label: status.label,
+    tone: switch (status) {
+      PaymentStatus.paid => StatusTone.success,
+      PaymentStatus.partial => StatusTone.warning,
+      PaymentStatus.unpaid => StatusTone.danger,
+    },
+  );
 }
 
 /// Status and (for posted documents) payment status side by side.
@@ -83,21 +85,25 @@ class TaxTotals extends StatelessWidget {
     final theme = Theme.of(context);
     final s = summary;
     final inter = s.isInterState;
+    final india = TermsScope.maybeOf(context)?.isIndia ?? true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          '${inter ? 'Inter-state' : 'Intra-state'} supply · '
-          '$placeLabel ${stateLabel(s.placeOfSupply)}',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        if (india)
+          Text(
+            '${inter ? 'Inter-state' : 'Intra-state'} supply · '
+            '$placeLabel ${stateLabel(s.placeOfSupply)}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
         const SizedBox(height: 8),
         AmountRow('Taxable value', s.subtotal),
-        if (!inter || s.cgst != 0) AmountRow('CGST', s.cgst),
-        if (!inter || s.sgst != 0) AmountRow('SGST', s.sgst),
-        if (inter || s.igst != 0) AmountRow('IGST', s.igst),
+        if (india) ...[
+          if (!inter || s.cgst != 0) AmountRow('CGST', s.cgst),
+          if (!inter || s.sgst != 0) AmountRow('SGST', s.sgst),
+          if (inter || s.igst != 0) AmountRow('IGST', s.igst),
+        ],
         AmountRow('Total tax', s.taxTotal),
         AmountRow('Round off', s.roundOff),
         const Divider(),
@@ -173,6 +179,7 @@ class TaxLinesView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (lines.isEmpty) return const Text('No lines.');
+    final india = TermsScope.maybeOf(context)?.isIndia ?? true;
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 900) {
@@ -184,6 +191,7 @@ class TaxLinesView extends StatelessWidget {
                   line: line,
                   interState: interState,
                   showReturned: showReturned,
+                  india: india,
                 ),
               ],
             ],
@@ -199,15 +207,17 @@ class TaxLinesView extends StatelessWidget {
               columns: [
                 const DataColumn(label: Text('#')),
                 const DataColumn(label: Text('Item')),
-                const DataColumn(label: Text('HSN')),
+                if (india) const DataColumn(label: Text('HSN')),
                 const DataColumn(label: Text('Qty'), numeric: true),
                 if (showReturned)
                   const DataColumn(label: Text('Returned'), numeric: true),
                 const DataColumn(label: Text('Rate'), numeric: true),
                 const DataColumn(label: Text('Disc %'), numeric: true),
                 const DataColumn(label: Text('Taxable'), numeric: true),
-                const DataColumn(label: Text('GST'), numeric: true),
-                if (interState)
+                DataColumn(label: Text(india ? 'GST' : 'Tax %'), numeric: true),
+                if (!india)
+                  const DataColumn(label: Text('Tax'), numeric: true)
+                else if (interState)
                   const DataColumn(label: Text('IGST'), numeric: true)
                 else ...[
                   const DataColumn(label: Text('CGST'), numeric: true),
@@ -232,7 +242,7 @@ class TaxLinesView extends StatelessWidget {
                           ),
                         ),
                       ),
-                      DataCell(Text(line.hsnCode ?? '—')),
+                      if (india) DataCell(Text(line.hsnCode ?? '—')),
                       DataCell(Text('${formatQty(line.qty)} ${line.unit}')),
                       if (showReturned)
                         DataCell(
@@ -246,7 +256,11 @@ class TaxLinesView extends StatelessWidget {
                       DataCell(Text(formatPercent(line.discountPct))),
                       DataCell(Text(formatMoney(line.taxableValue))),
                       DataCell(Text(formatPercent(line.gstRate))),
-                      if (interState)
+                      if (!india)
+                        DataCell(
+                          Text(formatMoney(line.cgst + line.sgst + line.igst)),
+                        )
+                      else if (interState)
                         DataCell(Text(formatMoney(line.igst)))
                       else ...[
                         DataCell(Text(formatMoney(line.cgst))),
@@ -274,8 +288,10 @@ class _LineCard extends StatelessWidget {
     required this.line,
     required this.interState,
     required this.showReturned,
+    required this.india,
   });
 
+  final bool india;
   final TaxLine line;
   final bool interState;
   final bool showReturned;
@@ -286,7 +302,9 @@ class _LineCard extends StatelessWidget {
     final small = theme.textTheme.bodySmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-    final tax = interState
+    final tax = !india
+        ? 'Tax ${formatMoney(line.cgst + line.sgst + line.igst)}'
+        : interState
         ? 'IGST ${formatMoney(line.igst)}'
         : 'CGST ${formatMoney(line.cgst)} · SGST ${formatMoney(line.sgst)}';
     return Column(
@@ -309,12 +327,12 @@ class _LineCard extends StatelessWidget {
         Text(
           '${formatQty(line.qty)} ${line.unit} × ${formatMoney(line.rate)}'
           '${line.discountPct > 0 ? ' − ${formatPercent(line.discountPct)}' : ''}'
-          '${line.hsnCode == null ? '' : ' · HSN ${line.hsnCode}'}',
+          '${line.hsnCode == null || !india ? '' : ' · HSN ${line.hsnCode}'}',
           style: small,
         ),
         Text(
           'Taxable ${formatMoney(line.taxableValue)} · '
-          'GST ${formatPercent(line.gstRate)} · $tax',
+          '${india ? 'GST' : 'Tax'} ${formatPercent(line.gstRate)} · $tax',
           style: small,
         ),
         if (showReturned && line.returnedQty > 0)
@@ -475,7 +493,7 @@ class _CancelReasonDialogState extends State<CancelReasonDialog> {
   }
 
   void _submit() {
-    if (_formKey.currentState!.validate()) {
+    if (validateAndReveal(_formKey)) {
       Navigator.of(context).pop(_reason.text.trim());
     }
   }
@@ -867,6 +885,7 @@ class DocListCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
+                flex: 3,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -890,18 +909,28 @@ class DocListCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    amount,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+              Flexible(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      amount,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  if (secondary != null)
-                    Text(secondary!, style: theme.textTheme.bodySmall),
-                ],
+                    if (secondary != null)
+                      Text(
+                        secondary!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                  ],
+                ),
               ),
             ],
           ),

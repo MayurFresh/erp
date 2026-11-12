@@ -11,6 +11,7 @@ class User {
     required this.name,
     required this.email,
     this.phone,
+    this.mustEnrol2fa = false,
   });
 
   factory User.fromJson(Json json) => User(
@@ -18,12 +19,16 @@ class User {
     name: asString(json['name']),
     email: asString(json['email']),
     phone: asStringOrNull(json['phone']),
+    mustEnrol2fa: asBool(json['mustEnrol2fa']),
   );
 
   final String id;
   final String name;
   final String email;
   final String? phone;
+
+  /// A company requires 2FA and the user has not set it up yet.
+  final bool mustEnrol2fa;
 
   String get initials {
     final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
@@ -62,6 +67,14 @@ class Membership extends Company {
     super.upiId,
     super.invoiceTerms,
     super.invoiceFooter,
+    super.businessType,
+    super.plan,
+    super.enabledModules,
+    super.terms,
+    super.country,
+    super.currency,
+    super.logoFileId,
+    super.brandColor,
     this.roles = const [],
     this.permissions = PermissionSet.none,
     this.locationIds,
@@ -86,6 +99,14 @@ class Membership extends Company {
       upiId: c.upiId,
       invoiceTerms: c.invoiceTerms,
       invoiceFooter: c.invoiceFooter,
+      businessType: c.businessType,
+      plan: c.plan,
+      enabledModules: c.enabledModules,
+      terms: c.terms,
+      country: c.country,
+      currency: c.currency,
+      logoFileId: c.logoFileId,
+      brandColor: c.brandColor,
       roles: asJsonList(json['roles']).map(RoleRef.fromJson).toList(),
       permissions: PermissionSet(asStringList(json['permissions']).toSet()),
       locationIds: asStringListOrNull(json['locationIds']),
@@ -104,15 +125,23 @@ class Membership extends Company {
 }
 
 class Me {
-  const Me({required this.user, required this.companies});
+  const Me({
+    required this.user,
+    required this.companies,
+    this.isPlatformAdmin = false,
+  });
 
   factory Me.fromJson(Json json) => Me(
     user: User.fromJson(asJson(json['user'])),
     companies: asJsonList(json['companies']).map(Membership.fromJson).toList(),
+    isPlatformAdmin: asBool(json['isPlatformAdmin']),
   );
 
   final User user;
   final List<Membership> companies;
+
+  /// The signed-in user manages every account (platform super admin).
+  final bool isPlatformAdmin;
 
   Membership? company(String? id) {
     for (final company in companies) {
@@ -140,16 +169,22 @@ class SignupRequest {
     required this.name,
     required this.email,
     required this.password,
-    required this.stateCode,
+    this.stateCode,
     this.phone,
     this.gstin,
+    this.businessType = 'general',
+    this.plan = 'business',
+    this.country = 'IN',
   });
 
+  final String businessType;
+  final String plan;
+  final String country;
   final String businessName;
   final String name;
   final String email;
   final String password;
-  final String stateCode;
+  final String? stateCode;
   final String? phone;
   final String? gstin;
 
@@ -161,5 +196,28 @@ class SignupRequest {
     'phone': phone,
     'stateCode': stateCode,
     'gstin': gstin,
+    'businessType': businessType,
+    'plan': plan,
+    'country': country,
   });
+}
+
+/// Result of the password step: tokens, or a 2FA challenge.
+sealed class LoginOutcome {
+  const LoginOutcome();
+}
+
+class LoggedIn extends LoginOutcome {
+  const LoggedIn(this.result);
+
+  final AuthResult result;
+}
+
+class MfaChallenge extends LoginOutcome {
+  const MfaChallenge({required this.mfaToken, this.methods = const []});
+
+  final String mfaToken;
+  final List<String> methods;
+
+  bool get hasRecovery => methods.isEmpty || methods.contains('recovery');
 }

@@ -10,13 +10,15 @@ import '../reports/report_widgets.dart' show tabularFigures;
 import 'compliance_models.dart';
 import 'compliance_repository.dart';
 import 'compliance_widgets.dart';
+import '../../core/app_colors.dart';
+import '../../widgets/form_support.dart';
 
 /// `/bank-reconciliation`: imported statements and the import action.
 class BankReconScreen extends ConsumerWidget {
   const BankReconScreen({super.key});
 
   Future<void> _import(BuildContext context, WidgetRef ref) async {
-    final created = await showDialog<BankStatement>(
+    final created = await showFormDialog<BankStatement>(
       context: context,
       builder: (_) => const _ImportDialog(),
     );
@@ -98,6 +100,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
   bool _busy = false;
 
   Future<void> _submit() async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       final s = await ref
@@ -135,7 +138,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
                 title: 'Bank account',
                 where: (a) => a.subtype == 'bank',
               );
-              if (a != null) setState(() => _account = a);
+              if (a != null && mounted) setState(() => _account = a);
             },
           ),
           const SizedBox(height: 12),
@@ -143,7 +146,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
             onPressed: () async {
               try {
                 final f = await pickTextFile(const ['csv', 'txt']);
-                if (f != null) setState(() => _file = f);
+                if (f != null && mounted) setState(() => _file = f);
               } catch (e) {
                 if (context.mounted) showErrorSnackBar(context, e);
               }
@@ -162,7 +165,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: _busy ? null : () => Navigator.pop(context),
+        onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       BusyButton(
@@ -230,7 +233,7 @@ class _BankStatementScreenState extends ConsumerState<BankStatementScreen> {
   }
 
   Future<void> _create(BankLine line) async {
-    final ok = await showDialog<bool>(
+    final ok = await showFormDialog<bool>(
       context: context,
       builder: (_) => _CreateEntryDialog(line: line),
     );
@@ -398,7 +401,7 @@ class _LineCard extends StatelessWidget {
                     Text(
                       'Matched to ${m.number} (${m.voucherType}) ${formatDate(m.date)}',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.green.shade700,
+                        color: context.colors.success,
                       ),
                     ),
                 ],
@@ -411,7 +414,7 @@ class _LineCard extends StatelessWidget {
                 style: tabularFigures.copyWith(
                   fontWeight: FontWeight.w700,
                   color: line.isDeposit
-                      ? Colors.green.shade700
+                      ? context.colors.success
                       : theme.colorScheme.error,
                 ),
               ),
@@ -531,6 +534,7 @@ class _CreateEntryDialogState extends ConsumerState<_CreateEntryDialog> {
   }
 
   Future<void> _submit() async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       await ref.read(complianceRepositoryProvider).createEntry(widget.line.id, {
@@ -574,7 +578,7 @@ class _CreateEntryDialogState extends ConsumerState<_CreateEntryDialog> {
                   title: 'Account',
                   where: (a) => a.subtype != 'bank' && a.subtype != 'cash',
                 );
-                if (a != null) setState(() => _account = a);
+                if (a != null && mounted) setState(() => _account = a);
               },
             ),
             const SizedBox(height: 12),
@@ -587,7 +591,7 @@ class _CreateEntryDialogState extends ConsumerState<_CreateEntryDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
+          onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         BusyButton(

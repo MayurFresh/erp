@@ -1,6 +1,8 @@
+import '../../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/business_profile.dart';
 
 import '../../../core/money.dart';
 import '../../../core/permissions.dart';
@@ -218,6 +220,7 @@ class _Overview extends ConsumerWidget {
             ],
           ),
         ),
+        CustomValuesCard(entity: 'project', custom: p.custom),
         SectionCard(
           title: 'Progress',
           child: Column(
@@ -258,7 +261,7 @@ class _Overview extends ConsumerWidget {
                                   '/stock/moves?locationId=${site.id}'
                                   '&title=${Uri.encodeComponent(site.name)}',
                                 ),
-                                child: const Text('Stock'),
+                                child: Text(context.w('Stock')),
                               )
                             : null,
                       ),

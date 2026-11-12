@@ -144,7 +144,7 @@ class _WageDetailScreenState extends ConsumerState<WageDetailScreen> {
     }
     var accountId = accounts.first.id;
     var date = today();
-    final result = await showDialog<({String accountId, DateTime date})>(
+    final result = await showFormDialog<({String accountId, DateTime date})>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -186,7 +186,7 @@ class _WageDetailScreenState extends ConsumerState<WageDetailScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context).maybePop(),
               child: const Text('Cancel'),
             ),
             FilledButton(
@@ -441,7 +441,7 @@ class _WageRowEditor extends StatelessWidget {
                   inputFormatters: [decimalInput(decimals: 2)],
                   decoration: InputDecoration(
                     labelText: 'Advance recovered',
-                    prefixText: '₹ ',
+                    prefixText: '$moneySymbol ',
                     helperText: advanceHint(row),
                     helperMaxLines: 3,
                   ),

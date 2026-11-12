@@ -1,3 +1,4 @@
+import '../controls/cost_centre_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -40,6 +41,7 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
   bool _loadingInvoice = false;
   DateTime _date = DateUtils.dateOnly(DateTime.now());
   bool _restock = true;
+  String? _costCentreId;
 
   bool _saving = false;
   Object? _saveError;
@@ -75,6 +77,7 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
       if (!mounted) return;
       setState(() {
         _invoice = invoice;
+        _costCentreId ??= invoice.costCentreId;
         _loadingInvoice = false;
         for (final c in _qty.values) {
           c.dispose();
@@ -130,6 +133,7 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
     noteDate: apiDate(_date),
     reason: reason,
     restock: _restock,
+    costCentreId: _costCentreId,
     lines: _quantities,
   );
 
@@ -149,7 +153,7 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
   Future<void> _pickDate() async {
     final picked = await pickDocDate(context, _date);
     if (picked == null) return;
-    setState(() => _date = picked);
+    if (mounted) setState(() => _date = picked);
     schedulePreview();
   }
 
@@ -162,11 +166,12 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       _saveError = null;
       _fieldErrors = const {};
     });
-    final valid = _formKey.currentState!.validate();
+    final valid = validateAndReveal(_formKey);
     if (_invoice == null) return;
     if (_quantities.isEmpty) {
       markSaved();
@@ -191,6 +196,14 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
       context.go('/credit-notes/${note.id}');
     } catch (e) {
       if (!mounted) return;
+      if (handleApprovalPending(
+        context,
+        e,
+        listPath: '/credit-notes',
+        onSaved: markSaved,
+      )) {
+        return;
+      }
       final (header, _) = splitFieldErrors(e);
       setState(() {
         _saveError = e;
@@ -243,6 +256,12 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
             ),
             validator: (v) => requiredField(v, 'Reason'),
           ),
+          const SizedBox(height: 16),
+          CostCentreField(
+            value: _costCentreId,
+            errorText: _fieldErrors['costCentreId'],
+            onChanged: (v) => setState(() => _costCentreId = v),
+          ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Return goods to stock'),
@@ -267,11 +286,17 @@ class _CreditNoteCreateScreenState extends ConsumerState<CreditNoteCreateScreen>
       key: _formKey,
       onChanged: markDirty,
       child: DocFormLayout(
+        bottomBar: DocSaveBar(
+          busy: _saving,
+          onPressed: _save,
+          label: 'Save credit note',
+        ),
         title: 'New credit note',
         main: [details, lines],
         summary: SectionCard(
           title: 'Summary',
           child: DocSummaryPanel(
+            hideSave: true,
             ready: buildDraft() != null,
             preview: preview,
             previewError: previewError,

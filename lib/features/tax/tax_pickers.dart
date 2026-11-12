@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/business_profile.dart';
 import '../../core/money.dart';
 import '../items/item_model.dart' show gstRates;
 import 'tax_models.dart';
 import 'tax_repository.dart';
+import '../../core/app_colors.dart';
 
 /// Dropdown of the GST rates valid on [date] for [kind] (`goods`/`services`,
 /// null = any). A [value] that is not on offer (a legacy rate on an old
@@ -35,6 +37,15 @@ class GstRatePicker extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(businessProfileProvider).isIndia) {
+      return _PlainTaxRate(
+        value: value,
+        onChanged: onChanged,
+        enabled: enabled,
+        errorText: errorText,
+        label: label == 'GST rate' ? 'Tax rate (%)' : label,
+      );
+    }
     final rates = ref.watch(gstRatesProvider((date, kind, false)));
     final offered = rates.maybeWhen(
       data: (rows) => rows.map((r) => r.rate).toSet().toList(),
@@ -58,6 +69,39 @@ class GstRatePicker extends ConsumerWidget {
       onChanged: enabled ? onChanged : null,
     );
   }
+}
+
+/// Outside India there is no GST rate master: the company types its own rate
+/// (VAT, sales tax). A blank rate is 0.
+class _PlainTaxRate extends StatelessWidget {
+  const _PlainTaxRate({
+    required this.value,
+    required this.onChanged,
+    required this.enabled,
+    required this.errorText,
+    required this.label,
+  });
+
+  final double? value;
+  final ValueChanged<double?>? onChanged;
+  final bool enabled;
+  final String? errorText;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => TextFormField(
+    initialValue: value == null ? '' : formatPlain(value),
+    enabled: enabled,
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    decoration: InputDecoration(labelText: label, errorText: errorText),
+    validator: (v) {
+      final text = v?.trim() ?? '';
+      if (text.isEmpty) return null;
+      final n = double.tryParse(text);
+      return n == null || n < 0 || n > 100 ? 'Enter 0 to 100' : null;
+    },
+    onChanged: (v) => onChanged?.call(double.tryParse(v.trim()) ?? 0),
+  );
 }
 
 /// Dropdown of TDS sections valid on [date]. Includes a "No TDS" choice
@@ -142,13 +186,13 @@ class UnverifiedBadge extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: 0.2),
+        color: context.colors.warning.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
         'unverified',
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: Colors.amber.shade900,
+          color: context.colors.warning,
           fontWeight: FontWeight.w600,
         ),
       ),

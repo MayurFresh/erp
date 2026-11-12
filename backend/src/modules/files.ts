@@ -24,6 +24,15 @@ export function sniff(bytes: Buffer) {
   return TYPES.find((t) => t.test(bytes)) ?? null;
 }
 
+/**
+ * PDF names that run code or open other programs (#xx escapes decoded first). Names inside compressed object
+ * streams are not seen, so production still needs a malware scanner in front of UPLOAD_DIR.
+ */
+export function pdfHasActiveContent(bytes: Buffer): boolean {
+  const text = bytes.toString('latin1').replace(/#([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
+  return /\/(JavaScript|JS|Launch|RichMedia)(?![A-Za-z])/.test(text);
+}
+
 /** A display name only: never used to build a path. */
 function displayName(raw: string | undefined, ext: string): string {
   const base = (raw ?? '').split(/[\\/]/).pop() ?? '';
@@ -77,6 +86,9 @@ export async function fileRoutes(app: FastifyInstance, uploadDir: string) {
     if (!bytes.length) throw badRequest('The file is empty.', { file: 'Empty' });
     const type = sniff(bytes);
     if (!type) throw badRequest('Only JPEG, PNG, WebP or PDF files can be uploaded.', { file: 'Unsupported file type' });
+    if (type.ext === 'pdf' && pdfHasActiveContent(bytes)) {
+      throw badRequest("This PDF contains scripts or launch actions, so it can't be uploaded. Print it to a new PDF and try again.", { file: 'Active content' });
+    }
 
     const id = randomUUID();
     const key = `${ctx.tenantId}/${id}.${type.ext}`;

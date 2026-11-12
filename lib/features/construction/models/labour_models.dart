@@ -69,6 +69,7 @@ class Worker {
     this.isActive = true,
     this.advanceBalance = 0,
     this.createdAt,
+    this.updatedAt,
   });
 
   factory Worker.fromJson(Json json) => Worker(
@@ -89,6 +90,7 @@ class Worker {
     isActive: asBool(json['isActive'], true),
     advanceBalance: asDouble(json['advanceBalance']),
     createdAt: asDateTimeOrNull(json['createdAt']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
   );
 
   final String id;
@@ -112,6 +114,7 @@ class Worker {
   /// Open labour advances not yet recovered (v1.3).
   final double advanceBalance;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   /// Create / PATCH fields as stored (`isActive` only matters for PATCH).
   Json toInputJson() => {

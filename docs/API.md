@@ -3,7 +3,8 @@
 The Flutter app (web, Android, iOS, desktop) and the backend both follow this file.
 Change it first, then change both sides.
 
-- Base URL: `http://<host>:8080/api/v1` (health check at `GET /health`, outside the prefix)
+- Base URL: `http://<host>:8080/api/v1` (health check at `GET /health`, outside the prefix: `200 { status: "ok", db: "ok", time }`, or `503 { status: "unavailable", db: "down", time }` when the database does not answer within 2 s)
+- Rate limits: every route is limited per IP (`RATE_LIMIT_PER_MINUTE`, default 600); sign-in routes have tighter limits. Over the limit: `429 RATE_LIMITED`.
 - JSON everywhere, keys in `camelCase`.
 - Dates: `YYYY-MM-DD`. Timestamps: ISO-8601 UTC (`2026-10-21T09:30:00.000Z`).
 - Money and quantities are JSON numbers. Money has at most 2 decimals, quantities at most 3.
@@ -1720,3 +1721,1570 @@ The client words it as "The law requires a chartered accountant for this", or as
 - It records GSTR-1 and GSTR-3B as filed for the period before last (3B with the set-off posted after a PMT-06 payment), plus a credit-ledger snapshot.
 - It adds five fixed assets: a building (opening asset, with opening accumulated depreciation), a car, two computers (one put to use under 180 days ago), and furniture. A depreciation run is posted to last month's end.
 - It records one advance-tax payment and the first-year IT block openings.
+
+# v1.7 additions — Enterprise platform
+
+Goal: what an enterprise buyer checks before signing: strong sign-in, approvals with maker-checker, custom fields, bulk import, background work and notifications, several companies with inter-company entries and consolidated statements, cost centres, and a pluggable GST provider (GSP) adapter. Research behind it: `docs/research/ziperp-gap-analysis.md`.
+
+Migration `010_enterprise.sql` creates every table, column and SQL function below. The following are already in place:
+- `db/schema.ts`, `auth/permissions.ts`, `accounting/accounts.ts` (1295), `accounting/journal.ts` (`costCentreId` on `JLine`, the new voucher types), `lib/series.ts` and `config.ts`;
+- `lib/crypto.ts` (`seal`, `unseal`, `sha256Hex`, `randomToken`);
+- `lib/jobs.ts` (§5), `lib/notify.ts` and `lib/templates.ts` (§6), `lib/custom-fields.ts` (§8);
+- `accounting/statements.ts` (trial balance, P&L with `costCentreId`/`locationId` filters, balance sheet), now used by `modules/reports.ts`;
+- `RequestContext.forCompany(id)` and `contextFor(tx, db, tenantId, userId, companyId)`;
+- `AppDeps` now carries `config`.
+Module stubs are registered in `app.ts`.
+
+**Not in v1.7:** SAML (Google Workspace and Microsoft Entra ID both offer OIDC), a live GSP (no provider chosen; §12 is the plug-in point), elimination of invoices between group companies, `.xlsx` upload (save as "CSV UTF-8", or paste from Excel), and mobile SSO.
+
+## Configuration (backend/.env)
+
+| Variable | Default | Use |
+| --- | --- | --- |
+| `APP_URL` | `http://localhost:5000` | Client base URL, used for links in emails and as the only allowed SSO `returnTo` |
+| `PUBLIC_API_URL` | `http://localhost:8080` | Builds the SSO redirect URI `${PUBLIC_API_URL}/api/v1/auth/sso/callback` |
+| `DATA_KEY` | derived from `JWT_SECRET` | 32 bytes, base64. Seals TOTP secrets, SSO client secrets and GSP credentials (AES-256-GCM). Set it in production; the server logs a warning when it is derived. |
+| `EMAIL_DRIVER` | `log` | `log` or `smtp` |
+| `SMTP_URL`, `EMAIL_FROM` | none | For `smtp`, e.g. `smtps://user:pass@smtp.example.com:465` and `Progen <no-reply@example.com>` |
+| `WHATSAPP_DRIVER` | `log` | `log` or `cloud_api` (WhatsApp Business Cloud API) |
+| `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_API_VERSION` | none, none, `v21.0` | For `cloud_api` |
+| `JOBS_WORKER` | `true` | Runs the job worker inside the API process. Tests build the app without it and call `runJobsOnce`. |
+
+The `log` drivers write the message to the server log and mark it sent with `providerRef: 'log'`.
+
+## New permissions
+
+| Key | Allows |
+| --- | --- |
+| `approvals.view` | See every approval request in the company, not only your own and those waiting for you |
+| `approvals.manage` | Create and edit approval rules |
+| `imports.run` | Use the CSV import (the kind's own create permission is also needed) |
+| `companies.create` | Add another company to the business |
+| `security.manage` | SSO providers, the company's "require 2FA" switch |
+
+Built-in roles gain:
+- **Owner:** all five.
+- **Company Admin:** `approvals.view`, `approvals.manage`, `imports.run`.
+- **Accountant:** `approvals.view`, `imports.run`.
+- **Auditor:** `approvals.view`.
+
+## New system account, voucher types, document numbers
+
+| Code | Name | Type (subtype) | `systemKey` |
+| --- | --- | --- | --- |
+| 1295 | Inter-company Account | asset (other); may run a credit balance | `intercompany` |
+
+The new voucher types are `intercompany` and `opening`, the latter for account opening balances from an import.
+
+| Document | Example |
+| --- | --- |
+| Approval request | `APR/26-27/00001` |
+| Inter-company entry | `ICE/26-27/00001` (from the giving company's series) |
+
+## Errors
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 401 | `MFA_INVALID` | Wrong or reused 2FA code at sign-in |
+| 400 | `MFA_INVALID` | Wrong 2FA code on a `/me/2fa/*` call. `details: { code: 'Incorrect code' }` |
+| 409 | `MFA_ALREADY_ENABLED` | `POST /me/2fa/setup` when 2FA is on |
+| 409 | `MFA_REQUIRED_BY_COMPANY` | Turning 2FA off while a company of the user requires it |
+| 403 | `MFA_ENROLMENT_REQUIRED` | A company requires 2FA and the user hasn't set it up (§1) |
+| 423 | `ACCOUNT_LOCKED` | 10 failed sign-ins in a row. `details: { lockedUntil }` |
+| 400 | `RESET_TOKEN_INVALID` | Unknown, used or expired password-reset token |
+| 401 | `SESSION_REVOKED` | (v1.5 code) also when the session was ended (§3) |
+| 403 | `SSO_REQUIRED` | Password sign-in or reset for an email whose domain enforces SSO. `details: { providerId }` |
+| 400 | `SSO_DISCOVERY_FAILED` | The issuer's OIDC discovery document can't be fetched or is invalid |
+| 409 | `SSO_DOMAIN_TAKEN` | Another business already has an active provider for that domain |
+| 401 | `SSO_TICKET_INVALID` | Unknown, used or expired SSO ticket |
+| 403 | `SELF_APPROVAL` | Approving or rejecting your own request |
+| 403 | `ALREADY_ACTED` | Approving a second level of a request you already approved |
+| 409 | `NOT_PENDING` | Acting on a request that is no longer pending |
+| 409 | `NOT_VALIDATED` | Committing an import that isn't `validated` |
+| 409 | `TOO_SOON` | A second payment reminder to the same party on the same channel within 24 hours |
+| 409 | `GSP_NOT_CONFIGURED` | e-invoice mode `gsp` without a provider and its credentials |
+| 501 | `NOT_SUPPORTED` | The e-invoice mode or provider lacks the capability (e.g. GSTR-1 upload) |
+| 502 | `GSP_ERROR` | The provider rejected the call. `details: { provider, providerCode, providerMessage }` |
+| 503 | `GSP_UNAVAILABLE` | The provider timed out or failed after two retries; nothing was recorded |
+
+`Company` (v1.1) gains `require2fa: boolean`, `costCentreRequired: boolean`, `gspProvider: string|null`; `einvoiceMode` gains `'gsp'`. `PATCH /company` accepts `require2fa` (needs `security.manage`) and `costCentreRequired`.
+
+## 1. Two-factor sign-in, lockout, password policy
+
+```
+LoginResult = Tokens /* v1 shape */ | { mfaRequired: true, mfaToken, methods: ['totp', 'recovery'] }
+Security { twoFactorEnabled, twoFactorEnabledAt: string|null, recoveryCodesLeft, mustEnrol2fa, passwordChangedAt: string|null }
+```
+
+- **TOTP** follows RFC 6238: SHA-1, 6 digits, 30-second steps, ±1 step accepted. A step at or before the last one used is rejected (no replay).
+- **Recovery codes:** 10, in the form `xxxx-xxxx` (lowercase letters and digits), stored as SHA-256. Each works once.
+- **Secrets** are sealed with `lib/crypto.ts`.
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `POST /auth/login` | open | v1 | `LoginResult`. When 2FA is on, there are no tokens yet. `mfaToken` is a JWT of type `mfa` that lives 5 minutes. |
+| `POST /auth/login/mfa` | open, rate-limited | `{ mfaToken, code? , recoveryCode? }` (exactly one) | `Tokens`. 401 `MFA_INVALID`; after 5 wrong codes the `mfaToken` stops working (401 `UNAUTHORIZED`). |
+| `GET /me/security` | signed in | | `Security` |
+| `POST /me/2fa/setup` | signed in | `{}` | `{ secret /* base32 */, otpauthUri: 'otpauth://totp/Progen:{email}?secret=…&issuer=Progen&digits=6&period=30' }`. Replaces any unfinished setup. |
+| `POST /me/2fa/enable` | signed in | `{ code }` | `{ recoveryCodes: string[] }`, shown once. Emails `mfa_changed`. |
+| `POST /me/2fa/disable` | signed in | `{ password, code /* TOTP or recovery */ }` | `204`. Emails `mfa_changed`. |
+| `POST /me/2fa/recovery-codes` | signed in | `{ password, code }` | `{ recoveryCodes }`; the old ones stop working |
+| `POST /users/:id/2fa/reset` | `users.manage` | | `204`. Turns the user's 2FA off and ends their sessions (lost phone). Audited. |
+| `POST /users/:id/unlock` | `users.manage` | | `204` |
+
+**Lockout:**
+- 10 failed attempts in a row (wrong password or wrong code) lock the account for 15 minutes. Further attempts get 423 `ACCOUNT_LOCKED`, even with the right password.
+- A successful sign-in, a password reset or an admin unlock clears the count.
+- Unknown emails are still compared against a dummy hash and never locked.
+
+**Require 2FA:** when any company the user belongs to has `require2fa` and the user hasn't turned 2FA on:
+- password sign-in still works, and `GET /me` returns `user.mustEnrol2fa: true`;
+- every other secured endpoint returns 403 `MFA_ENROLMENT_REQUIRED`;
+- the exceptions are `GET /me`, `GET /me/security`, `/me/2fa/*`, `POST /me/password`, `/me/sessions*` and `GET /notifications/unread-count`;
+- SSO sessions are exempt, because the identity provider does MFA.
+
+**Password policy** (`lib/password.ts`) applies to signup, `POST /me/password`, reset and admin set:
+- 8–128 characters, with at least one letter and one digit;
+- not in the built-in list of common passwords;
+- does not contain the email's local part when that part has 4 or more characters.
+
+It fails with 400 and `details: { <field>: message }`.
+
+## 2. Password reset
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `POST /auth/password/forgot` | open, 5 per minute per IP | `{ email }` | Always `204`. For an active user (and no enforced SSO on the domain), it makes a 32-byte random token and stores its SHA-256 with a 30-minute expiry. Earlier unused tokens stop working. It emails `password_reset` with `${APP_URL}/#/reset-password?token=…`. |
+| `POST /auth/password/reset` | open, rate-limited | `{ token, newPassword }` | `204`. Sets the password, uses up the token, clears the lockout, ends every session, and writes audit `password_reset`. 2FA stays on. 400 `RESET_TOKEN_INVALID`. |
+
+The admin `POST /users/:id/password` (v1.1) now also ends that user's sessions.
+
+## 3. Sessions
+
+```
+Session { id, userAgent: string|null, ip: string|null, startedAt, lastUsedAt, method: 'password'|'mfa'|'sso', current: boolean }
+```
+
+- Each sign-in starts a session. A refresh keeps its id: `refresh_tokens.session_id`, backfilled to the token id for old rows.
+- Access and refresh tokens carry `sid` (session id) and `amr` (`pwd`, `mfa` or `sso`).
+- The secured hook rejects an access token whose session has no unrevoked refresh token with 401 `SESSION_REVOKED`, so ending a session takes effect on the next request.
+- Tokens issued before v1.7 have no `sid` and work until they expire.
+
+| Endpoint | Permission | Response |
+| --- | --- | --- |
+| `GET /me/sessions` | signed in | `{ data: Session[] }`, active only, most recently used first |
+| `DELETE /me/sessions/:id` | signed in | `204` |
+| `POST /me/sessions/revoke-others` | signed in | `204`; keeps the current one |
+
+## 4. Single sign-on (OIDC)
+
+```
+SsoProvider { id, name, issuer, clientId, hasClientSecret, emailDomains: string[], enforce, autoProvision,
+              defaultCompanyId: string|null, defaultRoleId: string|null, isActive, createdAt, updatedAt }
+```
+
+Providers belong to the business (tenant), not to one company.
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `GET /sso-providers` | `security.manage` | | `{ data: SsoProvider[] }` |
+| `POST /sso-providers` | `security.manage` | `{ name, issuer /* https */, clientId, clientSecret, emailDomains /* 1–10 */, enforce?, autoProvision?, defaultCompanyId?, defaultRoleId? }` | `201` (see the rules after this table) |
+| `PATCH /sso-providers/:id` | `security.manage` | same, all optional; leaving out `clientSecret` keeps it | `SsoProvider` |
+| `POST /sso-providers/:id/test` | `security.manage` | | `{ ok, message, authorizationEndpoint, tokenEndpoint, jwksUri }` |
+| `DELETE /sso-providers/:id` | `security.manage` | | `204` (deactivates) |
+| `GET /auth/sso/discover` | open, rate-limited | `?email=` | `{ providers: [{ id, name }], enforced: boolean }` |
+| `GET /auth/sso/:id/start` | open | `?returnTo=` (must start with `APP_URL`; default `APP_URL`) | 302 to the IdP |
+| `GET /auth/sso/callback` | open | `?code=&state=` (from the IdP) | 302 to the app (see the steps after this table) |
+| `POST /auth/sso/redeem` | open, rate-limited | `{ ticket }` | `Tokens` with `amr: 'sso'`. 401 `SSO_TICKET_INVALID`. |
+
+**Creating a provider:**
+- It fetches `${issuer}/.well-known/openid-configuration` first, failing with 400 `SSO_DISCOVERY_FAILED`.
+- A domain already used by any business's active provider fails with 409 `SSO_DOMAIN_TAKEN`.
+- Public mail domains (gmail.com, googlemail.com, yahoo.com, yahoo.co.in, outlook.com, hotmail.com, live.com, rediffmail.com, icloud.com, proton.me, protonmail.com, aol.com, zoho.com) fail with 400.
+- `autoProvision` needs both defaults, and the role and company must belong to the business.
+- The client secret is sealed.
+
+**Start (`GET /auth/sso/:id/start`):**
+- It redirects with `response_type=code`, `scope=openid email profile`, `state`, `nonce`, PKCE S256 and `redirect_uri=${PUBLIC_API_URL}/api/v1/auth/sso/callback`.
+- The state lives 10 minutes.
+
+**Callback (`GET /auth/sso/callback`), in order:**
+1. Exchanges the code (`client_secret_post`).
+2. Verifies the ID token against the IdP's JWKS: signature, `iss`, `aud`, `exp` and `nonce`. It rejects `email_verified: false`.
+3. Checks that the email's domain is in the provider's list.
+4. Finds the active user with that email in the provider's business. Under `autoProvision` it creates one instead: name from the `name` claim, an unusable password hash, the default role in the default company.
+5. Redirects to `${returnTo}#/sso/done?ticket=…`. The ticket works once and lives 60 seconds.
+
+On failure it redirects to `${returnTo}#/login?ssoError=CODE`, where CODE is one of `SSO_STATE_INVALID`, `SSO_TOKEN_INVALID`, `SSO_DOMAIN_MISMATCH`, `SSO_NO_ACCOUNT`, `SSO_USER_LIMIT` (auto-provisioning would exceed the plan's user limit), `SSO_IDP_ERROR` or `ACCOUNT_DISABLED`.
+
+**Enforced SSO:** password sign-in and forgot-password for a domain with an active `enforce: true` provider get 403 `SSO_REQUIRED`. Users who hold `security.manage` in any company are exempt (break-glass), so an owner can't lock the business out.
+
+## 5. Background jobs
+
+```
+Job { id, kind, status: 'queued'|'running'|'done'|'failed', attempts, maxAttempts, runAfter, result: object|null, error: string|null,
+      createdBy: {id, name}|null, createdAt, finishedAt: string|null }
+```
+
+**How the queue works:**
+- Jobs live in the `jobs` table.
+- The worker claims them with the security-definer `jobs_claim(limit)`, which uses `for update skip locked`, so several API instances can run workers.
+- Each job runs in its own tenant transaction.
+- A failure retries after 30 s × 2^(attempt − 1), up to `maxAttempts` (default 3), then the job is `failed` with `error`.
+- A job left `running` for over 10 minutes goes back to `queued`.
+
+**`lib/jobs.ts`:**
+- `enqueue(tx, who, kind, payload, { runAfter?, dedupeKey?, maxAttempts? })`
+- `registerJobHandler(kind, (tx, job, deps) => Promise<object|void>)`
+- `runJobsOnce(deps, { limit? })`
+- `startJobWorker(deps)`, which polls every second and once a minute schedules the daily jobs with `jobs_enqueue_daily(kind, day)` (one job per company, deduplicated by `kind:companyId:day`).
+
+| Kind | What it does |
+| --- | --- |
+| `notification.send` | Delivers one email or WhatsApp outbox row (§6) |
+| `import.commit` | Writes a validated import (§10) |
+| `digest.compliance` | Daily at 09:00 IST per company: emails filings due within 7 days and overdue ones to users who opted in |
+| `cleanup.auth` | Daily: deletes expired SSO states and tickets, reset tokens and refresh tokens over 30 days past expiry |
+
+| Endpoint | Permission | Response |
+| --- | --- | --- |
+| `GET /jobs` | `company.manage` | `?status=&kind=&limit=&offset=` → `{ data: Job[], total }`, newest first |
+| `GET /jobs/:id` | its creator, or `company.manage` | `Job` |
+| `POST /jobs/:id/retry` | `company.manage` | A `failed` job goes back to `queued` with attempts reset → `Job`. Otherwise 409 `CONFLICT`. |
+
+## 6. Notifications
+
+```
+Notification { id, template, title, body, link: string|null /* client route */, readAt: string|null, createdAt }
+NotificationPref { template, label, email: boolean, whatsapp: boolean|null /* null = not offered */, mandatory: boolean }
+OutboxRow { id, channel: 'email'|'whatsapp', to, template, subject: string|null, status: 'pending'|'sent'|'failed'|'skipped',
+            attempts, error: string|null, providerRef: string|null, sentAt: string|null, createdAt }
+```
+
+**`notify(tx, who, { userIds?, to?: { email?, phone? }, template, data, link? })`** in `lib/notify.ts`:
+- writes one in-app row per user;
+- writes an email row per user who hasn't opted out, and a WhatsApp row where the template offers it, the recipient opted in and has a phone;
+- writes an email or WhatsApp row for `to`, for people who aren't users, such as customers;
+- enqueues one `notification.send` job per outbox row.
+
+Templates live in `lib/templates.ts`. A row with no address is `skipped`.
+
+| Template | In-app | Email | WhatsApp | Default |
+| --- | --- | --- | --- | --- |
+| `password_reset` | no | yes | no | mandatory |
+| `mfa_changed` | no | yes | no | mandatory |
+| `approval_requested` | yes | yes | no | email on |
+| `approval_decided` | yes | yes | no | email on |
+| `import_finished` | yes | no | no | in-app only |
+| `compliance_digest` | no | yes | no | email off |
+| `payment_reminder` | no | yes | yes | to customers, on request only |
+
+**WhatsApp `cloud_api`:**
+- Sends the approved template `payment_reminder` (language `en`) with body parameters: party name, amount due, oldest due date, company name, UPI ID or "—".
+- The phone number becomes `91` plus 10 digits.
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `GET /notifications` | signed in | `?unread=true&limit=&offset=` | `{ data: Notification[], total, unread }`: the caller's rows for the current company and rows with no company |
+| `GET /notifications/unread-count` | signed in | | `{ unread }` |
+| `POST /notifications/:id/read` | signed in | | `204` |
+| `POST /notifications/read-all` | signed in | | `204` |
+| `GET /me/notification-prefs` | signed in | | `{ data: NotificationPref[] }` |
+| `PATCH /me/notification-prefs` | signed in | `{ prefs: [{ template, email?, whatsapp? }] }` | as GET. Turning off a mandatory one fails with 400. |
+| `GET /notifications/outbox` | `company.manage` | `?status=&channel=&limit=&offset=` | `{ data: OutboxRow[], total }`, newest first |
+| `POST /parties/:id/remind` | `invoices.view` | `{ channel: 'email'|'whatsapp' }` | `202 { outboxId }` (see the rules after this table) |
+
+**Payment reminder (`POST /parties/:id/remind`):**
+- The message gives the party's open invoices: count, total due, oldest due date and the company UPI ID.
+- It fails with 400 when there is no email or phone, or nothing is due.
+- A second reminder within 24 hours fails with 409 `TOO_SOON`.
+
+## 7. Approval engine
+
+```
+ApprovalRule { id, docType, name, minAmount, locationId: string|null, locationName: string|null, isActive, createdAt, updatedAt,
+               levels: [{ level, approverRoleId: string|null, approverUserId: string|null, label /* role or user name */ }] }
+docType: 'purchase'|'payment'|'expense'|'journal'|'credit_note'
+ApprovalRequest { id, number, docType, status: 'pending'|'approved'|'rejected'|'cancelled', amount,
+                  summary: { date, partyName: string|null, locationName: string|null, narration: string|null },
+                  payload: object /* the create body as submitted */, ruleId, ruleName,
+                  levels: ApprovalRule['levels'] /* snapshot at submit */, currentLevel, totalLevels,
+                  requestedBy: {id, name}, requestedAt, canAct: boolean /* caller may approve or reject now */,
+                  document: { type: docType, id, number }|null, actions: ApprovalAction[], decidedAt: string|null }
+ApprovalAction { level: number|null, action: 'submitted'|'approved'|'rejected'|'cancelled', by: {id, name}, comment: string|null, at }
+```
+
+**Covered creates:**
+
+| Create | `docType` | Amount it's matched on |
+| --- | --- | --- |
+| `POST /purchases` | `purchase` | `total` |
+| `POST /payments` with `kind: 'payment'` | `payment` | `amount` |
+| `POST /expenses` | `expense` | total including tax |
+| `POST /journals` | `journal` | total debit |
+| `POST /credit-notes` | `credit_note` | `total` |
+
+**Which rule applies:**
+- Among active rules for the doc type with `minAmount ≤ amount` and a `locationId` that is null or equals the document's location, the highest `minAmount` wins.
+- At the same amount, a location rule beats a company-wide one.
+- With no match, the document is created at once, as before.
+
+**Submit:**
+1. The server runs the full create as a dry run inside a savepoint and rolls it back. A request that would fail is rejected immediately with the same error.
+2. It stores the request and returns **`202 { approvalRequest }`**.
+
+Nothing posts and no document number is used until the final approval. The levels are copied into the request, so later rule edits don't change pending requests.
+
+**Approve:**
+- A user qualifies for a level when they hold that level's role in this company, or are that level's user.
+- The requester can never act on their own request (403 `SELF_APPROVAL`).
+- Each level needs a different person (403 `ALREADY_ACTED`).
+- The final approval creates the document as the requester, checking their current permissions and location access, inside the approver's transaction.
+- If that create fails (books locked, stock moved, permission lost), the call returns that error and the request stays at its level. The approver can reject it.
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `GET /approval-rules` | `approvals.manage` | `?docType=` | `{ data: ApprovalRule[] }` |
+| `POST /approval-rules` | `approvals.manage` | `{ docType, name, minAmount ≥ 0, locationId?, levels: 1–5 × ({ approverRoleId } or { approverUserId }) }` | `201`. 400 when a role or user has no access to this company. |
+| `PATCH /approval-rules/:id` | `approvals.manage` | any of the fields | `ApprovalRule` |
+| `DELETE /approval-rules/:id` | `approvals.manage` | | `204` (deactivates) |
+| `GET /approvals` | signed in; `scope=all` needs `approvals.view` | `?scope=awaiting_me|mine|all` (default `awaiting_me`) `&status=&docType=&limit=&offset=` | `{ data: ApprovalRequest[] /* without payload and actions */, total }`, newest first |
+| `GET /approvals/count` | signed in | | `{ awaitingMe, mine }`, pending only |
+| `GET /approvals/:id` | the requester, anyone who qualifies at any level, or `approvals.view` | | `ApprovalRequest` |
+| `POST /approvals/:id/approve` | qualifies at `currentLevel` | `{ comment? }` | `ApprovalRequest`; after the last level, `status: 'approved'` and `document` set |
+| `POST /approvals/:id/reject` | qualifies at `currentLevel` | `{ comment /* required, 3–500 */ }` | `ApprovalRequest` |
+| `POST /approvals/:id/cancel` | the requester | | `ApprovalRequest` |
+
+**Notifications and audit:**
+- Submit notifies everyone who qualifies at level 1 (`approval_requested`, link `/approvals/:id`).
+- Each step notifies the next level.
+- Approve and reject notify the requester (`approval_decided`).
+- Every action is audited as entity `approval_request`.
+
+## 8. Custom fields
+
+```
+CustomField { id, entity: 'item'|'party'|'invoice'|'purchase'|'project', key /* ^[a-z][a-z0-9_]{1,29}$ */, label /* 1–60 */,
+              type: 'text'|'number'|'date'|'boolean'|'select', options: string[] /* select: 1–50, each 1–60 */,
+              required, showOnPrint, sortOrder, isActive, createdAt }
+```
+
+**Fields:**
+- At most 25 active fields per entity.
+- `key` and `type` never change.
+- Options can be replaced; stored values stay and still show.
+
+**Records:**
+- Items, parties, invoices, purchases and projects gain `custom: { [key]: string|number|boolean }`, holding only keys with a value.
+- Create bodies accept `custom`. The PATCH bodies of items, parties and projects merge it, and `null` clears a key.
+- Invoices and purchases take `custom` on create only.
+
+**`validateCustom(tx, companyId, entity, input, existing?)`** fails with 400 and `details: { 'custom.<key>': message }` for any of these:
+- an unknown or inactive key;
+- text over 500 characters;
+- a number that isn't finite;
+- a date not in `YYYY-MM-DD`;
+- a boolean that isn't a boolean;
+- a select value that isn't one of the options;
+- a required field missing on create, or being cleared.
+
+**Display:**
+- CSV exports of these entities gain one column per active field, headed with the label.
+- The invoice PDF prints `showOnPrint` fields under the header details.
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `GET /custom-fields` | signed in | `?entity=&includeInactive=true` | `{ data: CustomField[] }` by `sortOrder`, then label |
+| `POST /custom-fields` | `company.manage` | `{ entity, key, label, type, options?, required?, showOnPrint?, sortOrder? }` | `201`. 409 `CONFLICT` for a duplicate key; 400 over the limit. |
+| `PATCH /custom-fields/:id` | `company.manage` | `{ label?, options?, required?, showOnPrint?, sortOrder?, isActive? }` | `CustomField` |
+
+## 9. Cost centres and branch P&L
+
+```
+CostCentre { id, code /* 1–20, unique per company */, name, parentId: string|null, isActive, createdAt }
+```
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `GET /cost-centres` | signed in | `?includeInactive=true` | `{ data: CostCentre[] }` by code |
+| `POST /cost-centres` | `accounts.manage` | `{ code, name, parentId? }` | `201`; 409 `CONFLICT` for a duplicate code |
+| `PATCH /cost-centres/:id` | `accounts.manage` | `{ name?, parentId?, isActive? }` | `CostCentre`; 400 if the parent would make a loop |
+| `GET /reports/cost-centres` | `accounts.view` | `?from=&to=` | `{ from, to, rows: [{ costCentreId: string|null, code: string|null, name /* 'Untagged' for null */, parentId, income, expense, net }], totals: { income, expense, net } }` |
+
+**Tagging documents:**
+- Invoices, purchases, expenses and credit notes take an optional header `costCentreId`, which is returned too. A credit note defaults to its invoice's.
+- The header tags the document's income and expense journal lines: sales, sales returns, COGS, non-stock purchases and expense heads. Balance-sheet lines are never tagged.
+- Manual journals take `costCentreId` per line. On a balance-sheet account it fails with 400.
+- An inactive or unknown cost centre fails with 400.
+- With `company.costCentreRequired`, those documents and the P&L lines of manual journals need one: 400 with `details: { costCentreId: 'Required' }`.
+
+**Branch P&L:**
+- Invoices, purchases and credit notes now put `locationId` on every journal line, as expenses already did. Migration 010 backfills older lines from their documents.
+- `GET /reports/profit-loss` accepts `costCentreId` and `locationId`, which filter journal lines. With `locationId` it is the branch P&L.
+
+## 10. CSV import
+
+```
+ImportJob { id, kind, status: 'validated'|'invalid'|'queued'|'running'|'done'|'failed', fileName: string|null, totalRows, validRows,
+            errors: [{ row /* 1 = first data row */, column: string|null, message }] /* first 200 */,
+            preview: object[] /* first 20 normalised rows */, options: { asOf: string|null, updateExisting: boolean },
+            result: { created, updated, skipped }|null, error: string|null, jobId: string|null,
+            createdBy: {id, name}, createdAt, finishedAt: string|null }
+kind: 'items'|'parties'|'opening_stock'|'account_balances'
+```
+
+**Input:**
+- UTF-8 text, comma-separated, or tab-separated as pasted from Excel. The delimiter is detected from the header row.
+- A header row is required. Names match without regard to case or spaces.
+- At most 5,000 rows and 2 MB.
+
+**Columns** (`*` = required):
+
+| Kind | Columns | What it writes |
+| --- | --- | --- |
+| `items` | `name*`, `sku`, `hsn`, `unit*`, `gstRate*`, `salePrice`, `purchasePrice`, `trackStock` (yes/no), `reorderLevel`, `custom.<key>` | Items |
+| `parties` | `type*` (customer/vendor/both), `name*`, `gstin`, `stateCode` (from the GSTIN when blank), `pan`, `phone`, `email`, `address`, `pincode`, `creditLimit`, `creditDays`, `openingBalance`, `openingType` (dr/cr), `custom.<key>` | Parties. `openingBalance` posts an `opening` journal on `asOf`, tagged with the party: `dr` is Dr Accounts Receivable / Cr Opening Balances; `cr` is Dr Opening Balances / Cr Accounts Payable. |
+| `opening_stock` | `sku` or `itemName`*, `locationCode*`, `qty*` (> 0), `rate*` (≥ 0) | Opening stock moves, as `POST /stock/adjustments` with `isOpening` (Dr Inventory / Cr Opening Balances), dated `asOf` |
+| `account_balances` | `accountCode*`, `debit`, `credit` (exactly one above 0) | One `opening` journal on `asOf`. Any difference goes to Opening Balances (3100). Receivables, payables, inventory, tax and inter-company accounts are refused; use the parties and stock imports for those. |
+
+**Matching and errors:**
+- Items match by `sku`, else by name (case-insensitive). Parties match by GSTIN, else by name and type.
+- A match with `updateExisting: false` is an error ("already exists"). With `true`, the given columns update and blank cells leave fields as they are.
+- An opening balance for a party that already has one is an error.
+- Duplicate rows within the file are errors.
+- `asOf` is required for the openings, and must fall in an open period.
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `GET /imports/templates/:kind` | `imports.run` | | `text/csv`: the header and two example rows |
+| `POST /imports` | `imports.run` plus the kind's permission (`items.create`, `parties.create`, `stock.adjust`, `accounts.journal`) | `{ kind, csv, fileName?, options?: { asOf?, updateExisting? } }`, body up to 3 MB | `201 ImportJob` with status `validated` or `invalid`. Nothing is written yet. |
+| `GET /imports` | `imports.run` | `?limit=&offset=` | `{ data: ImportJob[] /* without preview and errors */, total }` |
+| `GET /imports/:id` | `imports.run` | | `ImportJob` |
+| `POST /imports/:id/commit` | as `POST /imports` | | `202 ImportJob` with status `queued`. 409 `NOT_VALIDATED`. |
+
+The `import.commit` job validates again, because masters may have changed since. It then writes every row in one transaction, all or nothing. When done it notifies the creator (`import_finished`, link `/imports/:id`).
+
+## 11. Several companies, inter-company entries, consolidation
+
+```
+IntercompanyEntry { id, number, date, amount, narration, status: 'posted'|'cancelled',
+                    from: { companyId, companyName, accountId, accountName, entryId },
+                    to:   { companyId, companyName, accountId, accountName, entryId },
+                    createdBy: {id, name}, createdAt, cancelledAt: string|null, cancelReason: string|null }
+```
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `POST /companies` | `companies.create` in the current company | `{ name, legalName?, stateCode, gstin?, pan?, copyAccountsFrom?: companyId }` | `201 Company` (see the steps after this table) |
+| `GET /companies` | signed in | | `{ data: [Company & { roles }] }`, the caller's companies |
+| `POST /intercompany-entries` | `accounts.journal` in both companies (else 403 `FORBIDDEN`) | `{ date, amount > 0, narration /* 3–300 */, from: { companyId, accountId }, to: { companyId, accountId } }` | `201 IntercompanyEntry` (see the rules after this table) |
+| `GET /intercompany-entries` | `accounts.view` | `?counterpartyId=&from=&to=&status=&limit=&offset=` | `{ data: IntercompanyEntry[], total }`, where the current company is either side |
+| `POST /intercompany-entries/:id/cancel` | `accounts.journal` in both | `{ reason }` | `IntercompanyEntry`; reverses both journals |
+| `GET /reports/intercompany` | `accounts.view` | `?asOf=` | `{ asOf, rows: [{ companyId, companyName, balance /* + they owe us, − we owe them */ }], accountBalance /* this company's 1295 */, unexplained /* accountBalance − Σ balance */ }` |
+| `GET /reports/consolidated/trial-balance` | `accounts.view` in every listed company (else 403) | `?companyIds=a,b /* 2–20 */&asOf=` | consolidated shape below |
+| `GET /reports/consolidated/profit-loss` | same | `?companyIds=&from=&to=` | consolidated shape below |
+| `GET /reports/consolidated/balance-sheet` | same | `?companyIds=&asOf=` | consolidated shape below |
+
+**Adding a company (`POST /companies`):**
+1. Creates it in the same business, with a Head Office location and the system accounts.
+2. Gives the caller the Owner role there, for all locations.
+3. With `copyAccountsFrom`, copies that company's non-system accounts; the caller needs `accounts.view` there.
+4. Writes an audit entry.
+
+**Posting an inter-company entry:**
+- `from` is the company that gives, by paying or charging. It posts Dr Inter-company / Cr `from.accountId`.
+- `to` posts Dr `to.accountId` / Cr Inter-company.
+- Both journals are voucher type `intercompany`, carry one number and go in one transaction. Both periods must be open.
+- Each account must belong to its company and be active. It can't be a receivables, payables, inventory or inter-company account.
+- Manual journals on 1295 fail with 400 ("use an inter-company entry").
+
+**Consolidated shape:** the single-company report shape plus:
+- `companies: [{ id, name }]`;
+- `byCompany: { [companyId]: amount }` on every row;
+- `eliminations: { intercompany }`;
+- `warnings: string[]`.
+
+**Consolidation rules:**
+- Rows merge by account code; the name comes from the first company listed. A different name for the same code adds a warning.
+- Inter-company balances between companies in the list are eliminated, and their total is shown in `eliminations`.
+- Balances with companies outside the list, and `unexplained` amounts, stay on an "Inter-company Account" row with a warning.
+- Invoices between group companies are not eliminated in v1.7. The report warns when it finds a party whose GSTIN belongs to another listed company.
+
+## 12. GSP adapter
+
+```
+GspProviderInfo { id, name, capabilities: ('einvoice'|'ewaybill'|'gstr1_save')[], credentialFields: [{ key, label, secret: boolean }] }
+GspSettings { mode: 'manual'|'sandbox'|'gsp', provider: string|null, providers: GspProviderInfo[],
+              credentials: { [key]: string|null } /* secret values are never returned: null */, savedSecrets: string[], updatedAt: string|null }
+GspSubmission { id, kind: 'gstr1', period, provider, reference, status, createdAt, createdBy: {id, name} }
+```
+
+**Code layout:**
+- `lib/gsp/types.ts` holds the interface, `lib/gsp/registry.ts` holds `registerGspAdapter`, `gspAdapter(id)` and `listGspAdapters()`, and `lib/gsp/sandbox.ts` is the v1.3 local fake moved behind the interface.
+- No live provider ships. A new one is one file in `lib/gsp/` plus one line in the registry.
+- Tests register a fake adapter.
+
+```ts
+interface GspCall { gstin: string; credentials: Record<string, string>; timeoutMs: number }
+interface GspAdapter {
+  id: string; name: string; capabilities: ReadonlySet<'einvoice' | 'ewaybill' | 'gstr1_save'>;
+  credentialFields: { key: string; label: string; secret: boolean }[];
+  ping(c: GspCall): Promise<{ ok: boolean; message: string }>;
+  generateIrn(c: GspCall, payload: object /* v1.3 Version 1.1 JSON */): Promise<{ irn: string; ackNo: string; ackDate: Date; signedQr: string; signedInvoice: string | null }>;
+  cancelIrn(c: GspCall, irn: string, reasonCode: '1' | '2' | '3' | '4', remark: string): Promise<{ cancelledAt: Date }>;
+  generateEwb(c: GspCall, input: { irn: string; transportMode: string; distanceKm: number; vehicleNo?: string; transporterGstin?: string }): Promise<{ ewbNo: string; ewbDate: Date; validUntil: Date | null }>;
+  cancelEwb(c: GspCall, ewbNo: string, reasonCode: '1' | '2' | '3' | '4', remark: string): Promise<{ cancelledAt: Date }>;
+  saveGstr1?(c: GspCall, period: string, json: object): Promise<{ reference: string; status: string }>;
+}
+class GspError extends Error { constructor(code: string, message: string, transient: boolean) }
+```
+
+**Errors and retries:**
+- A non-transient `GspError` becomes 502 `GSP_ERROR`.
+- Transient errors (timeouts, network failures, HTTP 5xx) are retried twice inside the call, with backoff of 1 s and then 3 s, and then become 503 `GSP_UNAVAILABLE`.
+- Nothing is recorded when a call fails.
+
+**Modes** (`company.einvoiceMode`):
+- `manual` records the IRN copied from the IRP portal, as in v1.3.
+- `sandbox` uses the sandbox adapter. Its IRNs are marked `irnSandbox: true`, as before.
+- `gsp` uses `company.gspProvider` with its saved credentials, otherwise 409 `GSP_NOT_CONFIGURED`.
+
+The e-invoice and e-way bill endpoints keep their v1.3 shapes. In `sandbox` and `gsp` the request body is ignored and the adapter's answer is stored.
+
+| Endpoint | Permission | Request | Response |
+| --- | --- | --- | --- |
+| `GET /company/gsp` | `einvoice.manage` | | `GspSettings` |
+| `PATCH /company/gsp` | `company.manage` | `{ mode?, provider?, credentials?: { [key]: string|null } }` | `GspSettings`. Secrets are sealed; a secret left out is kept; `null` clears it. The provider must be registered and not `sandbox`. |
+| `POST /company/gsp/test` | `einvoice.manage` | | `{ ok, message }` from `ping` |
+| `POST /gst/gstr1/upload` | `gst.manage` | `{ period, acknowledgeFailures? }` | `201 GspSubmission` (see the steps after this table) |
+| `GET /gst/submissions` | `gst.view` | `?period=` | `{ data: GspSubmission[] }` |
+
+**GSTR-1 upload (`POST /gst/gstr1/upload`):**
+1. Runs the GSTR-1 prefile check (409 `PREFILE_FAILED`, as in v1.6).
+2. Builds the v1.4 GSTN JSON.
+3. Calls `saveGstr1`.
+4. Returns 501 `NOT_SUPPORTED` when the mode is `manual` or the provider lacks the capability.
+
+The sandbox returns `reference: 'SBX-…'` and `status: 'saved'`. Filing with EVC or DSC still happens on the portal, and the v1.6 filing register is unchanged.
+
+## 13. Client
+
+- **Sign-in:**
+  - a 2FA code step, with "Use a recovery code";
+  - a locked-account message showing the time;
+  - "Forgot password?" and `/reset-password?token=`;
+  - "Sign in with SSO" after the email is typed (`discover`); when SSO is enforced the password field is hidden;
+  - `/sso/done?ticket=` redeems the ticket;
+  - an `ssoError` on `/login` shows a message.
+- **MFA enrolment:** `MFA_ENROLMENT_REQUIRED`, or `mustEnrol2fa`, sends the user to the 2FA setup screen, the only screen allowed until it's done.
+- **Profile → Security:**
+  - 2FA setup: QR code, secret, confirm code, then the recovery codes shown once with copy;
+  - turn off, and new recovery codes;
+  - sessions with "Sign out" each and "Sign out everywhere else".
+- **Admin → Security** (`security.manage`): the "Require 2FA" switch and SSO providers (list, form, test).
+- **Users admin:** "Reset 2FA" and "Unlock".
+- **Notifications:**
+  - a bell in the app bar with an unread badge, polling `/notifications/unread-count` every 60 s while visible;
+  - the notification list (tap opens `link`, mark read, mark all read);
+  - notification settings.
+- **Admin → Delivery log** (outbox) and **Background jobs** (with retry).
+- **Approvals:**
+  - Inbox with the tabs "Waiting for me", "My requests" and "All" (the last with `approvals.view`). The nav badge comes from `/approvals/count`.
+  - A detail screen that renders the payload per doc type (party, date, lines, totals) and the action history, with approve, reject (comment required) and cancel.
+  - A rules admin.
+  - The `ApiClient` turns a `202` with `approvalRequest` into `ApprovalPendingException`. Busy buttons show "Sent for approval (APR/…)" and the form closes as after a save.
+- **Custom fields:**
+  - admin per entity;
+  - a `CustomFieldsSection` in the item, party, invoice, purchase and project forms;
+  - values on detail screens;
+  - `showOnPrint` fields on the invoice PDF.
+- **Cost centres:**
+  - the master list;
+  - a picker in the invoice, purchase, expense, credit-note and journal-line forms, required when the company says so;
+  - cost-centre and location filters on the P&L;
+  - the cost-centre report;
+  - the "Cost centre required" switch on the company profile.
+- **Import** (`/imports`), in steps:
+  1. Pick the kind.
+  2. Download the template.
+  3. Pick a CSV file, or paste from Excel.
+  4. Set the options and validate.
+  5. Review the errors table (row, column, message) and the preview.
+  6. Commit, and watch progress by polling `GET /imports/:id` every 2 s.
+  7. See the result.
+
+  There is also a history list.
+- **Companies:**
+  - "Add company" (`companies.create`);
+  - the company switcher in the shell;
+  - inter-company entries (list, form, cancel) and the balances report;
+  - consolidated reports: pick companies, then TB, P&L and BS with per-company columns, eliminations and warnings.
+- **Company profile → E-invoice provider:**
+  - mode, provider, credential fields from `credentialFields`, and "Test connection";
+  - the GST filing wizard's GSTR-1 step offers "Upload via provider" when the capability exists.
+
+## Demo data (v1.7)
+
+- **A second company,** "Progen Infra Projects LLP" (Gujarat, no GSTIN), in the demo business. owner@demo.in is its Owner.
+- **One inter-company entry:** the main company pays 25,000 rent for the second company.
+- **Cost centres:** `RET` Retail, `PRJ` Projects and `HO` Head office, with a few seeded invoices and expenses tagged.
+- **Custom fields:**
+  - item `brand` (text, printed);
+  - party `region` (select: North, South, East, West);
+  - invoice `po_number` (text, printed).
+- **Approval rule:** payments of ₹5,00,000 or more need the Owner role at level 1.
+  - accountant@demo.in has one pending request for ₹6,00,000.
+  - The threshold is high so the live tests' payments don't need approval.
+- **Imports:** one finished import of three items.
+- **2FA:** off for every demo user.
+
+# v1.8 additions — Commerce operations (order to cash, procure to pay)
+
+Plan and reasons: docs/plan/ubos-discovery-and-plan.md. Shared foundation (lead): migration `012_commerce.sql` adds stock move kinds `grn`, `grn_cancel`, `stock_count`, `write_off`; `lib/series.ts` adds `sales_order` SO, `pick_list` PCK, `shipment` SHP, `sales_return` RMA, `purchase_order` PO, `grn` GRN, `stock_count` CNT.
+
+Conventions are unchanged from v1.5–v1.7: money in rupees as numbers with 2 decimals, quantities with 3, `Idempotency-Key` on creates, `{ data, total }` lists, errors via `lib/errors.ts`, every write audited, row locks on state changes.
+
+## A. Order to cash
+
+Permissions: `sales_orders.view` (read sales orders, availability, pick lists, shipments, returns), `sales_orders.manage` (create, edit, confirm, reserve, cancel, close orders), `fulfilment.manage` (pick lists, picks, pack, dispatch, shipment status), `returns.manage` (create, receive, inspect, close, cancel returns). Defaults: Owner and Company Admin all four; Accountant `sales_orders.view`, `returns.manage`; Sales Executive `sales_orders.view`, `sales_orders.manage`; Store Keeper `sales_orders.view`, `fulfilment.manage`, `returns.manage`; Auditor `sales_orders.view`. Location scope applies everywhere: a record at a location outside the caller's scope is `404`. Another business's record is `404`.
+
+All `POST` calls accept `Idempotency-Key`. Quantities have 3 decimals. Only stock-tracked items can be on an order (`400` otherwise).
+
+### Items: barcode and scanner lookup
+
+- `items` gain `barcode` (string 4–64 printable characters without spaces, unique per company, nullable) on create, patch, get and list; the list search also matches barcodes. A duplicate gives `409 CONFLICT` with `details.barcode`.
+- `GET /items/by-code/:code` (`items.view`): exact barcode, else SKU (case-insensitive). `404` when neither matches.
+- `GET /stock` rows gain `reservedQty` and `availableQty` (= `qty` − active reservations).
+
+### Availability and reservations
+
+Available at a location = on hand − active reservations at that location. `requireStock` (used by invoices, transfers, issues, adjustments, purchase and credit-note cancels) uses available, so a plain invoice cannot take stock held for an order: `409 INSUFFICIENT_STOCK`, `details { itemId, available, required, onHand, reserved }`. A dispatch consumes its own reservation first, so it passes. Reserving locks per item (advisory lock), so two simultaneous confirms for the last unit cannot both succeed.
+
+`GET /sales-orders/availability?locationId=&q=&limit=&offset=` (`sales_orders.view`): stock-tracked, active items with their numbers at the location, for the item picker. `{ data: [{ itemId, name, sku, barcode, unit, salePrice, gstRate, onHand, reserved, available }], total }`.
+
+### Sales order
+
+States: `draft` → `confirmed` → `picking` → `packed` → `partially_dispatched` | `dispatched` → `closed`; `cancelled` from `draft`, `confirmed`, `picking`, `packed`, `partially_dispatched` (cancels what is not yet dispatched).
+
+| From | Action | To |
+| --- | --- | --- |
+| draft | confirm | confirmed (reserves stock) |
+| draft | cancel | cancelled |
+| confirmed, picking, packed, partially_dispatched | cancel (all or per line) | cancelled, or unchanged with reduced quantities; `dispatched` if nothing is left to ship |
+| confirmed | pick list created | picking |
+| picking | all reserved quantity packed | packed |
+| picking, packed | dispatch | partially_dispatched (open quantity remains) or dispatched |
+| partially_dispatched | dispatch | partially_dispatched or dispatched |
+| dispatched | close | closed |
+
+Status is derived after every change from the line quantities: nothing open and something dispatched → `dispatched`; something dispatched and open quantity left → `partially_dispatched`; packed (not dispatched) equals reserved → `packed`; picked or on an open pick list → `picking`; else `confirmed`. Anything not in the table is `409 ILLEGAL_TRANSITION` ("This order is <status>, so it can't be <action>.") with `details { status }`.
+
+Order JSON: `{ id, number, fy, status, source ('manual'|'csv'|'channel'), externalRef, locationId, locationName, partyId, partyName, orderDate, expectedDate, placeOfSupply, subtotal, taxTotal, total, notes, cancelReason, confirmedAt, packVerified, createdAt, createdBy { id, name }, lines [...] }`. Money is an estimate from the same GST rules as invoices; the invoice at dispatch is the tax document. Line: `{ id, lineNo, itemId, itemName, sku, barcode, unit, description, qtyOrdered, rate, discountPct, gstRate, allowBackorder, qtyReserved, qtyPicked, qtyPacked, qtyDispatched, qtyReturned, qtyCancelled, qtyOpen, qtyShort }`. `qtyOpen` = ordered − dispatched − cancelled; `qtyShort` = open − reserved. Quantities: `picked ≥ packed ≥ dispatched`; `reserved ≤ open`. `packVerified` is true when picked equals packed on every line (nothing waiting to be packed). The detail response also has `events [{ kind, message, createdAt, by }]` (timeline), `shipments [shipment summary]`, `returns [return summary]`.
+
+| Method and path | Permission | Body / query | Result |
+| --- | --- | --- | --- |
+| `GET /sales-orders` | view | `q` (number, customer, external ref), `status`, `partyId`, `locationId`, `from`, `to`, `limit`, `offset` | `{ data: [order without lines], total }` |
+| `GET /sales-orders/:id` | view | | order with lines, events, shipments, returns |
+| `POST /sales-orders` | manage | `{ locationId, partyId, orderDate?, expectedDate?, externalRef?, notes?, lines: [{ itemId, qty, rate?, discountPct?, description?, allowBackorder? }] }` (1–200 lines) | `201` draft order. Rate defaults to the item's sale price. `externalRef` is unique per company and source: `409 DUPLICATE_ORDER` |
+| `PATCH /sales-orders/:id` | manage | same fields, all optional; `lines` replaces all lines | draft only, else `409 ILLEGAL_TRANSITION` |
+| `POST /sales-orders/:id/confirm` | manage | none | reserves each line: all of it, or `409 INSUFFICIENT_STOCK` with `details { shortages: [{ lineNo, itemId, itemName, available, required }] }` and nothing reserved. A line with `allowBackorder` reserves what is available (maybe zero) and shows `qtyShort` |
+| `POST /sales-orders/:id/reserve` | manage | none | retries reservation of `qtyShort` for backorder lines; reserves what is available; allowed in `confirmed`, `picking`, `packed`, `partially_dispatched` |
+| `POST /sales-orders/:id/cancel` | manage | `{ reason, lines?: [{ lineId, qty }] }` | without `lines` cancels all open quantity. Releases reservations. Not allowed while an open pick list holds the order (`409 HAS_OPEN_PICK_LIST`) |
+| `POST /sales-orders/:id/close` | manage | none | only from `dispatched` |
+
+### Pick lists and scanning
+
+A pick list is for one location and one or more orders in `confirmed`, `picking` or `partially_dispatched`. Each line is a quantity still to pick: reserved − (picked − dispatched) − already on open pick lists. `409 NOTHING_TO_PICK` ("Nothing to pick at <location>") when nothing qualifies.
+
+Pick list JSON: `{ id, number, status ('open'|'completed'|'cancelled'), locationId, locationName, orderNumbers [..], totalTarget, totalPicked, createdAt, completedAt, lines [{ id, lineNo, orderId, orderNumber, orderLineId, itemId, itemName, sku, barcode, unit, qtyTarget, qtyPicked }] }` (lines only on detail).
+
+| Method and path | Permission | Body | Result |
+| --- | --- | --- | --- |
+| `GET /pick-lists` | view | `status`, `q`, `locationId`, paging | `{ data, total }` |
+| `GET /pick-lists/:id` | view | | pick list with lines |
+| `POST /pick-lists` | fulfilment.manage | `{ locationId, orderIds: [uuid] (1–50) }` | `201`; `409 ILLEGAL_TRANSITION` if an order is not pickable; `400` if an order is at another location |
+| `POST /pick-lists/:id/scan` | fulfilment.manage | `{ scanId (4–100 chars, client-generated), code? , itemId?, qty? = 1, orderLineId? }`. Give `code` (barcode or SKU) or, for manual entry, `itemId` | `{ duplicate, item { id, name, sku }, qty, allocations [{ lineId, qty }], pickList }` |
+| `POST /pick-lists/:id/complete` | fulfilment.manage | none | marks completed; short picks stay reserved and can go on a new list |
+| `POST /pick-lists/:id/cancel` | fulfilment.manage | none | only when nothing has been picked (`409 HAS_PICKS`) |
+
+Scan rules: unknown code `400 UNKNOWN_BARCODE`; item not on the list `400 WRONG_ITEM`; picking more than the list needs `400 OVER_PICK` (details `{ itemId, remaining }`); a closed list `409 ILLEGAL_TRANSITION`. A repeated `scanId` returns the first result with `duplicate: true` and changes nothing. Failed scans are not stored. When the item is on several lines, the quantity fills the lines in order; `orderLineId` targets one line.
+
+### Pack
+
+- `POST /sales-orders/:id/pack-scans` (fulfilment.manage): `{ scanId, code?|itemId?, qty? = 1 }` adds to packed quantity. Same errors as picking: `UNKNOWN_BARCODE`, `WRONG_ITEM` (item has nothing picked and unpacked on this order), `OVER_PACK` (400, packing more than picked). Idempotent by `scanId`. Result `{ duplicate, item, qty, order }`.
+- `POST /sales-orders/:id/pack` (fulfilment.manage): `{ lines?: [{ lineId, qty }] }`; no `lines` packs everything picked and not yet packed. `400 OVER_PACK` if qty exceeds picked − packed. Result: the order (see `packVerified`).
+
+### Dispatch
+
+`POST /sales-orders/:id/dispatch` (fulfilment.manage; send an `Idempotency-Key`). Body `{ courier?, awb?, mode?: 'prepaid'|'cod' (default prepaid), codAmount? (default the invoice total when cod; must be 0 or omitted when prepaid), notes?, invoiceDate? }`. Dispatches all packed, undispatched quantity. In one transaction it: locks the order; requires `picked = packed` on every line with unshipped picks (`409 PACK_INCOMPLETE`, "Packed quantity does not match picked") and something packed (`409 NOTHING_TO_DISPATCH`); consumes the reservations; creates the tax invoice with the existing invoice function (GST, journal, stock out and cost of goods sold all come from it) at the order rate and discount; creates the shipment (`booked`) with its lines. Order status becomes `partially_dispatched` or `dispatched`. A second request with the same `Idempotency-Key` replays the first response; a second request without a key gets `409 ILLEGAL_TRANSITION` once the order is fully dispatched, or `409 NOTHING_TO_DISPATCH` when other quantity remains but none is packed; the database also holds a unique key per invoice and per dispatch key. Result `201`: shipment detail with `invoice { id, number, total }`.
+
+### Shipments
+
+States: `booked` → `in_transit` → `delivered`; `in_transit` → `rto_initiated` → `rto_delivered`; `in_transit` or `rto_initiated` → `lost`; `rto_initiated` → `delivered` (customer accepts after all). Anything else `409 ILLEGAL_TRANSITION`.
+
+Shipment JSON: `{ id, number, orderId, orderNumber, invoiceId, invoiceNumber, partyName, courier, awb, mode, codAmount, status, notes, dispatchedAt, deliveredAt, history [{ status, note, at, by }] (detail), lines [{ id, orderLineId, invoiceLineId, itemId, itemName, qty }] (detail), returnId (detail, when an RTO return exists) }`.
+
+| Method and path | Permission | Body / query | Result |
+| --- | --- | --- | --- |
+| `GET /shipments` | view | `status`, `mode`, `q` (number, AWB, order, customer), `orderId`, paging | `{ data, total }` |
+| `GET /shipments/:id` | view | | shipment with lines, history |
+| `POST /shipments/:id/status` | fulfilment.manage | `{ status, note?, courier?, awb? }` | `rto_delivered` also creates the RTO sales return (type `rto`, status `requested`, one per shipment, quantities = shipped − already returned); `delivered` stamps `deliveredAt` |
+| `PATCH /shipments/:id` | fulfilment.manage | `{ courier?, awb?, notes? }` | not after `delivered`, `rto_delivered` or `lost` |
+
+### Sales returns
+
+Types: `customer_return` (customer sends goods back) and `rto` (courier returns an undelivered parcel). Status: `requested` → `received` → `inspected` → `closed`; `cancelled` from `requested`, `received`, `inspected`.
+
+Return JSON: `{ id, number, type, status, reason, locationId, locationName, invoiceId, invoiceNumber, orderId, orderNumber, shipmentId, partyId, partyName, creditNoteId, creditNoteNumber, receivedAt, inspectedAt, closedAt, createdAt, lines [{ id, lineNo, invoiceLineId, orderLineId, itemId, itemName, unit, qty, qtyReceived, disposition, note }] (detail) }`.
+
+| Method and path | Permission | Body / query | Result |
+| --- | --- | --- | --- |
+| `GET /sales-returns` | view | `status`, `type`, `q`, `orderId`, `invoiceId`, paging | `{ data, total }` |
+| `GET /sales-returns/:id` | view | | return with lines |
+| `POST /sales-returns` | returns.manage | `{ orderId? \| invoiceId?, type? = 'customer_return', reason, lines: [{ orderLineId? \| invoiceLineId?, qty }] }`. Give `orderId` (lines by `orderLineId`) or `invoiceId` (lines by `invoiceLineId`) | `201`. `400 RETURN_EXCEEDS_SOLD` when qty is more than dispatched (or invoiced) − already returned (including returns still open); details `{ lineIndex, returnable }` |
+| `POST /sales-returns/:id/receive` | returns.manage | `{ lines?: [{ lineId, qtyReceived }] }` (default: full qty) | `requested` → `received`; `qtyReceived` ≤ `qty` |
+| `POST /sales-returns/:id/inspect` | returns.manage | `{ lines: [{ lineId, disposition: 'restock'\|'damaged'\|'scrap', note? }] }` | `received` → `inspected`; every line with `qtyReceived > 0` needs a disposition |
+| `POST /sales-returns/:id/close` | returns.manage | none | `inspected` → `closed`; creates the credit note for the received quantities with the existing credit-note function and links it; stock rule below |
+| `POST /sales-returns/:id/cancel` | returns.manage | `{ reason? }` | frees the quantities for another return |
+
+Stock and accounting rule (one rule for both types): the credit note covers every received unit at the invoice price and tax, whatever its condition, and reverses revenue and output tax. Only units with disposition `restock` go back on the shelf, at the cost they left at (inventory debit, cost of goods sold credit). `damaged` and `scrap` units get the credit note but no stock move: they never re-enter the books, so their cost stays in cost of goods sold as the loss. Units claimed but not received are released and get no credit. An RTO parcel is returned the same way as a customer return; no cash was settled for an undelivered parcel, so the credit note offsets the receivable (COD: the courier never remitted cash). Closing is allowed with nothing received (no credit note is created).
+
+### Errors added
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 409 | `ILLEGAL_TRANSITION` | Action not allowed in the current state of an order, pick list, shipment or return |
+| 409 | `INSUFFICIENT_STOCK` | Confirming or reserving more than is available (with `shortages`) |
+| 409 | `NOTHING_TO_PICK`, `NOTHING_TO_DISPATCH`, `PACK_INCOMPLETE`, `HAS_OPEN_PICK_LIST`, `HAS_PICKS`, `DUPLICATE_ORDER` | As described above |
+| 400 | `UNKNOWN_BARCODE`, `WRONG_ITEM`, `OVER_PICK`, `OVER_PACK`, `RETURN_EXCEEDS_SOLD` | As described above |
+
+
+## B. Procure to pay and stock counts
+
+Migration `014_p2p.sql`. Code: `modules/purchase-orders.ts`, `modules/goods-receipts.ts`, `modules/stock-counts.ts`, `modules/reorder.ts`; bill linking in `modules/purchases.ts`; approval hook in `modules/approvals.ts`.
+
+### B.0 Permissions, accounts, settings
+
+| Permission | Meaning | Default roles |
+| --- | --- | --- |
+| `purchase_orders.view` | View POs, goods receipts, reorder suggestions, P2P settings | Owner, Company Admin, Accountant, Store Keeper, Project Manager, Auditor |
+| `purchase_orders.manage` | Create, edit, submit, send, cancel POs; create POs from reorder suggestions; edit P2P settings | Owner, Company Admin, Accountant |
+| `grn.manage` | Create and cancel goods receipts | Owner, Company Admin, Store Keeper |
+| `purchases.override` | Post a bill whose price differs from the PO (`acceptVariance`) | Owner, Company Admin |
+| `stock_counts.manage` | Open, scan, post and cancel stock counts | Owner, Company Admin, Store Keeper |
+| `stock_counts.approve` | Post a count whose variance value exceeds the company threshold | Owner, Company Admin |
+
+System accounts (added to every company): `2140 Goods Received Not Invoiced` (`grni`, liability) and `5110 Purchase Price Variance` (`purchase_price_variance`, expense). Document numbers: `PO/26-27/00001`, `GRN/...`, `CNT/...`. Stock-move kinds `grn`, `grn_cancel`, `stock_count` come from migration 012. Journals use voucher type `stock` (GRN, count) and `purchase` (bill).
+
+Company settings (columns on `companies`), `GET/PUT /p2p/settings` (GET needs `purchase_orders.view`, PUT `purchase_orders.manage`):
+
+```
+{ receiptTolerancePct: 0, priceTolerancePct: 0, countApprovalValue: 10000 }
+```
+
+- `receiptTolerancePct` (0-100, default 0): extra quantity over the PO that a receipt may bring in.
+- `priceTolerancePct` (0-100, default 0): allowed difference between bill price and PO price before a bill is blocked.
+- `countApprovalValue` (rupees, default 10,000): a count whose absolute variance value is more than this needs `stock_counts.approve` to post.
+
+### B.1 Accounting rule (read this first)
+
+Goods are valued at the PO net rate (rate less discount, GST excluded). Direct bills (no `grnLineId`) are unchanged: tracked items move stock and debit Inventory on the bill.
+
+1. **GRN** (accepted qty only; rejected goods never enter stock). Per tracked line: stock move `ref_type 'grn'`, qty = accepted, `value = round2(accepted x unitCost)`, `cost_rate = unitCost`. Journal (voucher `stock`, voucher id = GRN id, at the GRN location):
+   `Dr Inventory  value` / `Cr Goods received not invoiced  value`. Non-stock items post nothing.
+2. **Bill from GRN** (a bill line with `grnLineId`): no stock move, no inventory debit. For the line, `clearing` = `round2(qty x unitCost)`, or the whole remaining GRN value when the line bills the last unit (so GRNI nets to exactly zero). `variance = line taxable value - clearing`. Journal lines added to the normal bill journal: `Dr GRNI clearing` and `Dr/Cr Purchase price variance variance`, instead of the Inventory debit. GST, TDS, reverse charge, round-off and payables are posted exactly as for a direct bill. Non-stock GRN lines post to Purchases - non-stock as usual.
+3. **GRN cancel**: stock move `grn_cancel` for the original value and a reversal of the GRN journal.
+4. **Bill cancel** reverses the bill journal (including GRNI and variance lines) and releases the GRN line billed quantity and cleared value.
+
+Result: stock quantity and Inventory value rise once (at GRN), the bill never touches them again, and `Goods received not invoiced` is the value of goods received but not yet billed. Weighted-average cost is not changed by price variance; variance goes to the expense account.
+
+### B.2 Purchase orders
+
+State machine:
+
+```
+draft --submit--> approved                    (no approval rule matches the PO total)
+draft --submit--> pending_approval --approve--> approved   (rule matches; engine v1.7, docType purchase_order)
+pending_approval --reject/cancel request--> draft
+approved --send--> sent
+approved|sent --receipt--> partially_received --receipt--> received
+received --bills cover every received unit--> closed        (also closed when remaining qty is cancelled and all received is billed)
+draft|pending_approval|approved|sent|partially_received --cancel--> cancelled (nothing received)
+partially_received|received(not fully) --cancel--> remaining qty cancelled, status recomputed
+```
+
+- Edit (`PUT`) only in `draft` (409 `NOT_EDITABLE`).
+- `received` counts accepted quantity. `rejected` is tracked separately; a rejected quantity can be received again (replacement) until the ordered quantity is accepted or cancelled.
+- A rejected approval request (or one cancelled by the requester) returns the PO to `draft`.
+
+PO JSON:
+
+```
+{ id, number, status, fy, orderDate, expectedDate, locationId, locationName, partyId, partyName, partyGstin,
+  placeOfSupply, supplyType, subtotal, cgst, sgst, igst, taxTotal, roundOff, total, notes,
+  approvalRequestId, submittedAt, approvedAt, sentAt, cancelledAt, cancelReason,
+  createdAt, createdBy: { id, name },
+  progress: { ordered, received, billed, cancelled },      // quantity sums
+  lines: [{ id, lineNo, itemId, itemName, sku, description, hsnCode, qty, unit, rate, discountPct, gstRate,
+            taxableValue, cgst, sgst, igst, lineTotal,
+            receivedQty, rejectedQty, billedQty, cancelledQty, openQty }],   // openQty = qty - cancelledQty - receivedQty
+  receipts: [{ id, number, receiptDate, status }],         // detail only
+  bills: [{ id, number, billDate, total, status }] }       // detail only
+```
+
+`GET /purchase-orders?status=&q=&partyId=&locationId=&from=&to=&limit=&offset=` (`purchase_orders.view`; location-scoped) returns `{ data: [PO without lines/receipts/bills], total }`. `q` matches number, vendor name, notes.
+
+`POST /purchase-orders` (`purchase_orders.manage`, 201) body:
+
+```
+{ locationId, partyId, orderDate?, expectedDate?, notes?, lines: [{ itemId, qty, rate?, discountPct?, description? }] }
+```
+
+`rate` defaults to the item's purchase price. Tax is computed as purchase bills compute it (supplier state vs delivery location state). Errors: 400 for a customer party, an inactive item or location, or `expectedDate` before `orderDate`.
+`PUT /purchase-orders/:id` (also accepted as `PATCH`, which the Flutter client uses) same body, draft only. `POST /:id/submit` (no body): returns the PO (200). With a matching rule the PO is `pending_approval` and `approvalRequestId` is set; the request appears in `/approvals` with `docType: 'purchase_order'`; final approval moves the PO to `approved` (the requester must still hold `purchase_orders.manage`). `POST /:id/send` (approved or sent) sets `sent` and `sentAt`. `POST /:id/cancel { reason }` as above; 409 `FULLY_RECEIVED` when nothing is left to cancel; `ALREADY_CANCELLED`; 409 `INVALID_STATE` for other transitions.
+`POST /purchase-orders/preview` takes the create body and returns the totals and taxed lines without saving (`id` and `number` are null).
+All state changes lock the PO row and are audited (`purchase_order`).
+
+### B.3 Goods receipts (GRN)
+
+`POST /goods-receipts` (`grn.manage`, 201) body:
+
+```
+{ purchaseOrderId, locationId?, receiptDate?, challanNo?, challanDate?, vehicleNo?, notes?,
+  lines: [{ poLineId, acceptedQty, rejectedQty?, rejectReason? }] }
+```
+
+- The PO must be `approved`, `sent` or `partially_received` (409 `PO_NOT_RECEIVABLE`). `locationId` defaults to the PO delivery location.
+- `rejectedQty > 0` needs `rejectReason`; every line needs accepted + rejected > 0; a PO line can appear once.
+- Over-receipt: if `receivedQty + acceptedQty > (qty - cancelledQty) x (1 + receiptTolerancePct/100)` the call fails with 400 `OVER_RECEIPT` and `details: { lines: [{ poLineId, itemName, allowed, receiving }] }`.
+- Posts stock and the GRNI journal (B.1), raises PO `received_qty`/`rejected_qty`, recomputes the PO status. Number `GRN/FY/nnnnn`.
+- Receipt date cannot be in the future.
+
+`GET /goods-receipts?purchaseOrderId=&status=&q=&limit=&offset=` -> `{ data, total }`. `GET /goods-receipts/:id`:
+
+```
+{ id, number, status, fy, receiptDate, purchaseOrderId, purchaseOrderNumber, partyId, partyName, locationId, locationName,
+  challanNo, challanDate, vehicleNo, notes, createdAt, createdBy, cancelledAt, cancelReason,
+  lines: [{ id, lineNo, poLineId, itemId, itemName, sku, unit, receivedQty, acceptedQty, rejectedQty, rejectReason,
+            poRate, discountPct, unitCost, gstRate, value, billedQty, billableQty }] }   // billableQty = acceptedQty - billedQty
+```
+
+`value` is the PO-rate value, which the viewer already sees on the PO, so it is always shown.
+
+`POST /goods-receipts/:id/cancel { reason }`: 409 `ALREADY_CANCELLED`; 409 `HAS_BILLS` if any line is billed; 409 `INSUFFICIENT_STOCK` if the accepted quantity is no longer on hand at the location. Reverses stock (`grn_cancel`) and the GRN journal, lowers PO received qty, recomputes status.
+
+### B.4 Bill from GRN (three-way match)
+
+`POST /purchases` and `/purchases/preview` accept two additions; everything else is unchanged:
+
+```
+lines[].grnLineId?: uuid        // the goods receipt line being billed
+acceptVariance?: boolean        // default false
+```
+
+Rules (only for lines with `grnLineId`):
+
+- The GRN must be `posted`, belong to the bill's vendor (`partyId`) and location (400 otherwise); `itemId` must match the GRN line.
+- Omitted `rate` / `discountPct` default to the PO line's. `qty` defaults are not applied (send it).
+- `qty` more than `acceptedQty - billedQty` (counting the same GRN line twice in one bill) -> 400 `OVER_BILLED`, `details: { lines: [{ grnLineId, itemName, billable, billing }] }`.
+- Net price (rate x (1 - discount)) differing from the PO net price by more than `priceTolerancePct` percent -> 409 `PRICE_VARIANCE`, `details: { lines: [{ index, grnLineId, itemName, poRate, billRate, variancePct, varianceValue }] }`. Pass `acceptVariance: true` to proceed: it needs `purchases.override`, else 403 `FORBIDDEN`. The bill stores `varianceAccepted: true` and the audit record notes it.
+- The bill's `purchaseOrderId` is set (all GRN lines on one bill must belong to one PO, else 400). Billing raises PO line `billedQty`; a PO that is fully received and fully billed becomes `closed`.
+- Journal: B.1. Direct lines may be mixed with GRN lines on one bill.
+- Approval rules for `purchase` apply as before (202 `approvalRequest`).
+
+Bill JSON gains `purchaseOrderId`, `varianceAccepted`, and per line `grnLineId`, `grniValue`, `varianceValue`.
+
+### B.5 Reorder suggestions
+
+`GET /reorder-suggestions?locationId=` (`purchase_orders.view`; location-scoped) -> `{ data: [...], total }`. Stock-tracked, active items with `reorderLevel > 0`. Without `locationId`, every location where the item has had stock moves is listed; with it, every such item at that location (including zero stock).
+
+```
+{ itemId, itemName, sku, unit, locationId, locationName, onHand, reserved, openPoQty, position, reorderLevel,
+  suggestedQty, lastVendorId, lastVendorName, lastRate }
+```
+
+- `openPoQty` = unreceived, uncancelled quantity on `approved`, `sent` and `partially_received` POs delivering to that location.
+- `reserved` = active sales reservations at the location when the table `stock_reservations` exists (v1.8 A), else 0.
+- `position = onHand - reserved + openPoQty`. Listed when `position <= reorderLevel`.
+- `suggestedQty = reorderLevel x 2 - position` (order up to twice the reorder level), at least 1 unit rounded up to the quantity precision.
+- Last vendor = vendor of the most recent posted bill containing the item.
+
+`POST /reorder-suggestions/purchase-orders` (`purchase_orders.manage`, 201):
+
+```
+{ selections: [{ itemId, locationId, qty, partyId? }] }      // partyId defaults to the last vendor, else 400
+```
+
+Creates draft POs grouped by vendor and location, at the item's purchase price (last bill rate when known). Returns `{ data: [PO] }`.
+
+### B.6 Stock counts
+
+`POST /stock-counts` (`stock_counts.manage`, 201) body `{ locationId, itemIds?: uuid[], notes? }`. Without `itemIds` the scope is `all`: every stock-tracked item with any stock move at the location. With them the scope is `selected`. The snapshot (`expectedQty` = on hand at that moment, `snapshotAt`) is stored per line. One open count per location (409 `COUNT_OPEN`).
+
+`GET /stock-counts?status=&locationId=&limit=&offset=` -> `{ data: [{ id, number, status, locationId, locationName, scope, snapshotAt, lineCount, countedCount, varianceValue, createdAt }], total }`.
+
+`GET /stock-counts/:id`:
+
+```
+{ id, number, status, scope, locationId, locationName, snapshotAt, notes, varianceValue, postedAt, postedBy, approvedBy,
+  thresholdValue, createdBy, createdAt, needsApproval,
+  summary: { lines, counted, uncounted, withVariance },
+  lines: [{ itemId, itemName, sku, barcode, unit, expectedQty, movedSince, expectedNow, countedQty, varianceQty, varianceValue }] }
+```
+
+- `movedSince` = stock moves at the location after `snapshotAt`; `expectedNow = expectedQty + movedSince`; `varianceQty = countedQty - expectedNow` (null until counted). `varianceValue` = variance x average cost (only with `items.view_cost`, else absent).
+
+`POST /stock-counts/:id/scans` (open counts only; 409 `NOT_OPEN`):
+
+```
+{ scanId?: string(<=64), code?: string, itemId?: uuid, qty?: number (default 1), mode?: 'add' | 'set' (default 'add') }
+```
+
+- Exactly one of `code` (barcode or SKU, case-insensitive exact) and `itemId`. Unknown code -> 400 `UNKNOWN_BARCODE`.
+- `mode: add` adds `qty` to the counted quantity (scanner); `set` replaces it (manual entry, `qty >= 0`).
+- An item that is not on the count: added with expected 0 for scope `all`; 400 `NOT_IN_COUNT` for scope `selected`.
+- A `scanId` already used on this count changes nothing and returns the current line with `duplicate: true`.
+- Response `{ duplicate, line: { ...line as above } }`.
+
+`POST /stock-counts/:id/post { zeroUncounted?: boolean }` (`stock_counts.manage`): only counted lines are posted (uncounted lines are skipped unless `zeroUncounted`, which counts them as zero). For each line with variance: `stock_count` move at the location, gains at the current average cost (item purchase price when none), losses at the average cost. One journal (voucher `stock`): Dr/Cr Inventory net, Dr Stock shortage & wastage for losses, Cr Other income for gains, with each line's variance computed again under the item lock. If the sum of absolute variance values exceeds `countApprovalValue` and the user lacks `stock_counts.approve`: 403 `COUNT_APPROVAL_REQUIRED` with `details: { varianceValue, thresholdValue }`. Returns the count (status `posted`). A count with no variance posts with no moves. 409 `NOT_OPEN` otherwise.
+
+`POST /stock-counts/:id/cancel { reason }`: open counts only. Audited: `stock_count` create, scan(not audited per scan), post, cancel.
+
+### B.7 Errors added
+
+`OVER_RECEIPT` 400, `OVER_BILLED` 400, `UNKNOWN_BARCODE` 400, `NOT_IN_COUNT` 400, `PRICE_VARIANCE` 409, `PO_NOT_RECEIVABLE` 409, `NOT_EDITABLE` 409, `INVALID_STATE` 409, `FULLY_RECEIVED` 409, `HAS_BILLS` 409, `COUNT_OPEN` 409, `NOT_OPEN` 409, `COUNT_APPROVAL_REQUIRED` 403. Cross-tenant ids return 404 as everywhere else.
+
+### B.8 Client (Flutter)
+
+`lib/features/purchase_orders/` (list, form, detail, receive goods, create bill, reorder suggestions) and `lib/features/stock_counts/` (list, count session, variance review). Routes and nav entries are exposed from `purchasing_routes.dart`. A PO's approval is acted on in the existing approvals screens.
+
+### B.9 Demo data
+
+`seedP2p`: approval rule for purchase orders of 2,00,000 or more (Owner); POs in five states (pending approval, sent, partially received, closed after a three-way-matched bill, draft from reorder); one posted stock count with a small variance.
+
+
+# v1.8.2 additions
+
+## Optimistic edit check (`STALE_EDIT`)
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 409 | `STALE_EDIT` | An edit sent `expectedUpdatedAt` and the record changed after that time. Message: "Someone else changed this <record> while you were editing. Reload to see the latest version." |
+
+- Edit requests (`PATCH` or `PUT`) may carry `expectedUpdatedAt`: the `updatedAt` the client last read. If it is missing the edit is applied as before.
+- Routes: `PATCH /parties/:id`, `/items/:id`, `/accounts/:id`, `/locations/:id`, `/sales-orders/:id`, `PUT|PATCH /purchase-orders/:id`, `/work-orders/:id`, `/ra-bills/:id`, `/projects/:id`, `/cost-centres/:id`, `/units/:id`, `/bookings/:id`, `/workers/:id`.
+- Responses of those resources carry `updatedAt` (ISO time). Migration `019_updated_at.sql` adds `updated_at` to `parties`, `accounts` and `locations` and keeps it current with a trigger. Migration `020_updated_at_ops.sql` does the same for `work_orders`, `ra_bills`, `projects`, `cost_centres`, `units`, `bookings` and `workers`.
+- Not covered: DPRs, indents, shipments, wage sheets, BOQ lines and payment plans (single-owner or status-driven edits).
+- Client: the edit form sends the `updatedAt` it loaded. On `STALE_EDIT` it keeps the typed values, shows the message and offers "Reload", which refetches the record.
+- Cancelled, posted or locked documents are refused on the server (`NOT_EDITABLE`, `ALREADY_CANCELLED`, `PERIOD_LOCKED`); the UI hides their edit actions.
+
+## GSTIN check digit on edit
+
+- Create requests always check the GSTIN check digit when it is enforced (production, or `ENFORCE_GSTIN_CHECKSUM=1`).
+- `PATCH /parties/:id` and `PATCH /company` check it only when the GSTIN in the request differs from the saved one, so older records can still be edited. The demo seed uses valid check digits.
+
+## Client duplicate-submit rules
+
+- `ApiClient` sends one request for identical mutations (same method, path and body) that overlap in time.
+- After a network failure, timeout or 5xx, the next identical `POST` reuses the `Idempotency-Key` of the failed one, so a retry cannot post twice.
+- A form with unsaved edits asks "Discard changes?" before sidebar, `context.go` and browser-back navigation, not only before pop. A successful save in the last 5 seconds skips the prompt.
+
+## GET /analytics/overview
+
+Permission `reports.view`. Query: `from`, `to` (`YYYY-MM-DD`; default financial-year start to today; at most 3 years). The previous period is the equal-length window ending the day before `from`.
+
+Response: `{ from, to, previousFrom, previousTo, kpis: { current, previous }, trend, cashFlow?, topCustomers, topItems, salesByLocation, expensesByCategory, ageing }`.
+
+- `kpis.*`: `sales` (invoices less credit notes, ex-tax), `purchases`, `expenses` always. `collections`, `payments`, `receivables`, `payables`, `cashAndBank` need `accounts.view` or `payments.view`. `grossProfit`, `netProfit` need `accounts.view`. `stockValue` needs `items.view_cost`. Hidden fields are omitted.
+- `trend`: `[{ month: 'YYYY-MM', sales, purchases, expenses }]`. `cashFlow` (same permission as collections): `[{ month, cashIn, cashOut }]`.
+- `topCustomers`: `[{ partyId, name, amount, invoices, share }]` (share in percent). `topItems`: `[{ itemId, name, unit, qty, amount }]`. `salesByLocation`: `[{ locationId, name, amount }]`. `expensesByCategory`: `[{ accountId, category, amount }]`.
+- `ageing.receivables` and `ageing.payables`: `{ notDue, d1_30, d31_60, d61_90, d90plus, total }` as of `to`.
+- Document figures respect the user's location scope.
+
+## Business types, modules and plans (track D)
+
+**Security note.** Modules only shape the menu. A disabled module vanishes from the navigation and its routes redirect home, but nothing is blocked on the server. Permissions (role based, checked by `ctx.require`) remain the only access control. Never rely on a module being off to protect data.
+
+### GET /business-types (public, no auth)
+Returns `{ groups, types, modules, plans, termDefaults, countries, permissionCount }`.
+- `types[]`: `{ id, name, group, description, icon, modules[], roles[{ name, description, permissions[] }], terms{}, quickActions[{ label, route, permission }] }`. About 50 types in 15 groups (retail, food, healthcare, professional, construction, manufacturing, education, hospitality, logistics, agriculture, services, non-profit, public sector, companies, plus `general`).
+- Role templates use real job titles and only existing permission keys. The catalogue is validated at server start; an unknown permission, module, term or group stops the server.
+- Add a module or permission in one place: `backend/src/lib/business-types.ts` (and `lib/core/business_profile.dart` for the client list).
+
+### Signup
+`POST /auth/signup` additionally accepts `businessType` (default `general`), `plan` (default `business`), `country` (ISO code or `XX`, default `IN`). `stateCode` is optional. A non-IN country always stores state code `97` and no GSTIN. The company starts with the type's modules (explicit `enabledModules`), its words (`terms`) and its role templates.
+
+### POST /company/business-profile (`company.manage`)
+Body (all optional): `businessType`, `plan`, `country`, `currency`, `enabledModules` (array or null), `terms` (map of word key to singular word, 30 characters).
+- A changed `businessType` applies that type's module defaults and words (`terms = type terms + body.terms`), then creates any missing role templates (`is_system = false`, existing names untouched).
+- It never deletes or edits roles and never removes a user's role.
+- `country` or `currency` cannot change once an invoice or purchase bill exists: `409 CONFLICT` with `details: { country: 'Locked' }` or `{ currency: 'Locked' }`.
+- Outside IN, `gst`, `tds`, `income_tax` and `einvoice` are switched off.
+- Audited as `business_profile`. Returns `{ company, rolesCreated }`.
+- `GET /company` returns `businessType`, `plan`, `enabledModules` (`null` = every module; older companies), `terms`, `country`, `currency`, `logoFileId`, `brandColor`.
+
+### Plans (a default the owner may change)
+`PLANS` in `backend/src/lib/business-types.ts`: `solo` 1 user and a simplified menu (limited module set); `team` 10 users; `business` 50 users; `enterprise` unlimited users with single sign-on, approvals and multiple companies (informational, not enforced). A plan is only a setting; there is no billing.
+
+The user limit is enforced when a user is created or reactivated: `409 USER_LIMIT` with a plain message, for example "The Team plan allows 10 users. Change the plan under Settings, Business profile to add more." It counts active users with a role in the company. SSO auto-provisioning checks the same limit and redirects with `ssoError=SSO_USER_LIMIT` instead of creating the user. Only `solo` limits modules and only the user limit is enforced for every plan; the other plan features (single sign-on, approvals, multiple companies) are descriptions, not checks.
+
+Outside India (`country` not `IN`) the GST rate master does not apply: items, invoices, bills, purchase orders and expenses accept any tax rate from 0 to 100 in `gstRate`. The tax is still computed as one rate (split as CGST and SGST against the company's state `97`); there is no separate VAT engine, return or reverse charge.
+
+# Wave 2: Clinic and hospital OPD (module `clinic`)
+
+Module key `clinic`, on by default for `clinic`, `hospital` and `diagnostic_lab`. In-patient care (IPD) is described at the end of this section.
+Permissions: `clinic.view` (read lists), `clinic.front_desk` (patients, appointments, tokens), `clinic.consult` (clinical notes, vitals, prescriptions), `clinic.manage` (doctors, fees). Billing needs `invoices.create`, and `payments.create` to take money.
+
+Clinical data (vitals, complaints, findings, diagnosis, advice, tests, prescription lines, patient `notes`) is returned only to users with `clinic.consult` and is never in list endpoints or audit entries (audit holds field names only).
+
+**Patients**
+- `GET /clinic/patients?q=&limit=&offset=` search name, phone or UHID. No notes.
+- `POST /clinic/patients` (front_desk). Body: `name, sex(male|female|other), dob?|ageYears?, phone, address?, bloodGroup?, allergies?, emergencyName?, emergencyPhone?, notes?, force?`. Creates a customer party and a UHID (`UHID/26-27/00001`). Same phone and same name (case-insensitive) answers `409 DUPLICATE_PATIENT` with `details.matches`; send `force: true` to register anyway. 201 with the patient.
+- `GET /clinic/patients/:id`, `PATCH /clinic/patients/:id` (front_desk, `expectedUpdatedAt`). `notes` shown and settable only with `clinic.consult`.
+- `GET /clinic/patients/:id/history` visits with doctor, bill and payment status; diagnosis and Rx count only with `clinic.consult`.
+
+**Doctors**: `GET /clinic/doctors`, `POST /clinic/doctors`, `PATCH /clinic/doctors/:id` (manage). Body: `name, userId?, speciality?, registrationNo?, consultFee, followUpFee, followUpDays, slotMinutes, workingHours:[{day 0-6 (0=Sunday), from:"HH:MM", to}], isActive`. `GET /clinic/doctors/:id/slots?date=` lists slots with `free`.
+
+**Appointments** (the queue is the list for a date)
+- `GET /clinic/appointments?date=&doctorId=&patientId=&status=` sorted by status, token, time. No clinical data.
+- `POST /clinic/appointments` (front_desk). Booked: `patientId, doctorId, date, startTime, reason?`. Walk-in: `patientId, doctorId, walkIn: true, reason?` (today, status `arrived`, token number per doctor per day). `409 SLOT_TAKEN` on a taken slot; `400` outside working hours or off the slot grid or in the past.
+- `POST /clinic/appointments/:id/status` `{status: arrived|cancelled|no_show, reason?}` (front_desk). Flow: booked to arrived, cancelled or no_show; arrived to cancelled. Arrival gives a token. `in_consultation` and `done` are set by starting and completing a visit.
+- `POST /clinic/appointments/:id/reschedule` `{date, startTime, doctorId?}` for a booked appointment.
+
+**Consultations** (all need `clinic.consult` except billing)
+- `POST /clinic/visits` `{appointmentId}` or `{patientId, doctorId}` (creates a walk-in). Moves the appointment to in_consultation. Repeating returns the same visit.
+- `GET /clinic/visits/:id` full visit with `rx` lines; front desk gets the non-clinical header only (`clinical: false`).
+- `PATCH /clinic/visits/:id` `{vitals:{bpSys,bpDia,pulse,tempC,spo2,weightKg,heightCm}, complaints, findings, diagnosis, testsAdvised, advice, followupDate, rx:[{itemId?, medicine, dose, frequency, days, instructions}], expectedUpdatedAt}`.
+- `POST /clinic/visits/:id/complete` closes the visit and marks the appointment done.
+- `GET /clinic/visits/:id/prescription` data for the A5 prescription (clinic header, doctor and registration number, patient, Rx, advice, follow-up).
+- `POST /clinic/visits/:id/bill` (`invoices.create` and front_desk or consult) `{locationId?, includeConsultation?, lines:[{itemId, qty, rate?, discountPct?, description?}], payment?:{accountId, mode, amount, reference?}}`. Adds the consultation fee, or the follow-up fee when the patient had a paid consultation with the same doctor within `followUpDays`. Uses each item's own tax rate. Returns `{invoice, payment, feeKind}`. `409 ALREADY_BILLED` unless the earlier invoice was cancelled. `payment` needs `payments.create`.
+
+**In-patient care (IPD)** (migration 039). Permissions: `clinic.ipd` (see the bed board and stays, add and post charges) and `clinic.ipd_manage` (set up wards and beds, admit, transfer, deposits, void charges, discharge and bill). Granted to Owner, Company Admin, and by role template to hospital and clinic staff (Front Desk and Billing get both; Doctor and Nurse get `clinic.ipd`). Deposits and the final bill need `payments.create` and `invoices.create`. Diagnosis, treatment, advice and the provisional diagnosis are clinical: returned and written only with `clinic.consult`, never in audit entries. Admission numbers use the `IPD` series (`IPD/26-27/00001`). Settings routes (wards, beds, summary) answer to both PATCH and PUT.
+- `GET /clinic/ipd/wards` wards with beds. `POST /clinic/ipd/wards` `{name, kind: general|semi_private|private|icu|nicu|other, sortOrder?, isActive?}` (409 `DUPLICATE_WARD`). `PATCH|PUT /clinic/ipd/wards/:id` (409 `WARD_IN_USE` when switching off a ward with admitted patients).
+- `POST /clinic/ipd/beds` `{wardId, bedNo, dailyRate, isActive?}` (409 `DUPLICATE_BED`). `PATCH|PUT /clinic/ipd/beds/:id` `{bedNo, dailyRate, wardId, status: available|cleaning|maintenance, isActive}`; 409 `BED_OCCUPIED` while a patient is in it. The status `occupied` is set only by admission and transfer; a vacated bed goes to `cleaning` until someone sets it `available`.
+- `GET /clinic/ipd/board` `{counts:{total, available, occupied, cleaning, maintenance}, admitted, wards:[{id, name, kind, beds:[{id, bedNo, dailyRate, status, admission: null | {id, number, patientName, uhid, doctorName, admitDate, days}}]}]}`.
+- `GET /clinic/ipd/admissions?status=admitted|discharged&q&wardId&doctorId&limit&offset` `{total, data:[{id, number, status, admitDate, dischargeDate, days, expectedDays, patient, doctor, bed, invoiceId}]}`.
+- `POST /clinic/ipd/admissions` `{patientId, doctorId, bedId, expectedDays?, provisionalDiagnosis?, deposit?:{accountId, mode, amount, reference?}}` 201 with the detail. The patient and doctor are the OPD records. 409 `ALREADY_ADMITTED`, 409 `BED_TAKEN`. The first day's bed charge is posted at once.
+- `GET /clinic/ipd/admissions/:id` header plus `stays[]` (bed, from, to, rate), `charges[]` (`date, kind: bed|service|medicine, description, qty, rate, amount, isVoid`), `deposits[]`, `totals {bed, service, medicine, total, deposits, balance}` (before tax), `invoice` after discharge, and with `clinic.consult` `provisionalDiagnosis` and `summary {diagnosis, treatment, advice, condition, followupDate}`.
+- `POST .../transfer` `{bedId, reason?}`: closes the current stay and opens one in the new bed at the new bed's rate. Nights before the move day stay on the old bed; the move day is charged to the new bed. The old bed becomes `cleaning`.
+- `POST .../deposits` `{accountId, mode, amount, reference?}` a receipt through the payments service, left unallocated until discharge.
+- `POST .../charges` `{kind: service|medicine, itemId?, description?, qty, rate?, chargeDate?}`. With `itemId` the description and rate default to the item's, and the invoice line keeps the item's own GST rate. Without it the line is a "Hospital services" line at 0% GST. `POST .../charges/:chargeId/void` `{reason}` removes a service or medicine charge (bed charges follow the stays and cannot be voided).
+- `POST .../bed-charges` posts every missing bed night up to today (repeating adds nothing). `POST /clinic/ipd/bed-charges/run` does it for every admitted patient (the daily button on the board).
+- `PATCH|PUT .../summary` (`clinic.consult`) `{diagnosis, treatment, advice, condition, followupDate, expectedUpdatedAt}`.
+- `POST .../discharge` `{diagnosis?, treatment?, advice?, condition?, followupDate?, locationId?, payment?:{accountId, mode, amount, reference?}, allowCredit?}`. Needs diagnosis and treatment (saved earlier or sent here; summary fields need `clinic.consult`), else 400. In one transaction: closes the stay, posts the remaining bed nights (at least one day), frees the bed to `cleaning`, creates the invoice through `createInvoice` (bed nights grouped per stay at 0% GST like the OPD consultation; services at 0%; items at their own rate), applies the deposits to it, takes `payment` if given, and sets the admission `discharged`. Returns `{admission, invoice:{id, number, total}, depositsApplied, balanceDue, refundDue}`. 409 `BALANCE_DUE` when money is still owed and neither `payment` nor `allowCredit` covers it. 409 `NOT_ADMITTED` on a second call. `refundDue` is deposit left over; use the refund endpoint to pay it back.
+- `POST .../refund` `{accountId, mode, amount, reference?}` (`clinic.ipd_manage`, `payments.create`) pays back deposit left after the final bill, through the payments service as a customer refund (migration 043). 409 `NOT_DISCHARGED` before discharge; 400 when `amount` is more than `refundDue`. The detail reply carries `refundDue` (deposits less what the bill used less earlier refunds).
+- `GET .../discharge-summary` (`clinic.consult`) `{hospital, doctor, patient, admission, provisionalDiagnosis, summary, medicines[]}` for the PDF.
+
+# Wave 2: Restaurant
+
+Module key `restaurant`. Permissions: `restaurant.orders` (take orders, send KOT, print bill, move, merge), `restaurant.kitchen` (kitchen display), `restaurant.settle` (settle bills), `restaurant.manage` (menu, floor, settings, cancel sent lines, discounts, reopen). Reads need any of the four. All paths are under `/api/v1`. Errors use the usual `{error:{code, message, details}}` body.
+
+## Setup
+- `GET /restaurant/settings` -> `{serviceChargePct, serviceChargeGst, locationId, stations[]}`. `PATCH` (manage) takes the same fields (`stations` is read-only).
+- `GET|POST /restaurant/categories`, `PATCH|DELETE /restaurant/categories/:id` (manage). Body `{name, sortOrder?, isActive?}`. 409 on a duplicate name.
+- `GET /restaurant/menu?q&categoryId&station&available=true|false` -> `{data:[{itemId, name, shortName, price, gstRate, unit, categoryId, categoryName, diet, available, availableToday, station}], total}`. `available` is false when the item is switched off today or inactive.
+- `POST /restaurant/menu` (manage) body `{itemId | newItem:{name, salePrice, gstRate=5, hsnCode?, unit='PLATE'}, categoryId?, diet: veg|non_veg|egg, available?, station='Main', shortName?}`. `newItem` creates a non-stock item. 409 if the item is already on the menu.
+- `PATCH /restaurant/menu/:itemId` same optional fields plus `expectedUpdatedAt` (409 `STALE_EDIT`). Captains and kitchen may send `available` alone. `DELETE` removes the menu entry, not the item.
+- `GET /restaurant/floor` -> `{areas:[{id, name, sortOrder, isActive, tables:[{id, name, seats, areaId, status: free|occupied|bill_printed, order: null | {id, number, covers, captainName, openedAt, amount, unsentLines, readyLines}}]}]}`. Status comes from the table's open order.
+- `POST /restaurant/areas`, `PATCH|DELETE /restaurant/areas/:id` (409 `HAS_TABLES`). `POST /restaurant/tables`, `PATCH|DELETE /restaurant/tables/:id`. A table with an open order cannot be deactivated or deleted (409 `TABLE_BUSY`); a table with history is deactivated instead of deleted.
+
+## Orders
+- `POST /restaurant/orders` `{kind: dine_in|takeaway|delivery, tableId (dine-in), covers?, captainId?, customerPartyId?, customerName?, customerPhone? (required for delivery), deliveryAddress?, notes?, locationId?, lines?:[{itemId, qty, note?}]}` -> 201 order. 409 `TABLE_BUSY` (details `orderId`) if the table has an open order. Number is `Oyymmdd-nnn`, counted per day.
+- `POST /restaurant/orders/:id/settle` also takes `{chargeToRoom: {roomNumber | reservationId}}` instead of `payments`: the bill's taxable value (after discount, with service charge) is posted once to the checked-in guest's hotel folio through `postFolioCharge` (source `restaurant`, ref = order id; 409 `NO_OPEN_FOLIO` if nobody is in that room) and the hotel invoice taxes it at check-out. No restaurant invoice is made; the reply has `invoice: null` and `folio {reservationId, lineId, amount}`.
+- `GET /restaurant/orders?kind&status=active|open,settled&date&q&limit&offset` -> `{data:[{id, number, kind, status, tableName, customerName, customerPhone, itemCount, amount, readyLines, unsentLines}], total}`.
+- `GET /restaurant/orders/:id` -> order with `lines[]` (state draft|sent|cancelled, kitchenStatus new|preparing|ready|served, kotNo, note), `kots[]` and `bill`.
+- `PATCH /restaurant/orders/:id` `{covers, captainId, customerName, customerPhone, deliveryAddress, notes, expectedUpdatedAt}`.
+- `POST /restaurant/orders/:id/lines` `{items:[{itemId, qty, note?}]}` adds unsent lines at the item's current price. 409 `ITEM_UNAVAILABLE` when switched off. `PATCH .../lines/:lineId` `{qty, note}` for unsent lines only (409 `LINE_SENT`).
+- `POST .../lines/:lineId/cancel` `{reason}`. Unsent lines are removed. Sent lines need `restaurant.manage` and a reason (403 / 400) and are kept as cancelled with an audit entry.
+- `POST .../send-kot` -> `{newKotIds[], order}`. One ticket per station for the unsent lines, all sharing one KOT number for the day. Calling again with nothing new returns `newKotIds: []`.
+- `POST .../move` `{tableId}` (409 `TABLE_BUSY`). `POST .../merge` `{fromOrderId}` moves the other order's lines and tickets here and cancels it ("Merged into ...").
+- `POST .../print-bill` `{discountPct? | discountAmount?, discountReason?, waiveServiceCharge?}` (percent or amount, not both; an amount is stored as a percent of the food total to 2 decimals) sets status `bill_printed` and freezes lines (409 `BILL_PRINTED` on edits). Discount or waiver needs `restaurant.manage`; a discount needs a reason. Service charge percent is copied from settings. `POST .../reopen` (manage) returns it to `open`.
+- `POST .../cancel` `{reason}` cancels the order; a manager is needed once anything is sent.
+- `POST .../settle` `{payments:[{mode: cash|upi|card, amount, reference?}], partyId?}` (settle). In one transaction: creates the tax invoice (each item's own GST rate; discount on every line; service charge as a separate line) with `createInvoice`, one receipt per payment with `createPayment`, and sets the order `settled`. Payments must add up to the bill total (400 otherwise). 409 `UNSENT_LINES` if lines were not sent. Guest is the party "Walk-in guest" unless `partyId` or the order's customer is set. Returns `{order, invoice:{id, number, total}, receipts[]}`.
+- `bill` = `{lines, gross, discountPct, discount, serviceChargePct, serviceCharge, taxable, cgst, sgst, igst, taxTotal, roundOff, total, gstSummary:[{rate, taxable, cgst, sgst, igst}]}`. Lines with the same item and rate are grouped.
+
+## Kitchen
+- `GET /restaurant/kots?station&status=new,preparing,ready&orderId&limit` (default: new, preparing, ready on active orders) -> `{data:[{id, kotNo, station, status, createdAt, orderNumber, kind, tableName, areaName, covers, captainName, lines:[{id, name, qty, note, state, kitchenStatus}]}]}`. `GET /restaurant/kots/:id` one ticket.
+- `PATCH /restaurant/kots/:id/status` `{status: new|preparing|ready|served}` moves every live line forward; 409 `STATUS_BACKWARD` going back. `PATCH /restaurant/kot-lines/:id/status` does one line. Kitchen or manage may set any status; a captain may set `served`.
+
+# Wave 2: Counter billing (POS)
+
+Module key `pos`. Permissions: `pos.use` (sell, hold, open and close own session, return goods) and `pos.manage` (see and close any session, reports of all sessions). Sales also need no other permission; the service posts the invoice and receipts itself. Money is rupees with 2 decimals. Errors use the usual `{error:{code,message,details}}` shape.
+
+## Sessions (shifts)
+- `GET /pos/sessions/current?locationId=` `{session|null, openCount}` the caller's open session.
+- `POST /pos/sessions` `{locationId, openingFloat?, notes?}` 201. One open session per user and location: `409 SESSION_OPEN` with `details.sessionId`.
+- `GET /pos/sessions?status&locationId&from&to&mine&limit&offset` own sessions; `pos.manage` sees all.
+- `GET /pos/sessions/:id` and `/report` the X report while open, the Z report once closed: `{kind:'X'|'Z', session, sales:{count,total,taxTotal,discountTotal,itemsSold,creditGiven}, payments:{cash,upi,card,other}, refunds:{...}, returns:{count,total}, cashIn, cashOut, expected:{cash,upi,card,other}, counted, difference, cashMoves[]}`. Expected cash = opening float + cash received (net of change) - cash refunded + cash in - cash out. Other modes: received - refunded.
+- `POST /pos/sessions/:id/cash-moves` `{kind:'in'|'out', amount, reason}` 201. Cash out above the cash in the drawer: `409 INSUFFICIENT_CASH`. Cash moves are session records only; they post no journal.
+- `POST /pos/sessions/:id/close` `{counted:{cash, upi?, card?, other?}, notes?}` returns the Z report. `difference` = counted - expected for each counted mode. Closed again: `409 SESSION_CLOSED`.
+- Someone else's session without `pos.manage`: 403.
+
+## Items
+- `GET /pos/items?q=&locationId=&limit=` `{exact, data:[{id,name,sku,barcode,unit,price,gstRate,hsnCode,trackStock,stock}]}`. An exact barcode or SKU match comes back alone with `exact:true`; otherwise a name/SKU/barcode contains search, names starting with the text first. `stock` is on hand minus reserved at the location (null when stock is not tracked). The location is the one asked for or the caller's open session's.
+- `GET /pos/items/frequent?locationId=` top sellers of the last 60 days at the location, filled up with items by name.
+
+## Sales
+- `POST /pos/sales` 201 `{sessionId | locationId, partyId?, lines:[{itemId, qty, rate?, discountPct?}], billDiscount?:{type:'pct'|'amount', value}, payments:[{mode:'cash'|'upi'|'card'|'other', amount, reference?}], allowCredit?, notes?}`.
+  - Creates a normal posted invoice (GST, stock, ledger, numbering as `POST /invoices`) and one receipt per payment mode, in one transaction. No partyId: the shared "Walk-in Customer" (created once per company). The bill discount is spread over the lines as extra line discount.
+  - `cash` amount is what the customer handed over. Applied cash = min(cash, total - non-cash); the rest is `changeDue`. Receipts record cash net of change. UPI/card/other above the total: 400.
+  - Short payment: 400, unless `partyId` names a customer and `allowCredit` is true; then the balance stays due on the invoice (`creditAmount`).
+  - No open session: `409 NO_SESSION`; closed session: `409 SESSION_CLOSED`; stock: `409 INSUFFICIENT_STOCK`.
+  - Response (also `GET /pos/sales/:id`): `{id, sessionId, invoiceId, number, date, createdAt, locationName, cashier, company:{name,legalName,gstin,address,phone,pincode,footer,upiId}, customer:{id,name,gstin,phone,isWalkIn}, lines:[{invoiceLineId,itemId,description,hsnCode,qty,unit,rate,discountPct,gstRate,taxableValue,lineTotal,returnedQty}], taxSummary:[{rate,taxable,cgst,sgst,igst}], subtotal, cgst, sgst, igst, taxTotal, roundOff, discountTotal, billDiscount, total, payments:[{mode,amount,reference}], tenderedCash, changeDue, creditAmount, status, returns[]}`.
+- `GET /pos/sales?sessionId&locationId&from&to&q&limit&offset` `{data:[{id,sessionId,number,status,total,creditAmount,customerName,createdAt}], total}`; `q` matches bill number or customer.
+- `POST /pos/sales/:id/return` 201 `{sessionId?, lines:[{invoiceLineId, qty}], reason, refundMode?='cash'}` creates a credit note (goods restocked) through the credit note service. The refund is the credit note total less anything applied to an unpaid balance; it is posted as a journal (receivable against cash or bank) and counted in the caller's open session at the same location. Response is the sale plus `returned:{creditNoteId,creditNoteNumber,total,refundAmount,refundMode}`. Over-returning: 400.
+
+## Held bills
+- `POST /pos/held` 201 `{sessionId | locationId, label?, payload:{...}, total?}` payload is any JSON object up to 60 KB; the client decides its shape.
+- `GET /pos/held?locationId=` `{data:[{id,locationId,label,total,createdAt,createdBy,payload}]}` every held bill at the location, so another counter can pick it up.
+- `POST /pos/held/:id/resume` returns the held bill and deletes it (a second resume: 404). `DELETE /pos/held/:id` 204.
+
+# Platform super admin
+
+The product owner can see and manage every account (tenant). Inside a tenant, organisation roles are unchanged.
+Migration `021_platform_admin.sql`. All routes are under `/platform`, need a signed-in user, and return
+`403 NOT_PLATFORM_ADMIN` for everyone else.
+
+- **Granting admins is CLI-only:** `npm run platform:admin -- grant|revoke <email>` and `-- list` (uses `DATABASE_ADMIN_URL`).
+  There is no screen or endpoint to grant or revoke. The dev seed creates `superadmin@demo.in` / `Demo@1234` in a tenant "Progen Platform" with no company.
+- **There is no "sign in as" yet.** Admins see and change settings and users; they do not open a tenant's data.
+- `GET /me` adds `isPlatformAdmin`. An admin may have no company: `companies` is `[]` and company routes return 403.
+- Tables `platform_admins` and `platform_audit` have RLS with no policy for the app role. Cross-tenant reads go through `platform_*` security definer functions that re-check the admin. Work inside one tenant uses that tenant's row-level security.
+
+| Route | Purpose |
+|---|---|
+| `GET /platform/overview` | `tenants, activeTenants, suspendedTenants, users, companies, usersSignedInLast30Days, byBusinessType[], byPlan[], byCountry[]` (`{key,count}`), `signupsByMonth[]` (12 months, `{month:'YYYY-MM',count}`) |
+| `GET /platform/tenants?q&status&plan&businessType&limit&offset` | `{data,total}`; row: `id, name, status, createdAt, suspendedAt, suspendedReason, companyCount, userCount, activeUsers, businessType, plan, country, ownerName, ownerEmail, lastSignInAt, hasPlatformAdmin`. `q` matches name, owner name or owner email. Plan, type and country are those of the first company. |
+| `GET /platform/tenants/:id` | `{tenant, companies[], users[]}`. Company: `id, name, businessType, plan, country, currency, enabledModules, createdAt, counts{invoices,parties,items}`. User: `id, name, email, isActive, isLocked, lockedUntil, twoFactor, lastSignInAt, isPlatformAdmin, roles[{companyId,role}]`. |
+| `PATCH /platform/tenants/:id` | `{status:'active'|'suspended', reason?, name?}`. Suspending needs `reason` (3 to 500 chars). Returns the tenant row. |
+| `PATCH /platform/companies/:id` | `{plan?, businessType?}`. Modules are re-clamped to the plan; a new type resets modules to its defaults and adds its role templates. `409 USER_LIMIT` when the new plan allows fewer users than are active. |
+| `POST /platform/users/:id/deactivate` `/activate` `/unlock` `/sign-out` | 204. Deactivate and sign-out revoke all refresh tokens. |
+| `POST /platform/users/:id/reset-link` | `{link, expiresAt}`. A one-use token valid 2 hours, same table as `/auth/password/forgot`; no email is sent. |
+| `GET /platform/audit?limit&before&tenantId` | `{data[], next}`; row: `id, adminName, action, tenantId, tenantName, targetType, targetId, detail, createdAt`. Reset tokens are never stored. |
+
+Errors: `409 PLATFORM_ADMIN_PROTECTED` when suspending a tenant that contains a platform admin, or deactivating or creating a reset link for a platform admin. `404` for unknown ids.
+
+**Suspension:** a suspended tenant gets `403 ACCOUNT_SUSPENDED` ("This account is suspended. Contact support.") from login (after the password is verified), MFA, SSO redeem, refresh, and from every secured route for existing access tokens. SSO callback redirects with `ssoError=ACCOUNT_SUSPENDED`. Reactivating restores access.
+`lastSignInAt` is the newest session token of the user or tenant (sign-in or refresh).
+
+# Wave 2: Legal practice (module `legal`)
+
+Permissions: `legal.view` (diary and your matters), `legal.work` (hearings, tasks, time and expenses on your matters), `legal.manage` (all matters, rates, bills, receipts). Billing also needs `invoices.create`; receipts need `payments.create`. A matter is visible to its responsible advocate, its team and anyone with `legal.manage`; any other id returns `404`. Matter numbers come from the `MAT` series (`MAT/26-27/00001`).
+
+| Method and path | Purpose |
+|---|---|
+| `GET /legal/home` | `{today, tomorrow, hearings, pendingOutcome, deadlines, withoutNextDate}`. Hearings are today and tomorrow. Deadlines are open tasks due within 14 days or overdue (`overdue: true`). `pendingOutcome` is past hearings with no outcome. `withoutNextDate` is open matters with no scheduled hearing from today on. |
+| `GET /legal/staff` | People of this business, for pickers. |
+| `GET /legal/matters?status&advocateId&clientId&court&q` | Paged list with `nextHearingDate` and `team`. |
+| `POST /legal/matters` | `title, clientId` (not a vendor) and optional `opposingParty, court, caseType, caseNo, caseYear, filingDate, stage, advocateId, teamIds, feeType (fixed_stage, per_hearing, hourly, retainer), agreedFee, hourlyRate, notes`. Without `legal.manage` the caller becomes the advocate. 400 if `agreedFee` is set on an hourly matter. |
+| `GET /legal/matters/:id` | Matter plus `hearings` and `summary {unbilled {time, fee, disbursement, nonBillable}, openTasks, billedTotal, billedPaid, advanceReceived}`. |
+| `PATCH /legal/matters/:id` | Any create field plus `status` (open, disposed, closed) and `expectedUpdatedAt` (409 `STALE_EDIT`). Only the advocate or a manager changes client, team or fees; only a manager reassigns. |
+| `GET /legal/cause-list?from&to&advocateId` | Scheduled hearings of open matters, default today and tomorrow, at most 62 days. |
+| `GET, POST /legal/matters/:id/hearings` | `hearingDate, court (defaults to the matter court), purpose`. |
+| `PATCH /legal/hearings/:id` | Reschedule a hearing that has no outcome. 409 `ALREADY_RECORDED` after an outcome. |
+| `POST /legal/hearings/:id/outcome` | `outcome, nextDate?, nextPurpose?, nextCourt?, stage?`. Marks the hearing held and creates the next hearing when `nextDate` is given (not before this hearing). On a `per_hearing` matter with an agreed fee it adds an unbilled fee entry. Returns `{hearing, next, feeEntryId, warning}`; `warning` is set when no next date was given. Second call: 409 `ALREADY_RECORDED`. |
+| `GET /legal/tasks?matterId&assigneeId&status&overdue=true` | Tasks across visible matters. |
+| `POST /legal/matters/:id/tasks`, `PATCH /legal/tasks/:id` | `title, kind (limitation, filing, other), dueDate, assigneeId, notes`; patch also `status` open or done. |
+| `GET /legal/entries?matterId&userId&billed&from&to` | Time, fee and disbursement entries. |
+| `POST /legal/matters/:id/entries` | `kind: time` with `minutes` (1 to 1440), optional `rate`; rate falls back to the person's rate card, then the matter rate. `kind: fee` with `amount`. `kind: disbursement` with `disbType` (court_fee, stamp_duty, clerkage, other) and `amount`. All take `description`, `entryDate`, `billable`, `hearingId`; managers may set `userId`. |
+| `PATCH, DELETE /legal/entries/:id` | Own entries, or any with `legal.manage`. 409 `ALREADY_BILLED` once billed. |
+| `GET /legal/rates`, `PUT` or `PATCH /legal/rates/:userId` | Hourly rate card (`legal.manage`). Body `{hourlyRate}`. |
+| `POST /legal/matters/:id/bill` | `entryIds, invoiceDate?, locationId?, reverseCharge?, notes?`. Creates a posted invoice through the invoice service: time and fee entries become lines on "Legal professional fees" (18% GST); disbursements become lines on "Reimbursement of expenses paid on behalf of client" (0% GST). Entries are marked billed. 409 `ALREADY_BILLED` for a billed entry (concurrent bills of one entry: one wins). 400 for non-billable entries. |
+| `GET /legal/matters/:id/bills` | `{bills, receipts}` for the matter. |
+| `POST /legal/matters/:id/receipts` | `kind: fee` with `invoiceId` allocates to that bill; `kind: advance` is received unallocated and stays as client credit. Also `amount, accountId, mode, reference, date, tdsAmount`. |
+| `GET, POST /legal/matters/:id/documents`, `DELETE /legal/documents/:id` | Attach files uploaded with `POST /files`: `{fileId, label}`. |
+
+**Reverse charge.** With `reverseCharge: true` the fee lines use a 0% item ("Legal professional fees (reverse charge)") and the invoice note states that GST is payable by the recipient. The client must have a GSTIN (400 otherwise). Known gap: the invoice service has no reverse-charge flag, so the bill is not marked in GST returns and the client side RCM entry is not automated.
+
+## Wave 2 POS addendum: tax-inclusive prices and held bills on close
+- `GET /pos/settings` `{pricesIncludeTax}`; `PUT /pos/settings` `{pricesIncludeTax: boolean|null}` (`pos.manage` or `company.manage`). null = default: on for business types with the `pos` module.
+- With inclusive prices, item `price` and line `rate` are MRP. `POST /pos/sales` sums the inclusive line amounts (after line and bill discount), shows `total` = that sum rounded to the rupee, and back-calculates each line's ex-tax rate and discount so the invoice total equals it exactly; spare paise land in `roundOff`. Send `expectedTotal` (the total the counter showed); a value more than Rs 1 from the lines gives 400.
+- `GET /pos/sessions/:id` now includes `heldCount`. `POST /pos/sessions/:id/close` returns `409 HELD_BILLS` (`details.count`) while bills are held from that session, unless `confirmHeld: true` is sent.
+
+# Wave 2: Hotel front office (module `hotel`)
+
+Permissions: `hotel.view` (read), `hotel.front_office` (reservations, check-in/out, folio), `hotel.housekeeping` (room status), `hotel.manage` (setup, discounts, forced check-in). Dates are `YYYY-MM-DD`. A night belongs to its date; a stay `arrival` to `departure` has `departure - arrival` nights. Weekend nights are Friday and Saturday.
+
+Setup (`hotel.view` to read, `hotel.manage` to write; PATCH takes `expectedUpdatedAt`, 409 `STALE_EDIT`):
+- `GET/PATCH /hotel/settings` `{pricesIncludeTax, checkInTime, checkOutTime}`
+- `GET/POST /hotel/room-types`, `PATCH /hotel/room-types/:id` `{name, baseOccupancy, maxOccupancy, baseTariff, extraPersonCharge, isActive}`
+- `GET/POST /hotel/rooms`, `PATCH /hotel/rooms/:id` `{number, floor, roomTypeId, isActive}`
+- `GET/POST /hotel/rate-plans`, `PATCH /hotel/rate-plans/:id` `{roomTypeId, name, meal: room_only|breakfast, weekdayTariff, weekendTariff, isActive}`
+
+Housekeeping:
+- `GET /hotel/rooms?status=&roomTypeId=` rows include `status`, `statusReason`, `occupied` (in house now) and `type`.
+- `PATCH /hotel/rooms/:id/status` `{status: dirty|clean|inspected|out_of_order, reason}` (`hotel.housekeeping`). Flow: dirty to clean to inspected; clean or inspected back to dirty; any to out_of_order with a reason (not while in house); out_of_order only back to dirty. 409 `BAD_ROOM_STATUS`.
+
+Availability and boards:
+- `GET /hotel/availability?from&to` (to is exclusive, at most 62 days) returns `{dates, types:[{roomTypeId, name, total, byDate:[{date, booked, available}]}]}`. Out-of-order rooms are not counted as sellable.
+- `GET /hotel/board?from&days=14` returns `{rooms:[{id, number, floor, type, status, stays:[{id, reservationId, number, guest, arrival, departure, status}]}]}` (stays only for assigned rooms).
+- `GET /hotel/today` returns `{date, arrivals, departures, inHouse, roomCounts:{clean,dirty,inspected,out_of_order}, occupied, totalRooms}`.
+
+Reservations:
+- `POST /hotel/reservations` `{guest:{partyId} | {name, phone, address}, arrival, departure, rooms:[{roomTypeId, roomId?, ratePlanId?, adults, children}], overrideTariff?, source: walk_in|phone|ota|agent, sourceName?, status?: tentative|confirmed, notes?, advance?: {accountId, mode, amount, reference?}}`. Returns the reservation (201). 409 `NO_AVAILABILITY` (type full for a night), 409 `ROOM_TAKEN` (specific room overlaps).
+- `GET /hotel/reservations?status=&date=&q=&from=&to=`, `GET /hotel/reservations/:id`, `PATCH /hotel/reservations/:id` (arrival, departure, overrideTariff, notes, source, sourceName; re-checks availability and room overlap; an in-house stay can only change departure, notes and override), `POST /:id/assign {rooms:[{id, roomId}]}` (assign or change specific rooms).
+- `POST /:id/confirm`, `POST /:id/cancel {reason, refund?: {accountId, mode, amount, reference}}` (refund of up to the advance held: an outgoing payment through payments that reverses the receivable, kept as a folio payment of kind `refund`; needs `payments.create`; `advanceHeld` in the reply is net of refunds), `POST /:id/no-show`, `POST /:id/advance {accountId, mode, amount, reference}` (a receipt through payments, kept as an advance on the folio).
+
+Stay:
+- `POST /hotel/reservations/:id/check-in` `{rooms:[{id, roomId, guest:{name, phone?, address?, idType: aadhaar|passport|driving_licence|voter_id|pan|other, idNumber, nationality?, passportNo?, visaNo?, visaType?, visaExpiry?, arrivedFrom?, goingTo?, purpose?}}], force?}`. A foreign nationality needs passport and visa fields (Form C). Room must be clean or inspected (`hotel.manage` can `force`). Posts the first night. 409 `ROOM_NOT_READY`, 400 `TOO_EARLY`.
+- `GET /:id/folio` returns `{reservation, lines, payments, totals:{subtotal, tax, discount, total, paid, balance}, invoice}`. Totals before check-out are estimates; the invoice is exact.
+- `POST /:id/charges` `{chargeType: food|laundry|minibar|extra_bed|other|discount, description, qty?, rate, itemId?, reservationRoomId?}`; `discount` needs `hotel.manage` and `rate` is the amount off.
+- `POST /:id/charges/:lineId/void {reason}`; `POST /:id/payments {accountId, mode, amount, reference}`.
+- `POST /hotel/night-charges {date?}` posts the room charge for every in-house room for that date (default today, never future). Safe to repeat: one room charge per room per date.
+- `POST /:id/check-out` `{payment?: {accountId, mode, amount, reference}, allowCredit?}`. Posts missing nights, creates one tax invoice, allocates advances and payments to it, takes the final payment, frees rooms as dirty. 409 `BALANCE_DUE` if the balance is not settled and `allowCredit` is not set. Returns `{reservation, invoice}`.
+
+Reports (`hotel.view`):
+- `GET /hotel/reports/occupancy?from&to` returns `{rows:[{date, available, sold, revenue, occupancyPct, adr, revpar}], totals}` from posted room nights.
+- `GET /hotel/reports/guest-register?from&to` returns police-register rows: serial, room, name, address, nationality, ID, phone, arrival and departure time, passport and visa fields.
+
+Tax: room nights use the tariff slab (up to 1,000 exempt, 1,001 to 7,500 at 5 percent, above 7,500 at 18 percent), picked per night. Needs a CA check. With `pricesIncludeTax` the tariff is what the guest pays and the invoice back-calculates as at the counter.
+Other modules can add a charge to an open folio through the exported `postFolioCharge` in `backend/src/modules/hotel.ts`.
+
+# Wave 2: Education (module `education`)
+
+For `school` and `coaching`. Permissions: `education.view` (read everything except money), `education.admissions` (admit and edit students), `education.fees` (demands, dues, collection, receipts), `education.attendance` (mark attendance; teachers only for classes where they are the teacher, same day only), `education.manage` (years, classes, heads, plans, concessions, promotion; also allows all of the above). Admission numbers come from the `ADM` series (`ADM/26-27/00001`). A class is a school class with an optional `section`, or a coaching `batch` (`course`, `timing`, `teacherName`). Exams and report cards: see "Wave 2: Education exams and report cards".
+
+| Method and path | Purpose |
+|---|---|
+| `GET /education/home` | `{today, year, classes[{id,label,students,attendanceMarked,present,absent,late,mine}], feesCollectedToday, duesTotal, defaultersCount}`. Money fields need `education.fees`; `feesCollectedToday` is `null` without it. |
+| `GET /education/staff` | `{data[{id,name}]}` people of this business, for the class teacher picker. |
+| `GET, POST /education/years`, `PATCH /education/years/:id` | `{name, startDate, endDate, isCurrent}`. One current year; the first is current. 409 `DUPLICATE_YEAR`. |
+| `GET /education/classes?yearId&kind&active`, `POST`, `GET, PATCH /education/classes/:id` | `{yearId, kind, name, section, course, timing, teacherUserId, teacherName, capacity}`; list rows add `students`. 409 `DUPLICATE_CLASS`. |
+| `GET, POST /education/fee-heads`, `PATCH /education/fee-heads/:id` | `{name, gstRate}`. Each head is a service item (HSN 999293) with its own rate: 0 for school tuition, 18 for most coaching. 409 `DUPLICATE_HEAD`. |
+| `GET, PUT (or POST) /education/classes/:id/fee-plan` | One plan per class. `{name, late{kind: none, flat, percent, per_day; value; headId}, instalments[{label, dueDate, lines[{headId, amount}]}]}`. PUT replaces; instalments match by position so billed ones keep their id. 409 `PLAN_IN_USE` when removing a billed instalment. |
+| `GET /education/students?q&classId&yearId&status` | Search by name, admission number or guardian phone. Default `status=active` (also `left`, `passed_out`). |
+| `POST /education/students` | `name, sex, guardianName, guardianPhone`, optional `classId, rollNo, dob, guardianRelation, address, admissionDate, notes, force`. Creates the payer party. 409 `DUPLICATE_STUDENT` (same name and guardian phone, `matches[]`; resend with `force`), `CLASS_FULL`, `ROLL_TAKEN`. |
+| `GET, PATCH /education/students/:id` | Patch takes any create field plus `status` and `expectedUpdatedAt` (409 `STALE_EDIT`). Read adds `concessions[]` and `dues {due, overdue}` (fees permission). |
+| `POST /education/students/:id/concessions`, `DELETE /education/concessions/:id` | `{headId, kind: percent|amount, value, reason}`. One active concession per student and head; a new one replaces it. An amount is taken off that head in every instalment (never below zero). |
+| `POST /education/promote` | `{fromClassId, toClassId?, passOut?, studentIds?}`. Moves active students (all if no ids) and clears roll numbers, or marks them `passed_out`. Returns `{moved, passedOut}`. 409 `CLASS_FULL`. |
+| `POST /education/demands/generate` | `{classId, instalmentId, preview?, applyLateFee?=true, locationId?}`. One invoice per active student through the invoice service, due date = instalment date. Skips students already billed for that instalment (a cancelled invoice frees it), so it is safe to repeat. A late fee line is added when today is after the due date and the plan has a rule. `preview: true` posts nothing. Returns `{count, alreadyBilled, nothingToBill, amount, lateFeeCount, lateFeeAmount, concessionAmount, created, invoices[]}`. Up to 500 students at a time. Needs `invoices.create` to post. |
+| `GET /education/dues?classId&overdue=true&q` | `{total, dueTotal, overdueTotal, data[{student fields, due, overdue, oldestDue, daysOverdue, reminder}]}`; `reminder` is plain text to copy. |
+| `GET /education/students/:id/ledger` | `{billed, paid, due, bills[], receipts[]}`. |
+| `POST /education/students/:id/collect` | `{accountId, mode, amount, reference?, date?}`. Receipt through the payments service, allocated to the oldest due date first; partial allowed. 400 when amount is over the dues. Needs `payments.create`. Returns `{payment, balance, allocations}`. |
+| `GET /education/receipts/:paymentId` | Receipt data: `{school, receipt, student, paidFor[{invoiceNumber,label,paid,heads[]}], balance}`. |
+| `GET, PUT (or POST) /education/classes/:id/attendance?date` | Roster `{students[{studentId,name,rollNo,status,recorded}], marked}`; default status is `present`. PUT `{date?, marks[{studentId, status: present|absent|late}]}` upserts one row per student per day; unlisted students with no row are saved as present. 400 for a future date; 403 for a teacher of another class or a past date. |
+| `GET /education/classes/:id/attendance/sheet?month=YYYY-MM` | Monthly sheet: per student `marks` by day, counts and `percentage` ((present + late) of marked days). |
+| `GET /education/students/:id/attendance?month` | `{overall, thisMonth, days[]}` with counts and percentage. |
+
+Known gaps: exams and report cards; late fee is only added when demands are generated; no sibling grouping (one party per student); no SMS or WhatsApp sending.
+
+# Wave 2: Funds and donations
+
+Module keys `funds` (government, psu, local_body, ngo, religious, housing_society) and `donations` (ngo, religious). Permissions: `funds.view`, `funds.entry` (propose sanctions and re-appropriation, record grants, link spending), `funds.manage` (funds, heads, budgets, approvals, overspend rule); `donations.view`, `donations.create`, `donations.manage` (cancel receipts, Form 10BD). Money is rupees. A financial year is `2026-27`. Migration 028.
+
+## Settings
+- `GET /funds/settings`, `PUT` or `PATCH /funds/settings`: `{overspendMode: block|warn, reg80gNo, reg80gFrom, reg80gTo, trustPan, receiptFooter}`. `block` makes an overspend a 409 `BUDGET_EXCEEDED` or `FUND_EXCEEDED`; `warn` lets it through and returns `warnings`. Changing `overspendMode` needs `funds.manage`; 80G fields also `donations.manage`.
+
+## Funds
+- `GET, POST /funds/funds`: `name, kind (grant, csr, own, donation, other), sponsor, sanctionNo, sanctionDate, totalAmount, periodFrom, periodTo, returnUnspent, notes`. Rows carry `received, spent, committed, balance`. 409 `DUPLICATE_FUND`.
+- `GET, PATCH /funds/funds/:id`: any create field plus `status` (active, closed) and `expectedUpdatedAt` (409 `STALE_EDIT`).
+- `GET, POST /funds/funds/:id/receipts`: grants received. `amount, date, accountId (cash or bank, default bank), reference, narration`. Posts bank debit and grant income credit. 409 `FUND_CLOSED`. For a fund with `returnUnspent` the credit goes to the liability account "Grants Refundable (Unspent)"; each spending link (`POST /funds/links`) then moves its amount from that liability to grant income (journal on the link id), and `DELETE /funds/links/:id` reverses it. Receipts taken before this change stay as income.
+
+## Budget heads
+- `GET /funds/heads?fy`: flat list with `parentId, level, code, name, accountId, isLeaf, estimate, revised, reappIn, reappOut, budget, actual, committed, available, percentUsed, percentCommitted`; parents add up their children. `totals` sums the major heads.
+- `POST /funds/heads`: `fy, level (major, minor, object), parentId, code, name, accountId (expense account), budgetEstimate, revisedEstimate`. A minor head sits under a major, an object head under a minor. Amounts live on the lowest heads only. 409 `DUPLICATE_HEAD`, `PARENT_HAS_BUDGET`, `PARENT_IN_USE`.
+- `PATCH /funds/heads/:id`: `code, name, accountId, budgetEstimate, revisedEstimate, isActive, expectedUpdatedAt`.
+- Budget of a lowest head = (revised, else estimate) + approved re-appropriation in - out. Available = budget - actual - committed.
+
+## Re-appropriation
+- `GET /funds/reappropriations?fy&status`, `POST /funds/reappropriations`: `fromHeadId, toHeadId, amount, orderNo, orderDate, reason`. Lowest heads of one year. With `funds.manage` it is approved at once; with `funds.entry` it waits as `pending`. 409 `INSUFFICIENT_BUDGET` when the source head has less available.
+- `POST /funds/reappropriations/:id/approve`, `.../reject` (`funds.manage`). 409 `ALREADY_DECIDED`.
+
+## Sanctions and spending
+- `GET /funds/sanctions?status&headId&fundId`, `GET /funds/sanctions/:id`, `POST /funds/sanctions`: `headId, fundId, purpose, amount`. Number `SAN/yy-yy/00001`. Returns `warnings` as a preview; nothing is committed until approval.
+- `POST /funds/sanctions/:id/approve` (`funds.manage`): `adminOrderNo, adminOrderDate, financialOrderNo, financialOrderDate, note`. Applies the overspend rule against the head and the fund's total. An approved sanction commits `amount - spent against it`.
+- `POST /funds/sanctions/:id/reject` (manage), `POST /funds/sanctions/:id/cancel` (pending: entry; approved with no links: manage; else 409 `HAS_SPENDING`).
+- `GET /funds/spendable?type=purchase|expense|payment&q`: documents with an unlinked balance.
+- `POST /funds/links`: `sourceType, sourceId, headId, fundId, sanctionId?, amount? (default the unlinked balance), note`. Spending already covered by a sanction does not count twice. 409 `DOUBLE_COUNT` (a bill and its own payment), `ALREADY_LINKED`, overspend codes above. Cancelled documents drop out of actuals. `GET /funds/links?headId&fundId&sanctionId`, `DELETE /funds/links/:id`.
+
+## Home and reports
+- `GET /funds/home?fy`: `{fy, heads (major heads), funds, pendingSanctions, pendingReappropriations, totals, overspendMode}`.
+- `GET /funds/reports/budget-vs-actual?fy`: heads as above plus `totals`.
+- `GET /funds/reports/fund-wise?from&to`: per fund `opening, received, spent, closing`. Received includes grants and donations tagged to the fund.
+- `GET /funds/funds/:id/utilisation?from&to`: data for the utilisation certificate: `fund, company, opening, received, receipts, spentByHead, spent, closing, returnUnspent, refundDue`. The PDF is built in the app.
+
+## Donations
+- `GET, POST /donors`, `GET, PATCH /donors/:id`: `name, phone, email, pan, aadhaar, address`. Creates a customer party. Aadhaar is returned masked. 409 `DUPLICATE_DONOR` for the same PAN, or the same name and phone unless `force: true`.
+- `GET /donors/:id/statement?fy`: the year's donations, `total`, `eligibleFor80g`, 80G registration.
+- `POST /donations`: `donorId, amount, mode (cash, upi, cheque, bank), date, reference, fundId, purpose, isCorpus, tax80g, accountId`. Receipt number `DON/yy-yy/00001`. Posts bank or cash debit and credit to "Donations Received" (income) or "Corpus Fund" (equity). `tax80g` needs donor PAN or Aadhaar (400). Cash above Rs 2,000 is saved with `deductionEligible: false` and a `warning`; a missing or expired 80G registration adds to `warnings`.
+- `GET /donations?q&from&to&donorId&fundId&status`, `GET /donations/home` (today and this year), `GET /donations/:id` (adds donor, trust and 80G details for the receipt PDF), `POST /donations/:id/cancel` (`donations.manage`, `reason`; reverses the journal).
+- `GET /donations/form-10bd?fy&format=json|csv` (`donations.manage`): eligible 80G donations of the year. Columns: Sr No, Section Code, Donor ID Type, Donor ID, Donor Name, Donor Address, Donation Type (Corpus, Specific grant, Others), Mode of Receipt (Cash, Other modes), Amount of Donation. Donors with no PAN or Aadhaar are listed in `skipped`. Check before filing: the portal's codes change.
+
+# Wave 2: Memberships (module `memberships`) and job cards (module `job_cards`)
+
+Memberships is for gym, salon and housing society. Job cards is for garage, electronics and auto parts. Money is posted through the normal invoice and payment services; these modules write no ledger rows. All bodies are JSON. Dates are `YYYY-MM-DD`. Errors use the usual shape. Migration 033.
+
+## Memberships
+
+Permissions: `memberships.view` (read), `memberships.manage` (everything below), `memberships.checkin` (door check-in only).
+
+- `GET/POST /memberships/plans`, `PATCH /memberships/plans/:id`. Body: `name, billing (upfront|monthly), rateBasis (fixed|per_sqft), durationUnit (months|days), durationCount, price, gstRate, joiningFee, freezeDays, isActive`. A per sq ft plan must be monthly. Each plan makes a service item that carries the tax rate.
+- `GET /memberships/summary` returns `active, expiring (within 7 days), expired, frozen, noPlan, total, visitsToday, duesMembers, duesAmount`.
+- `GET /memberships/members?q=&status=&limit=&offset=`; status is `active|expiring|expired|frozen|none`.
+- `POST /memberships/members` body: `name, phone, emergencyName, emergencyPhone, photoFileId, flatNo, wing, areaSqft, occupancy (owner|tenant), notes, planId, startDate, price, bill (default true), payment {accountId, mode, amount, reference}, locationId`. Creates the customer party, a member number from series `MEM`, the first subscription and, for upfront plans, the first bill (plus joining fee). Returns `{memberId, memberNo, subscription, invoice, payment}`. 400 if a per sq ft plan has no `areaSqft`.
+- `GET/PATCH /memberships/members/:id`. The file holds subscriptions, bills, last 30 visits and dues.
+- `POST /memberships/members/:id/renew` body `planId?, date?, price?, bill, payment`. The new term starts the day after the old end date, or on `date` (default today) when lapsed. 409 `FROZEN` while frozen.
+- `POST /memberships/subscriptions/:id/freeze` `{date?}` and `/unfreeze` `{date?}`. Unfreeze adds the frozen days to the end date, capped by the plan's freeze days left. 409 `NO_FREEZE_DAYS`.
+- `GET /memberships/dues` lists members with unpaid bills and a `reminder` text to copy. `POST /memberships/members/:id/collect` `{accountId, mode, amount, reference}` receipts against the oldest bills first; 400 if more than dues.
+- `GET /memberships/bills/preview?kind=maintenance|renewals&period=YYYY-MM` returns `{count, alreadyBilled, skipped[]}`. `POST /memberships/bills/generate` `{kind, period?, locationId?}` returns `{created, total}`. Maintenance bills one invoice per monthly subscription per period (area times rate for per sq ft). `mem_bills` is unique on subscription and period, so a repeat run creates nothing. Renewals renews members whose term ends within 7 days or has ended.
+- `POST /memberships/checkin` `{memberNo | phone}` returns `{ok, name, endDate, daysLeft, expiringSoon, repeatToday}`. Refused with 409 and a plain message: `MEMBERSHIP_EXPIRED`, `MEMBERSHIP_FROZEN`, `MEMBERSHIP_NOT_STARTED`, `NO_PLAN`, `MEMBER_INACTIVE`. 404 for an unknown member. `GET /memberships/visits?date=`.
+
+## Job cards
+
+Permissions: `job_cards.view` (all jobs), `job_cards.create` (receive, estimate, bill, deliver), `job_cards.work` (technician: sees and works only jobs assigned to them), `job_cards.manage`.
+
+- `GET /job-cards?status=&open=true&mine=true&technicianId=&q=` returns `{data, counts}` by status. `GET /job-cards/technicians`.
+- `POST /job-cards` body: `kind (vehicle|device), vehicleNo, make, model, odometer, serialNo, partyId | customer {name, phone}, complaints, accessories, photoFileIds[], promisedDate, technicianId, locationId`. Number from series `JOB`. Vehicle jobs need `vehicleNo`.
+- `GET/PATCH /job-cards/:id`. Detail holds `lines, totals {parts, labour, subtotal, tax, total}, invoice, nextStatuses, statusMessage` (plain text to copy).
+- `POST /job-cards/:id/lines` `{kind (part|labour), itemId, qty, rate?, discountPct?, description?}`, `PATCH|DELETE /job-cards/:id/lines/:lineId`. Labour must be a non-stocked item. A change after approval puts the job back to `estimate_sent`. Issued parts cannot be changed (409 `ALREADY_ISSUED`).
+- `POST /job-cards/:id/status` `{status, approvedBy?, reason?}`. Flow: received, estimate_sent, approved, in_progress, ready, delivered; `approved` may go back to `estimate_sent`, `ready` back to `in_progress`; cancel before ready with a reason. 409 `BAD_TRANSITION` for any other move, `NOT_BILLED` for delivery without a bill, `BILLED` for cancelling a billed job.
+- `POST /job-cards/:id/issue` `{lineIds?}` while in progress. Checks stock (on hand, less sales order reservations, less parts held by other open jobs) and marks the parts issued; repeating changes nothing. 409 `INSUFFICIENT_STOCK`. Stock itself moves once, when the bill is made.
+- `POST /job-cards/:id/bill` `{payment?}` when ready. Creates one invoice (parts then labour) through the invoice service. 409 `ALREADY_BILLED`. `POST /job-cards/:id/receipt` `{accountId, mode, amount, reference}` against the job bill.
+
+# v1.13 Manufacturing
+
+Module key `manufacturing`. Permissions: `manufacturing.view` (read everything), `.bom` (BOMs, work centres), `.orders` (create, edit, release, cancel orders), `.issue` (issue and return material, job work), `.output` (record output), `.inspect` (quality inspections), `.manage` (close orders, settings, material planning, raise purchase orders). Costs (rates, values) show only with `items.view_cost`. All paths start with `/manufacturing`. Stale edits use `expectedUpdatedAt` and answer 409 `STALE_EDIT`. Every POST is idempotent by `Idempotency-Key`.
+
+Stock moves and journals go through the stock and journal code. Material issued to an order debits Work in Progress (1220) and credits Inventory. Output debits Inventory for the finished goods and by-products, credits Work in Progress for the material it carries and credits Conversion Cost Absorbed (5340) for work centre time and overhead. Closing an order writes any unabsorbed material in WIP to Stock Shortage & Wastage.
+
+## Setup
+- `GET /settings`, `PUT` or `PATCH /settings` `{overheadPct 0-500}` (manage). Overhead is a percent of material plus work centre cost. An order keeps the percent that applied when it was created.
+- `GET /work-centres?q&active`, `POST /work-centres` `{name, hourlyCost}`, `PATCH /work-centres/:id` `{name?, hourlyCost?, isActive?, expectedUpdatedAt?}` (bom). 409 on a duplicate name.
+
+## Bills of materials
+- `GET /boms?q&itemId&status&limit&offset`. Rows: `id, itemId, itemName, version, status (draft|active|archived), outputQty, lineCount, updatedAt`.
+- `POST /boms` `{itemId, outputQty?, note?, lines[{kind (component|byproduct), itemId, qty, scrapPct?, rate?}], steps?[{operation, workCentreId, minutesPerUnit}]}`. Creates the next version as a draft. `qty` is for `outputQty` of the finished item. `rate` is the value per unit of a by-product (default 0). Components and the finished item must be stock items; an item cannot be its own component (400).
+- `GET /boms/:id`: header, `lines`, `steps` (with `workCentreName`, `hourlyCost`), `standardCost` (with cost permission).
+- `PATCH /boms/:id` same body, all optional, replaces lines and steps when sent. Draft only; 409 `BOM_LOCKED` otherwise.
+- `POST /boms/:id/activate`: the previous active version becomes `archived`. 409 `BOM_CYCLE` when the structure loops back on itself.
+- `POST /boms/:id/copy`: new draft version with the same lines. `DELETE /boms/:id`: draft only.
+- `GET /explode?itemId|bomId&qty` explodes into `tree` (nested components with `qty`, `bomId` if the component has its own active BOM) and `raw[{itemId, name, unit, qty, onHand}]`, the total raw material for `qty` including scrap.
+
+## Production orders
+- `GET /orders?status&q&from&to`, `GET /orders/:id`. Detail: header, `materials[{itemId, name, unit, plannedQty, issuedQty, returnedQty, netQty, onHand, ...costs}]`, `steps`, `outputs`, `byProducts`, `movements`, `inspections`, `cost {material, conversion, total, unitCost}`, `variance {lines[{itemId, expectedQty, actualQty, varianceQty, varianceValue}], yieldPct, ...}`, `nextActions`.
+- `POST /orders` `{itemId, qty, locationId, bomId?, plannedStart?, plannedEnd?, salesOrderId?, notes?}`. Uses the active BOM unless `bomId` is given. Material plan = BOM lines scaled to `qty` with scrap. 409 `NO_ACTIVE_BOM`.
+- `PATCH /orders/:id` `{qty?, locationId?, plannedStart?, plannedEnd?, notes?, expectedUpdatedAt?}` (draft or released; qty rescales untouched material lines). `PUT` or `PATCH /orders/:id/materials/:itemId` `{plannedQty}` adds or changes a planned line; `0` removes it if nothing was issued.
+- `POST /orders/:id/release`, `POST /orders/:id/cancel` `{reason}` (409 `HAS_ACTIVITY` once material is issued and not returned, or output exists).
+- `POST /orders/:id/issue` `{all?: true, lines?[{itemId, qty}], note?}` (issue). `all` issues what is still planned. Checks stock at the order's location (409 `INSUFFICIENT_STOCK`); 409 `NOTHING_TO_ISSUE`. Stock leaves at average cost.
+- `POST /orders/:id/return` `{lines[{itemId, qty}], note?}` returns unused material at the cost it left at. 409 `RETURN_TOO_MUCH`.
+- `POST /orders/:id/output` `{goodQty, rejectedQty?, minutes?, byProducts?[{itemId, qty}], date?, note?}` (output). Moves good quantity into stock at cost. Work centre cost uses `minutes` when given, otherwise routing minutes per unit times good plus rejected quantity. Rejected units carry cost into the good units; with no good units the cost goes to wastage. Partial output allowed; 409 `ORDER_NOT_OPEN` after close.
+- `POST /orders/:id/inspections` `{outputId?, passQty, reworkQty, rejectQty, note}` (inspect). Records only; the sum cannot exceed good output not yet inspected (409 `INSPECTION_TOO_MUCH`).
+- `POST /orders/:id/close` `{note?}` (manage). Status `completed`; response has the variance.
+
+Status flow: draft, released, in_progress (first issue or output), completed or cancelled. 409 `BAD_TRANSITION` otherwise.
+
+## Material planning
+- `GET /mrp?locationId` lists `shortages[{itemId, name, unit, required, onHand, onOrder, shortage}]`. Demand = open sales orders (confirmed to partially dispatched) for finished items with an active BOM, net of finished stock and open production orders, exploded to raw material, plus unissued material of released and in-progress orders. Supply = stock on hand and open purchase order quantity (approved, sent, partly received).
+- `POST /mrp/purchase-order` `{partyId, locationId, lines[{itemId, qty}], expectedDate?}` (manage and `purchase_orders.manage`) creates a draft purchase order through the purchase order service.
+- `GET /home`: `{ordersByStatus, shortagesCount, todayOutput[{itemId, name, unit, goodQty}], openJobWork}`.
+
+## Job work outward
+- `GET /jobwork?status&q`, `GET /jobwork/:id` (lines with `qtySent, qtyReceived, qtyScrap, qtyPending`, receipts, `ageDays`).
+- `POST /jobwork` `{partyId, locationId, challanDate?, process, expectedReturn?, vehicleNo?, notes?, lines[{itemId, returnItemId?, qty}]}` (issue). Stock leaves the location at average cost into Stock in Transit. Number from the `JWC` series.
+- `POST /jobwork/:id/receive` `{date?, note?, lines[{lineId, qtyReceived, qtyScrap?}]}`. Processed goods enter stock at the cost sent; scrap goes to wastage. 409 `OVER_RECEIPT`.
+- `POST /jobwork/:id/cancel` `{reason}` before any receipt: stock returns at the cost it left.
+- `GET /jobwork/itc04?from&to` ITC-04 style rows per job worker and item (sent, received, scrap, pending, ageDays, `overdue` after 365 days) with `note: "Check before filing"`. Not a filing.
+
+# v1.9 Channels
+
+Online selling: marketplaces and web stores. No marketplace credentials or network calls exist yet. Every channel works in file-import mode (CSV order and settlement reports) behind the adapter interface in `backend/src/lib/channels/types.ts`. A live API client is added later. Report layouts and API details for Amazon, Flipkart, Meesho, Shopify and WooCommerce: to verify with each marketplace's current docs. Until then the generic column names below are used and each channel can remap its own headers.
+
+Module key `channels`. Permissions: `channels.view` (see everything), `channels.manage` (set up channels, map SKUs, import orders), `settlements.manage` (import settlement reports, post them). Money is in rupees.
+
+## Channels
+
+- `GET /channels/connectors` lists providers with `stage`, `capabilities`, `liveApi` (false) and a note.
+- `GET /channels` returns `{ data, total }`. Each row: `id, provider, name, status, locationId, locationName, partyId, orderStatus, pricesIncludeTax, tcsRate, tdsRate, csvMapping, settlementAliases, csvColumns, lastImportAt, lastError, listingCount, unmappedCount, orderCounts, connector, updatedAt`.
+- `POST /channels` (manage): `provider` (manual, amazon, flipkart, meesho, shopify, woocommerce, other), `name`, `locationId`, optional `partyId` (a customer is created if missing), `orderStatus` (`confirmed` default, or `draft`), `pricesIncludeTax` (default true), `tcsRate` (default 0.5), `tdsRate` (default 0.1), `csvMapping` (generic column to the channel's header), `settlementAliases` (label to line kind). 409 `DUPLICATE_NAME`.
+- `GET /channels/:id`, `PATCH /channels/:id` (manage; same fields, `status` connected or disabled, `expectedUpdatedAt` gives 409 `STALE_EDIT`).
+- TCS (GST section 52) and TDS (section 194-O) rates are defaults to check before filing.
+
+## SKU mapping
+
+- `GET /channels/:id/listings?q=` returns `{ data, total }`; a listing has `channelSku, title, externalId, isActive, components[{ itemId, itemName, itemSku, qty }]`. A single item is one component with qty 1; a bundle has several.
+- `POST /channels/:id/listings` and `PUT` or `PATCH /channels/:id/listings/:listingId`: `{ channelSku, title?, externalId?, isActive?, components: [{ itemId, qty }] }`. Returns `{ listing, ordersCreated }`. Saving a mapping re-runs orders that waited for it. 409 `DUPLICATE_SKU`. `DELETE` gives 204.
+- `GET /channels/:id/unmapped` is the fix list: `channelSku, title, seenCount, lastSeenAt`.
+
+## Orders
+
+Generic order columns: `order_id, order_date, sku, title, qty, unit_price, discount, ship_state, status` (also `buyer_name`, `line_total`). Rows with the same `order_id` are one order. Dates: `YYYY-MM-DD`, `DD-MM-YYYY` or `DD/MM/YYYY`. `status` starting with "cancel" cancels.
+
+- `POST /channels/:id/orders/import` (manage): `{ csv, dryRun }`. Dry run writes nothing and returns `orders[]` with `action` (`create`, `duplicate`, `cancel`, `ignored`, `blocked`), `reason`, `unmappedSkus`, `lines[]` (item, qty, rate before tax), `estimate { subtotal, taxTotal, total }`, plus `issues[]` (bad rows) and `summary`. A real run returns `results[]` (`externalRef, action, status, errorCode, message, salesOrderId, salesOrderNumber, heldAsDraft`) and `summary { total, created, duplicates, cancelled, ignored, failed, heldAsDraft }`.
+- Each order is its own savepoint. Unmapped SKU: nothing is created, the inbox row fails with `UNMAPPED_SKU` and the SKU joins the fix list. Prices are converted to before-tax rates when `pricesIncludeTax`; bundle prices split by component sale price. The order becomes a sales order (source `channel`, `externalRef` = channel order id), is confirmed and stock reserved, unless the channel keeps drafts or stock is short (`heldAsDraft`, code `INSUFFICIENT_STOCK`). A cancel row cancels an unshipped order and releases its stock; for shipped orders the inbox row fails and a sales return is needed. Importing the same order id again does nothing.
+- Invoices come from the existing fulfilment flow: pick, pack, `POST /sales-orders/:id/dispatch`.
+- `GET /channels/inbox?connectionId&status&q` returns `{ data, total, counts }`. Row: `id, connectionName, externalRef, status (received, processed, ignored, failed, dead), error, errorCode, salesOrderId, salesOrderNumber, salesOrderStatus, orderDate, total, lines[]`.
+- `POST /channels/inbox/:id/retry` (manage) re-runs a failed row.
+
+## Settlements
+
+Settlement columns: `settlement_id, payout_date, order_id, type, amount`. Positive is money to the seller. `type` is mapped to a line kind through built-in labels and the channel's `settlementAliases`: `sale, refund, commission, fee, shipping, gst_on_fees, tcs, tds, reserve, reserve_release, adjustment`. A row with type `payout` or `net payout` states the amount paid to the bank; without one the payout is the sum of lines. Unknown labels are listed in `issues` and skipped.
+
+- `POST /channels/:id/settlements/import` (settlements.manage): `{ csv, dryRun, bankAccountId? }`. Returns `settlements[]` (`settlementRef, payoutDate, payout, linesTotal, difference, status, lineCount, unmatchedOrderRefs, duplicate, settlementId`), `issues`, `summary`. Status: `matched` (every order found), `imported`, `unbalanced` (payout differs from the lines). Importing a settlement id again creates nothing.
+- `GET /channels/settlements?connectionId&status` and `GET /channels/settlements/:id`. Detail adds `orders[]` (`orderRef, orderNumber, expected, received, difference, fees, matched`), `lines[]`, `totals` by kind, `unmatchedOrders`, and `statutory { taxableValue, tcs, tds }` each with `rate, expected, received, difference`, plus a "check before filing" note.
+- `POST /channels/settlements/:id/post` (settlements.manage): voucher type `settlement`, dated the payout date. Dr bank (payout); Cr Accounts Receivable with the channel customer for sales (Dr for refunds); Dr Marketplace Fees (6100) for commission, fees, shipping and adjustments; Dr Input IGST for GST on fees (CA review needed); Dr TCS Receivable (1311); Dr TDS Receivable (1310); Dr or Cr Marketplace Reserve (1420). Errors: 409 `UNBALANCED_SETTLEMENT`, 409 `PERIOD_LOCKED`, 409 `ILLEGAL_TRANSITION` (already posted).
+
+# v1.12 HR and payroll
+
+Module key `payroll`. Migration `031_payroll.sql`. Salaried staff only; site workers paid by the day stay in the labour endpoints.
+Rates, slabs and state tables are defaults that need a CA check before real filing. Money is rupees. Months are `YYYY-MM`.
+
+Permissions: `payroll.view` (pay figures, runs, reports), `payroll.employees` (employees, structures, leave setup), `payroll.leave_approve`,
+`payroll.run` (prepare runs), `payroll.approve` (approve and pay; never the person who prepared the run), `payroll.self` (own payslips, leave).
+Without `payroll.view`, list endpoints leave out pay (`monthlyGross` is absent).
+
+## Setup
+- `GET/PUT /payroll/settings` `{ lopDivisor: calendar|30|26, pfEnabled, esiEnabled, ptEnabled, lwfEnabled, pfRate: 10|12, pfCode, esiCode, ptRegistration }`
+- `GET /payroll/components`, `POST /payroll/components`, `PATCH /payroll/components/:id`. Body `{ code, name, kind: earning|deduction, calc: fixed|pct_basic|pct_gross, percent, isBasic, taxable, pfWage, esiWage, proRata, sortOrder }`. Defaults (Basic, HRA, Conveyance, Special) are created on first read.
+- `GET/POST/PATCH /leave-types` `{ code, name, isPaid, yearlyQuota, carryForwardLimit, isActive }`. Defaults CL, SL, EL, LOP on first read.
+- `GET /holidays?year=`, `POST /holidays { date, name, locationId? }`, `DELETE /holidays/:id`.
+
+## Employees
+- `GET /employees?q&status&locationId&department&limit&offset`. Needs `payroll.view`, `.employees`, `.leave_approve` or `.run`. Rows: `id, code, name, department, designation, locationId, locationName, status, joiningDate, leavingDate, aadhaarLast4, uanSet, panSet, monthlyGross` (the last only with `payroll.view`).
+- `GET /employees/:id` full file (own file with `payroll.self`). Aadhaar is never stored whole: `aadhaarMasked` is `XXXX XXXX 1234`. Bank account is masked unless the caller has `payroll.employees`.
+- `POST /employees`, `PATCH /employees/:id` (`expectedUpdatedAt` gives 409 STALE_EDIT). Code `E0001`... is generated. Fields: `name, fatherSpouseName, dob, sex M|F|O, email, phone, joiningDate, leavingDate, department, designation, locationId, reportingTo, userId, pan, aadhaar, uan, esiNumber, bankName, bankAccount, bankIfsc, salaryMode, taxRegime new|old, pfApplicable, pfHigherWage, esiApplicable, ptStateCode, previousIncome, previousTds, notes, status`.
+- `GET /employees/:id/salary` revisions, newest first. `POST /employees/:id/salary { effectiveFrom, ctcAnnual?, lines: [{ componentId, amount? }], note }`. Without `lines`, `ctcAnnual` is split (basic 50% by default). A date can have one revision; older revisions are never changed. 409 if the date is used.
+
+## Leave and attendance
+- `GET /leave-applications?status&employeeId&mine`, `POST /leave-applications { employeeId?, leaveTypeId, fromDate, toDate, halfDay, reason }`. Days exclude Sundays and holidays. Errors: 409 `INSUFFICIENT_LEAVE`, 409 overlap.
+- `POST /leave-applications/:id/approve|reject|cancel { note }`. Approve and reject need `payroll.leave_approve` and never your own leave (403).
+- `GET /employees/:id/leave-balances?fy=2026` (fy is the April start year). `POST /employees/:id/leave-adjustments { leaveTypeId, fy, days, reason }`.
+- `GET /attendance-summaries?month=`, `PUT /attendance-summaries { month, rows: [{ employeeId, presentDays, paidLeaveDays, lopDays }] }`, `POST /attendance-summaries/derive { month }`. Without a row, a run takes loss-of-pay days from approved unpaid leave.
+- `GET /attendance-days?month=` gives `{ data: [{ employeeId, day, status }] }`; status is `present|absent|half_day|leave|holiday|week_off`. `PUT` or `PATCH /attendance-days { month, rows: [{ employeeId, days: [{ day, status|null }] }] }` sets or clears days (null clears), then rewrites that employee's month totals with source `register` (present + half of half days, leave days as paid leave, absent + half of half days as loss of pay). Unmarked, holiday and week-off days count as nothing. 409 `RUN_LOCKED` once the month's run is approved. Audited. Migration 037.
+- `GET /hr/summary` head count, joiners and leavers, pending leave, this month's runs, birthdays in 14 days.
+
+## Payroll runs
+Status: `draft`, `computed`, `approved`, `posted` (paid), `cancelled`. One live run per month and location (a run without a location covers everyone).
+- `GET /payroll/runs?month&status`, `POST /payroll/runs { month, locationId?, notes }` (409 `RUN_EXISTS`), `GET /payroll/runs/:id` with `lines`, `adjustments`, `canApprove`.
+- `POST /payroll/runs/:id/compute` rebuilds every line. Returns `skipped` (employees with no salary structure).
+- `POST /payroll/runs/:id/adjustments { employeeId, kind, label, amount, taxable, reason }`, `DELETE .../adjustments/:adjId`. Arrears, bonus and advance recovery. The run is recomputed.
+- `POST /payroll/runs/:id/overrides { employeeId, field: lop_days|pf_employee|esi_employee|pt|lwf_employee|tds, value, reason }` (reason required), `DELETE .../overrides/:employeeId/:field`.
+- `POST /payroll/runs/:id/approve` needs `payroll.approve`; 403 `SELF_APPROVAL` if the caller created, computed, adjusted or overrode the run. Posts the journal (voucher type `wages`): debit salary by component and employer contributions; credit net salary, PF, ESI, professional tax, LWF, TDS and other deductions payable.
+- `POST /payroll/runs/:id/pay { payDate?, accountId? }` debits Net Salary Payable, credits bank (or the chosen account). Status becomes `posted`.
+- `POST /payroll/runs/:id/cancel` for draft or computed runs.
+- Lines: `workingDays, paidDays, lopDays, earnings, adjustments, gross, pfWage, pfEmployee, pfEps, pfEpfEmployer, pfEdli, pfAdmin, esiEmployee, esiEmployer, pt, ptStateCode, lwfEmployee, lwfEmployer, tds, tdsWorking, otherDeductions, deductions, net, overrides, warnings`.
+
+## Reports, files and payslips
+- `GET /payroll/runs/:id/statutory` PF, ESI, PT by state, LWF and TDS totals.
+- `GET /payroll/runs/:id/files/bank|ecr|esi|pt` downloads. Bank needs an approved run. ECR (`#~#` separated) needs a UAN for every member (409 `MISSING_UAN`), ESI needs ESI numbers (`MISSING_ESI`), bank needs account and IFSC (`MISSING_BANK`).
+- `GET /payroll/me` the caller's linked employee. `GET /payroll/payslips?employeeId&month&mine` (own approved payslips with `payroll.self`). `GET /payroll/payslips/:id` full payslip: company, employee, earnings, deductions, employer contributions, net, year to date.
+
+## Known limits
+Mid-month pay revisions use one revision for the month. PF ceiling follows the first day of the month (15,000 before 1 Oct 2026, 25,000 from then; the September split is not pro-rated). PF admin charge has a 500 minimum at run level. No gratuity, bonus, final settlement, loans schedule or reversal of an approved run yet. A daily attendance register is not built.
+
+# v1.11 Platform readiness
+
+## Module entitlements
+A route of a module the company has not enabled answers `403 MODULE_DISABLED` (`details.module` names it). The table is `MODULE_ROUTES` in `backend/src/lib/entitlements.ts`: pos, restaurant, clinic, legal, education, hotel, funds, donations (and donors), memberships, job-cards, channels, payroll, manufacturing, gst, tds, fixed-assets, fulfilment (pick-lists, shipments, sales-returns), construction (projects, boq, dprs, ra-bills, work-orders, wage-sheets, workers, attendance, indents, issues, labour and contractor advances), real estate (units, bookings, demands, payment-plans) and inter-company entries. Everything else is open: auth, me, company and business profile, platform admin, users and roles, files, jobs, and the core books. A company whose module list is null uses the defaults for its business type.
+
+## OpenAPI
+- `GET /openapi.json` (no sign-in) returns an OpenAPI 3.1 document of every route, with the module (`x-module`) that gates it. Request bodies are described where a zod schema is registered with `documentRoute`; others show a free-form object and are described in this file.
+- `npm run openapi` in `backend` writes `docs/openapi.json`. CI fails when the committed file is out of date.
+
+## API keys
+Permission `integrations.manage` (Owner and Company Admin). A person manages keys; a key cannot (403).
+- `GET /api-keys` lists keys: `id, name, prefix, roleId, roleName, expiresAt, lastUsedAt, revokedAt, createdAt`.
+- `POST /api-keys { name, roleId, expiresAt? }` returns 201 with the same fields and `key` (`pk_...`), shown once. Only a SHA-256 hash is stored. 400 when the role has permissions the caller lacks, or includes user, role, security or integration management.
+- `POST /api-keys/:id/revoke` returns the key with `revokedAt`; 404 when already revoked.
+- Use a key as `Authorization: Bearer pk_...`. It acts in its company with exactly its role's permissions, attributed to the user who made it ("name (API key)"). 401 when revoked, expired, unknown, or when that user is deactivated. `X-Company-Id` for another company is 401. `lastUsedAt` updates at most once a minute.
+
+## Webhooks
+- `GET /webhooks/events` events you can subscribe to: `invoice.created`, `payment.received` (receipts), `order.created` (sales orders).
+- `GET /webhooks`, `POST /webhooks { url, events[], description? }` (201, returns `secret` once, `whsec_...`), `PATCH /webhooks/:id { url?, events?, description?, isActive? }`, `POST /webhooks/:id/rotate-secret` (returns the new `secret`), `DELETE /webhooks/:id` (204).
+- `POST /webhooks/:id/test` queues a `webhook.test` delivery (202, `deliveryId`). `GET /webhooks/:id/deliveries?limit&offset` is the log: `event, status (pending|retrying|delivered|failed), attempts, responseStatus, error, nextAttemptAt, deliveredAt`. `POST /webhooks/deliveries/:id/resend` sends the same data as a new delivery.
+- Delivery: `POST` of `{ event, createdAt, data }` as JSON by the jobs runner, with headers `X-Progen-Event`, `X-Progen-Delivery` and `X-Progen-Signature: t=<unix>,v1=<hex>` where `v1` is HMAC-SHA256 of `"<t>.<raw body>"` with the secret. Success is any 2xx within 10 s; redirects are not followed. Up to 5 attempts, waiting 30 s, 1, 2 and 4 minutes; then `failed`.
+- URLs must be https and must not resolve to loopback, private or link-local addresses (400 on create, checked again at each delivery). `WEBHOOK_ALLOW_PRIVATE=true` lifts both rules; it defaults to on outside production.
+
+## Stock ledger
+`stock_moves` is append-only in the database: an UPDATE or DELETE raises an error. Corrections are new reversing rows.
+
+# v1.9 Channels phase 2 (live connectors)
+
+Only Shopify (`shopify`) and WooCommerce (`woocommerce`) have a live adapter. Amazon, Flipkart and Meesho stay on CSV until the owner holds seller accounts. `GET /channels/connectors` adds `credentialFields [{key,label,secret}]` and `liveApi`.
+
+## Credentials (permission `channels.manage`; write-only)
+- `PUT /channels/:id/credentials { values: { <key>: string } }` seals the values (AES-256-GCM, `DATA_KEY`). Every field of the connector is required. The response is the channel with `credentials: [{key,label,secret,set}]`; values are never returned or logged. Sets status `not_connected`. 409 `NO_LIVE_API` for CSV-only providers. Shopify fields: `shopDomain` (`x.myshopify.com`), `accessToken`, `webhookSecret`, `locationId`. WooCommerce: `storeUrl` (https), `consumerKey`, `consumerSecret`, `webhookSecret`.
+- `DELETE /channels/:id/credentials` removes them; status `not_connected`, stock push off.
+- `POST /channels/:id/check` calls the provider with a cheap read. `{ ok, message, status }`. Status becomes `connected` only on success; `degraded` on a provider error after having been connected; the reason is in `statusReason`.
+- `PATCH /channels/:id` also takes `pushStock`. Enabling a live channel again sets `not_connected` until a check passes.
+
+## Inbound webhooks
+- `POST /api/v1/webhooks/channels/:connectionId`, no sign-in, rate limited (120/min). The provider's signature is checked on the raw body (Shopify `X-Shopify-Hmac-Sha256`, WooCommerce `X-WC-Webhook-Signature`). 404 unknown, disabled or credential-less channel; 401 bad signature (counted in `webhookRejects`); 200 `{ ok: true }` when stored, also for a repeated event id. The event is stored in the inbox with `topic` set to the provider topic and processed by the `channel.event` job into a sales order.
+- `GET /channels/inbox` returns only order rows (`topic = 'order'`).
+
+## Pull, stock push, health
+- A scheduled `channel.pull` job runs every 5 minutes for connected live channels; `POST /channels/:id/sync { what: "orders" | "stock" }` queues one now (202).
+- Stock push: a trigger on `stock_moves` and `stock_reservations` queues `channel.stock` per company (one-minute bucket). Only changed quantities are sent: available minus `stockBuffer`, minimum 0, the least over a bundle's components. A listing needs `externalId` (Shopify inventory item id, WooCommerce product id).
+- `GET /channels/:id/health` returns `status, statusReason, hasCredentials, pushStock, lastCheckAt, lastSuccessAt, lastError, lastErrorAt, webhookRejects, webhookPath, inbox {received,failed,dead}, unmapped, pushErrors, queuedJobs`.
+
+## Tally export (`data.export`)
+`GET /export/tally?from=YYYY-MM-DD&to=YYYY-MM-DD` returns Tally Prime import XML of journal vouchers (max 366 days). Voucher REMOTEID is the journal entry id. Debit amounts are negative with ISDEEMEDPOSITIVE Yes. Ledger names are the account names; create matching ledgers in Tally first.
+
+# Wave 2: Warehouse depth
+
+Module key `warehouse` (medical store, wholesale, electronics, retail, hardware, auto parts, manufacturer). Permissions: `warehouse.view`, `warehouse.pick` (receive, put away, pick, add batches), `warehouse.manage` (bins, rules, settings). Migration 030.
+
+It is a sub-ledger (`wh_moves`, append-only) that says where inside a location the stock sits. It never writes `stock_moves`, so invoices, purchases, POS and manufacturing behave as before. Stock on hand that is not yet in a bin or batch is "unassigned"; a receipt places it. Without any warehouse call nothing changes.
+
+| Method and path | Purpose |
+|---|---|
+| `GET/PUT/PATCH /warehouse/settings` | `{fefo, blockExpired, expiryWarnDays}` (defaults true, true, 90) |
+| `GET/POST /warehouse/bins`, `PATCH /warehouse/bins/:id` | Bin `{locationId, code, name?, zone?, kind: storage/receiving/dispatch/quarantine, capacityQty?}`; list has `heldQty`. 409 `DUPLICATE_BIN`, `BIN_NOT_EMPTY` on switching off a bin that holds stock |
+| `GET/PUT/PATCH /warehouse/items/:itemId` | Rule `{tracking: none/batch/serial, shelfLifeDays?}` |
+| `GET/POST /warehouse/batches`, `PATCH /warehouse/batches/:id` | Batch `{itemId, batchNo, mfgDate?, expiryDate?, mrp?}`; list filters `itemId`, `q`, `expiringInDays`. 409 `DUPLICATE_BATCH` |
+| `GET /warehouse/serials` | Filters `itemId`, `locationId`, `status` (in_stock/issued), `q` (serial number) |
+| `GET /warehouse/stock?locationId=` | Stock by bin and batch; `itemId` adds `summary {onHand, tagged, unassigned}` |
+| `GET /warehouse/moves` | Sub-ledger rows |
+| `GET /warehouse/fefo?locationId&itemId&qty?` | Candidates in pick order, and the `plan` for `qty` |
+| `GET /warehouse/expiry?days=&locationId=` | Batches with stock expiring within `days` (default from settings) or already expired |
+| `POST /warehouse/receipts` | `{locationId, itemId, binId?, qty, batchId? or batch{batchNo, mfgDate?, expiryDate?, mrp?}, serialNos?, warrantyUntil?, note?}`. Expiry is worked out from `shelfLifeDays` when only the manufacture date is given. 409 `INSUFFICIENT_STOCK` when more than the unassigned stock, `BIN_FULL`, `BATCH_EXPIRED`, `DUPLICATE_SERIAL`. 400 when a batch or serials are required |
+| `POST /warehouse/putaway` | `{locationId, itemId, fromBinId?, toBinId, batchId?, qty, serialNos?}`. 409 `INSUFFICIENT_BIN_STOCK`, `BIN_FULL`; expired stock may only go to a quarantine bin |
+| `POST /warehouse/picks` | `{locationId, refType?, refId?, lines[{itemId, qty, binId?, batchId?, serialNos?}]}`. With no bin or batch it takes first-expiry-first-out (oldest batch first when `fefo` is off) and skips expired batches when `blockExpired`. Serial items need `serialNos` and mark them issued. Returns the allocations. 409 `INSUFFICIENT_BIN_STOCK`, `BATCH_EXPIRED`, `SERIAL_NOT_AVAILABLE`. Returns `refId` (given, or made) that names the pick list. Picking alone does not post the sale |
+
+Item rule also has `defaultBinId` (bin that receives purchased stock). Migration 038.
+
+**Document hook.** With the `warehouse` module on, invoice, POS and purchase lines may carry `binId`, `batchId` or `batchNo` + `expiry`, `serials[]`. After the document posts: a purchase line of a tracked item (rule not `none`, or a default bin, or line fields) is received into the line's bin or the item's default bin (only if it is in the purchase location), creating the batch from `batchNo`/`expiry`; a sale line takes stock first-expiry-first from bins (or the named bin, batch, serials) and writes `wh_moves` with `refType` invoice/purchase. Sales take only what bins cover when no bin or batch is named; the rest stays unassigned. Serial items are issued only when `serials` are given. Items with no rule and no line fields are untouched. Errors are those of receipts and picks (a batch-tracked purchase line without a batch is 400; `INSUFFICIENT_BIN_STOCK` and `BATCH_EXPIRED` for named bins and batches). Cancelling a document does not put bin stock back; use a receipt.
+
+`POST /warehouse/picks/:refId/invoice` `{partyId, invoiceDate?, notes?, lines?[{itemId, rate?, discountPct?}]}` bills the pick list `refId` through the invoice service (needs `invoices.create`); quantities are what was picked, and bins are not picked again. 201 `{pickRefId, invoice}`. 404 unknown list, 409 `PICK_ALREADY_BILLED`.
+
+
+# Fixed-amount discounts
+
+- Invoice lines (`POST /invoices` and `/invoices/preview`) take an optional `discountAmount` (rupees, before GST) instead of `discountPct`. Sending both is 400. An amount above the line value is 400 (`lines.N.discountAmount`). The amount drives the tax exactly; the line's stored `discountPct` is the amount as a percent (2 decimals), for display only. Callers that send `discountPct` behave as before.
+- Restaurant `POST /restaurant/orders/:id/print-bill` with `discountAmount` keeps the amount on the order (`discountAmount`, migration 036). The bill splits it over the food lines pro rata in paise, the leftover paise on the largest line, and settle posts those line amounts, so the printed bill and the invoice show the same discount. The bill JSON has `discountAmount` (null when a percent was used) and `discountPct` (display percent). Reopening the bill clears it.
+
+# Wave 2: Education exams and report cards (module `education`, migration 040)
+
+Permissions: `education.exams` (enter marks and read results for the classes where you are the teacher), `education.exams_manage` (subjects, terms, papers, grading scale, publish, reopen, all classes). `education.manage` also allows everything. Teachers get `education.exams`; the Principal and Centre Manager get both.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /education/subjects?classId`, `POST`, `PATCH /education/subjects/:id` | `{classId, name, code, seq}`; patch also `isActive`. 409 `DUPLICATE_SUBJECT`. |
+| `POST /education/classes/:id/subjects/copy` | `{fromClassId}` adds the other class's missing subjects. `{added}`. |
+| `GET /education/exam-terms?yearId`, `POST`, `GET, PATCH /education/exam-terms/:id` | Term `{yearId, name, seq, startDate, endDate}`; list rows add `papers`, `classes`, `status` (`draft`, `published`), `published`. `GET :id` adds `classes[{id,label,students,papers,entered,expected,mine}]` (teachers see their own). 409 `DUPLICATE_TERM`; PATCH on a published term 409 `TERM_PUBLISHED`. |
+| `GET /education/exam-terms/:id/papers?classId`, `PUT` or `POST` same path | `{classId, papers[{subjectId, maxMarks, passMarks?, examDate?}]}` replaces the class's papers. 409 `PAPER_HAS_MARKS`, `MARKS_ABOVE_MAX`, `TERM_PUBLISHED`. |
+| `GET /education/exam-terms/:id/classes/:classId/marks?subjectId` | Grid `{term, label, locked, papers[], students[{studentId,name,rollNo,marks{paperId: {marks, absent} or null}}]}`; `subjectId` narrows to one paper. |
+| `PUT` or `POST` same path | `{entries[{paperId, studentId, marks, absent}]}`. `absent: true` stores no marks. `marks: null` and not absent clears the cell. 400 above the paper maximum or both set; 409 `TERM_PUBLISHED`. Returns the grid. |
+| `GET .../classes/:classId/results` | Per student `subjects[{subject,maxMarks,marks,absent,grade,passed}]`, `total`, `maxTotal`, `percentage`, `grade`, `result` (`pass`, `fail`, `null` until complete), `rank`. Ranks go to students whose marks are all in; equal totals share a rank. A paper passes at its `passMarks`, else at the pass percent. |
+| `GET .../classes/:classId/report-cards`, `GET /education/exam-terms/:id/students/:studentId/report-card` | Report card data: school, term, year, class, student, subjects, totals, grade, rank, `classSize`, `attendance{marked,present}`, `grades` (the scale), `draft` (true until published). The PDF is built in the app. |
+| `POST /education/exam-terms/:id/publish` | Needs papers and every active student's mark (or absent) in every paper. 409 `MARKS_INCOMPLETE` lists the classes. Locks marks and papers. |
+| `POST /education/exam-terms/:id/reopen` | Unlocks a published term (audited). 409 `NOT_PUBLISHED`. |
+| `GET, PUT, PATCH /education/exam-settings` | `{grades[{grade,minPct}], passPercent}`. Default A1 91, A2 81, B1 71, B2 61, C1 51, C2 41, D 33, E 0, pass 33. The lowest grade must start at 0. `isDefault` is true until saved. |
+
+# Reverse charge, POS series, exact discount credits (migration 041)
+
+- `POST /invoices`, `/invoices/preview`: optional `reverseCharge` (boolean). Needs a customer GSTIN, else 400. No GST is collected: `cgst/sgst/igst/taxTotal` are 0, `total` is the taxable value rounded, and `rcmTax` holds the tax the recipient pays. Responses carry `reverseCharge` and `rcmTax`. The PDF prints "Tax payable on reverse charge: Yes" with `rcmTax`. Credit notes on such an invoice carry no tax.
+- `GET /gst/gstr1`: B2B and CDNR rows carry `reverseCharge`; the GSTN JSON sets `rchrg` to `Y`.
+- Legal `POST /legal/matters/:id/bill` with `reverseCharge: true` uses this flag (fee line at 18%, tax moved to `rcmTax`); the old 0% reverse-charge item and note are gone.
+- POS bills use their own series (`doc_series` key `pos_invoice`), numbered `POS/26-27/00001`. `GET/PUT/PATCH /pos/settings` add `invoicePrefix` (1 to 8 letters, digits or hyphens, upper-cased, default `POS`). Normal invoices keep `INV/`.
+- A line with a fixed `discountAmount` stores it; a partial credit note takes the discount pro-rata in paise by quantity, and the last of the quantity takes the remainder, so the credits add up to the invoice exactly.
+
+## Exams: remarks and co-scholastic grades (migration 042)
+
+| Method and path | Purpose |
+|---|---|
+| `GET, PUT or POST /education/classes/:id/co-areas` | `{areas[name]}`; replaces the class's areas (manage). Without any set, the defaults apply: Work education, Art education, Health and physical education, Discipline. |
+| `GET .../exam-terms/:id/classes/:classId/remarks` | `{locked, areas[], coGrades[{grade,label}], students[{studentId,name,rollNo,remark,coScholastic[{area,grade}]}]}`. Same access as marks (own class, or exams manage). |
+| `PUT or POST` same path | `{entries[{studentId, remark, areas{area: grade or null}}]}`. Empty `remark` or a null grade clears it. 400 unknown area or grade; 409 `TERM_PUBLISHED`. |
+| `exam-settings` | Also `coGrades[{grade,label}]` (default A Very good, B Good, C Needs work; 2 to 6 grades). |
+
+Results and report-card data now include `remark` and `coScholastic[{area,grade}]` for each student.

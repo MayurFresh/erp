@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { assertFresh } from '../lib/stale.ts';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import type { RequestContext } from '../auth/context.ts';
@@ -9,8 +10,10 @@ import { nullableText, optionalText } from '../lib/india.ts';
 import { moneyField, qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
+import { customInput, validateCustom } from '../lib/custom-fields.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -38,12 +41,15 @@ const createBody = z.object({
   code: z.string().trim().min(1, 'Required').max(30),
   name: z.string().trim().min(2).max(200),
   address: optionalText(500),
+  custom: customInput,
 });
 const patchBody = z.object({
   ...projectFields,
+  expectedUpdatedAt: z.string().max(40).optional(),
   code: z.string().trim().min(1, 'Required').max(30).optional(),
   name: z.string().trim().min(2).max(200).optional(),
   address: nullableText(500),
+  custom: customInput,
 });
 const listQuery = pagingQuery.extend({ status: z.enum(STATUSES).optional() });
 const costsQuery = z.object({ from: dateField.optional(), to: dateField.optional() });
@@ -181,7 +187,7 @@ async function loadProjects(tx: Tx, ids: string[]) {
       startDate: p.start_date, endDate: p.end_date, contractValue: p.contract_value, address: p.address,
       sites: sites.filter((s) => s.project_id === id).map((s) => ({ id: s.id, name: s.name })),
       budgetTotal: round2(budget), progressPct: budget > 0 ? round2((done / budget) * 100) : 0,
-      reraRegNo: p.rera_reg_no, reraAccountId: p.rera_account_id, createdAt: p.created_at,
+      reraRegNo: p.rera_reg_no, reraAccountId: p.rera_account_id, custom: p.custom ?? {}, createdAt: p.created_at, updatedAt: p.updated_at,
     };
   });
 }
@@ -286,12 +292,14 @@ export async function projectRoutes(app: FastifyInstance) {
     try {
       const project = await ctx.tx(async (tx) => {
         await checkRefs(tx, ctx, body);
+        const custom = await validateCustom(tx, ctx.companyId, 'project', body.custom);
         const row = await tx.insertInto('projects').values({
           tenant_id: ctx.tenantId, company_id: ctx.companyId, code: body.code, name: body.name,
           client_party_id: body.clientPartyId ?? null, manager_user_id: body.managerUserId ?? null,
           status: body.status ?? 'planning', start_date: body.startDate ?? null, end_date: body.endDate ?? null,
           contract_value: body.contractValue ?? 0, address: body.address ?? null, created_by: ctx.userId,
           rera_reg_no: body.reraRegNo ?? null, rera_account_id: body.reraAccountId ?? null,
+          custom,
         }).returning('id').executeTakeFirstOrThrow();
         await setSites(tx, ctx, row.id, siteIds);
         const saved = (await loadProjects(tx, [row.id]))[0]!;
@@ -312,6 +320,7 @@ export async function projectRoutes(app: FastifyInstance) {
     try {
       return await ctx.tx(async (tx) => {
         const before = await getProject(tx, ctx, id, true);
+        assertFresh(before.updated_at, body.expectedUpdatedAt, 'project');
         await checkRefs(tx, ctx, body);
         const start = body.startDate !== undefined ? body.startDate : before.start_date;
         const end = body.endDate !== undefined ? body.endDate : before.end_date;
@@ -321,6 +330,9 @@ export async function projectRoutes(app: FastifyInstance) {
           status: body.status, start_date: body.startDate, end_date: body.endDate, contract_value: body.contractValue,
           address: body.address, rera_reg_no: body.reraRegNo, rera_account_id: body.reraAccountId,
         }).filter(([, v]) => v !== undefined));
+        if (body.custom !== undefined) {
+          (changes as Record<string, unknown>).custom = await validateCustom(tx, ctx.companyId, 'project', body.custom, before.custom);
+        }
         const old = (await loadProjects(tx, [id]))[0]!;
         if (Object.keys(changes).length) await tx.updateTable('projects').set(changes).where('id', '=', id).execute();
         if (body.siteIds !== undefined) await setSites(tx, ctx, id, body.siteIds ?? []);
@@ -527,3 +539,8 @@ export async function projectRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/projects', { body: createBody });
+documentRoute('PATCH', '/projects/:id', { body: patchBody });
+documentRoute('POST', '/projects/:id/boq', { body: boqBulkBody });
+documentRoute('PATCH', '/boq/:id', { body: boqPatchBody });

@@ -7,8 +7,11 @@ import type { Tx } from '../db/database.ts';
 import { badRequest, conflict, forbidden } from '../lib/errors.ts';
 import { optionalText } from '../lib/india.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
+import { passwordProblem, newPasswordField } from '../lib/password.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { assertUserSlot } from './business.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const roleBody = z.object({
   name: z.string().trim().min(2).max(60),
@@ -20,7 +23,7 @@ const userBody = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().toLowerCase().pipe(z.email('Enter a valid email')),
   phone: optionalText(20),
-  password: z.string().min(8, 'Use at least 8 characters').max(128),
+  password: newPasswordField,
   roleId: z.uuid(),
   locationIds: z.array(z.uuid()).max(500).nullable().optional(),
 });
@@ -94,9 +97,12 @@ export async function userRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('users.manage');
     const body = parse(userBody, req.body);
+    const weak = passwordProblem(body.password, body.email);
+    if (weak) throw badRequest(weak, { password: weak });
     const passwordHash = await bcrypt.hash(body.password, 10);
     try {
       const row = await ctx.tx(async (tx) => {
+        await assertUserSlot(tx, ctx);
         const role = await tx.selectFrom('roles').selectAll().where('id', '=', body.roleId).executeTakeFirst();
         if (!role) throw badRequest('Role not found.', { roleId: 'Not found' });
         // Nobody can hand out access they don't have themselves.
@@ -135,3 +141,6 @@ export async function userRoutes(app: FastifyInstance) {
     }
   });
 }
+
+documentRoute('POST', '/roles', { body: roleBody });
+documentRoute('POST', '/users', { body: userBody });

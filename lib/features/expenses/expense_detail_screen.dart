@@ -1,3 +1,4 @@
+import '../controls/cost_centre_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +12,7 @@ import '../documents/document_models.dart';
 import '../documents/document_widgets.dart';
 import 'expense_model.dart';
 import 'expenses_repository.dart';
+import '../../core/app_colors.dart';
 
 class ExpenseDetailScreen extends ConsumerWidget {
   const ExpenseDetailScreen({super.key, required this.expenseId});
@@ -61,7 +63,7 @@ class ExpenseDetailScreen extends ConsumerWidget {
               children: [
                 DocStatusPill(status: e.status),
                 if (e.reverseCharge)
-                  const Pill('Reverse charge', color: Colors.purple),
+                  Pill('Reverse charge', color: context.colors.info),
               ],
             ),
             actions: [
@@ -90,6 +92,7 @@ class ExpenseDetailScreen extends ConsumerWidget {
           ),
           if (e.isCancelled)
             CancelledBanner(cancelledAt: e.cancelledAt, reason: e.cancelReason),
+          CostCentreCard(costCentreId: e.costCentreId),
           SectionCard(title: 'Description', child: Text(e.description)),
           SectionCard(
             title: 'Amount',

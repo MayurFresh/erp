@@ -16,6 +16,7 @@ import { nextNumber } from '../lib/series.ts';
 import { docDate, money, parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { itSchedule } from './fixed-assets.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const taxYearField = z.string().regex(/^\d{4}-\d{2}$/, 'Use a tax year such as 2026-27')
@@ -486,3 +487,8 @@ export async function incomeTaxRoutes(app: FastifyInstance) {
 }
 
 void daysBetween;
+
+documentRoute('POST', '/tax/payments', { body: paymentBody });
+documentRoute('POST', '/tax/payments/:id/cancel', { body: cancelBody });
+documentRoute('POST', '/tax/calc/regime', { body: regimeBody });
+documentRoute('POST', '/tax/calc/presumptive', { body: presumptiveBody });

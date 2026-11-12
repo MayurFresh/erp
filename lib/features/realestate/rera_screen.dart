@@ -12,6 +12,7 @@ import 're_models.dart';
 import 're_perms.dart';
 import 're_repository.dart';
 import 're_widgets.dart';
+import '../../core/app_colors.dart';
 
 /// Active bank accounts, the only kind a RERA account may be.
 final reraBankAccountsProvider = FutureProvider.autoDispose<List<Account>>((
@@ -87,6 +88,7 @@ class _ReraBodyState extends ConsumerState<_ReraBody> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() => _saving = true);
     try {
       await ref
@@ -135,17 +137,19 @@ class _ReraBodyState extends ConsumerState<_ReraBody> {
           key: const Key('rera-shortfall'),
           color: short
               ? theme.colorScheme.errorContainer
-              : Colors.green.shade50,
+              : context.colors.successContainer,
           margin: const EdgeInsets.only(bottom: 16),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
                 Icon(
-                  short ? Icons.warning_amber_rounded : Icons.check_circle,
+                  short
+                      ? Icons.warning_amber_outlined
+                      : Icons.check_circle_outline,
                   color: short
                       ? theme.colorScheme.error
-                      : Colors.green.shade700,
+                      : context.colors.success,
                 ),
                 const SizedBox(width: 12),
                 Expanded(

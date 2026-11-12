@@ -13,6 +13,7 @@ import 'compliance_models.dart';
 import 'compliance_repository.dart';
 import 'compliance_widgets.dart';
 import 'tax_perms.dart';
+import '../../widgets/form_support.dart';
 
 String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
@@ -225,7 +226,7 @@ class _DocFormState extends ConsumerState<_DocForm> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     setState(() => _busy = true);
     try {
       final body = <String, dynamic>{

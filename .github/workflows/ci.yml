@@ -1,0 +1,70 @@
+# Runs on every push and pull request: backend typecheck, migrations and tests against PostgreSQL 16,
+# a dependency audit, then Flutter analyze, tests and a web build. Live API tests are skipped (no PROGEN_API).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Throwaway values for the CI database only.
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL: postgres://progen_app:progen_app@localhost:5432/progen
+      TEST_DATABASE_URL: postgres://progen_app:progen_app@localhost:5432/progen_test
+      JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run db:setup
+      - run: npm test
+      - name: OpenAPI document is current
+        run: npm run openapi && git diff --exit-code ../docs/openapi.json
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build web --release
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t progen-api backend

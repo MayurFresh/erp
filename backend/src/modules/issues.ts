@@ -17,6 +17,7 @@ import { auditOf, writeAudit } from './audit.ts';
 import { getLocation } from './locations.ts';
 import { boqLinesAt } from './projects.ts';
 import { requireStock } from './stock.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -194,3 +195,6 @@ export async function issueRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/issues', { body: createBody });
+documentRoute('POST', '/issues/:id/cancel', { body: cancelBody });

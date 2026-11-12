@@ -16,6 +16,7 @@ import 'compliance_models.dart';
 import 'compliance_repository.dart';
 import 'compliance_widgets.dart';
 import 'tax_perms.dart';
+import '../../widgets/form_support.dart';
 
 /// `/tds`: deductions, deposit summary and the quarterly statement.
 class TdsScreen extends ConsumerStatefulWidget {
@@ -119,7 +120,7 @@ class _DeductionsTabState extends ConsumerState<_DeductionsTab> {
 
   Future<void> _record() async {
     final rows = _c.items.where((d) => _selected.contains(d.id)).toList();
-    final challan = await showDialog<TdsChallan>(
+    final challan = await showFormDialog<TdsChallan>(
       context: context,
       builder: (_) => ChallanDialog(deductions: rows),
     );
@@ -325,7 +326,7 @@ class _ChallanDialogState extends ConsumerState<ChallanDialog> {
   }
 
   Future<void> _submit() async {
-    final ok = _form.currentState!.validate();
+    final ok = validateAndReveal(_form);
     if (_account == null) setState(() => _accountError = 'Choose the account');
     if (!ok || _account == null) return;
     setState(() => _busy = true);
@@ -375,7 +376,7 @@ class _ChallanDialogState extends ConsumerState<ChallanDialog> {
                       firstDate: DateTime(2017),
                       lastDate: DateTime.now().add(const Duration(days: 1)),
                     );
-                    if (d != null) setState(() => _date = d);
+                    if (d != null && mounted) setState(() => _date = d);
                   },
                   icon: const Icon(Icons.event_outlined),
                   label: Text('Deposit date: ${formatDate(apiDate(_date))}'),
@@ -411,10 +412,12 @@ class _ChallanDialogState extends ConsumerState<ChallanDialog> {
                       where: (a) => a.subtype == 'bank' || a.subtype == 'cash',
                     );
                     if (a != null) {
-                      setState(() {
-                        _account = a;
-                        _accountError = null;
-                      });
+                      if (mounted) {
+                        setState(() {
+                          _account = a;
+                          _accountError = null;
+                        });
+                      }
                     }
                   },
                 ),
@@ -454,7 +457,7 @@ class _ChallanDialogState extends ConsumerState<ChallanDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
+          onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         BusyButton(busy: _busy, onPressed: _submit, label: 'Record challan'),
@@ -618,6 +621,7 @@ class _StatementTabState extends ConsumerState<_StatementTab> {
   }
 
   Future<void> _csv() async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       final text = await ref

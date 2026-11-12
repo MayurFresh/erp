@@ -67,6 +67,7 @@ class _WorkerFormScreenState extends ConsumerState<WorkerFormScreen>
   }
 
   Future<void> _load(String id) async {
+    if (_loading) return;
     setState(() => _loading = true);
     try {
       final worker = await ref.read(constructionRepositoryProvider).worker(id);
@@ -105,6 +106,7 @@ class _WorkerFormScreenState extends ConsumerState<WorkerFormScreen>
   }
 
   Future<void> _attachPhoto() async {
+    if (_busy) return;
     final source = ref.read(photoSourceProvider);
     final unavailable = source.unavailableMessage;
     if (unavailable != null) {
@@ -131,7 +133,7 @@ class _WorkerFormScreenState extends ConsumerState<WorkerFormScreen>
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final rate = double.tryParse(_rate.text.trim());
     if (rate == null || rate < 0) {
       markSaved();
@@ -266,9 +268,9 @@ class _WorkerFormScreenState extends ConsumerState<WorkerFormScreen>
                       controller: _rate,
                       keyboardType: decimalKeyboard,
                       inputFormatters: [decimalInput(decimals: 2)],
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Daily rate',
-                        prefixText: '₹ ',
+                        prefixText: '$moneySymbol ',
                       ),
                       validator: (value) =>
                           requiredNumber(value, label: 'Daily rate'),

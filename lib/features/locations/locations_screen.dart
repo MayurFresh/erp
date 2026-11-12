@@ -14,6 +14,7 @@ import '../../widgets/states.dart';
 import '../auth/session.dart';
 import 'location_model.dart';
 import 'locations_repository.dart';
+import '../../core/app_colors.dart';
 
 class LocationsScreen extends ConsumerStatefulWidget {
   const LocationsScreen({super.key});
@@ -43,7 +44,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
   }
 
   Future<void> _edit([Location? location]) async {
-    final saved = await showDialog<Location>(
+    final saved = await showFormDialog<Location>(
       context: context,
       builder: (_) => LocationDialog(location: location),
     );
@@ -136,7 +137,7 @@ class _ActivePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => active
-      ? const Pill('Active', color: Colors.green)
+      ? Pill('Active', color: context.colors.success)
       : Pill('Inactive', color: Theme.of(context).colorScheme.outline);
 }
 
@@ -187,7 +188,7 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final body = <String, dynamic>{
       'type': _type,
       'name': _name.text.trim(),
@@ -207,7 +208,15 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
       ref.bump(const [DataKind.locations]);
       if (mounted) Navigator.of(context).pop(saved);
     } catch (e) {
-      if (mounted) showSubmitError(e);
+      if (mounted) {
+        showSubmitError(
+          e,
+          onReload: () {
+            ref.bump(const [DataKind.locations]);
+            Navigator.of(context).pop();
+          },
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -303,7 +312,7 @@ class _LocationDialogState extends ConsumerState<LocationDialog>
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
           child: const Text('Cancel'),
         ),
         BusyButton(busy: _saving, onPressed: _save, label: 'Save'),

@@ -1,7 +1,11 @@
+import '../controls/cost_centre_widgets.dart';
+import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
+import '../../core/json.dart';
 import '../../core/money.dart';
 import '../../core/permissions.dart';
 import '../../core/providers.dart';
@@ -42,6 +46,8 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
   final _formKey = GlobalKey<FormState>();
   final _supplierInvoiceNo = TextEditingController();
   final _notes = TextEditingController();
+  String? _costCentreId;
+  Json _custom = const {};
   final List<LineDraft> _lines = [];
   String? _locationId;
   Party? _party;
@@ -102,6 +108,8 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
       supplierInvoiceNo: trimmedOrNull(_supplierInvoiceNo.text),
       supplierInvoiceDate: supplierDate == null ? null : apiDate(supplierDate),
       notes: trimmedOrNull(_notes.text),
+      costCentreId: _costCentreId,
+      custom: _custom,
       tdsSectionId: _tdsSectionId,
       reverseCharge: _reverseCharge,
       lines: [for (final line in _lines) line.toDraft()],
@@ -121,10 +129,12 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
   Future<void> _pickParty() async {
     final party = await pickParty(context, ref, type: PartyType.vendor);
     if (party == null) return;
-    setState(() {
-      _party = party;
-      if (!_tdsTouched) _tdsSectionId = party.tdsSectionId;
-    });
+    if (mounted) {
+      setState(() {
+        _party = party;
+        if (!_tdsTouched) _tdsSectionId = party.tdsSectionId;
+      });
+    }
     _clearError('partyId');
     schedulePreview();
   }
@@ -133,9 +143,11 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
     final item = await pickItem(context, ref);
     if (item == null) return;
     // Without items.view_cost the price is absent and the server applies it.
-    setState(
-      () => _lines.add(LineDraft(item, defaultRate: item.purchasePrice)),
-    );
+    if (mounted) {
+      setState(
+        () => _lines.add(LineDraft(item, defaultRate: item.purchasePrice)),
+      );
+    }
     schedulePreview();
   }
 
@@ -151,7 +163,7 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
   Future<void> _pickBillDate() async {
     final picked = await pickDocDate(context, _billDate);
     if (picked == null) return;
-    setState(() => _billDate = picked);
+    if (mounted) setState(() => _billDate = picked);
     schedulePreview();
   }
 
@@ -160,16 +172,19 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
       context,
       _supplierInvoiceDate ?? _billDate,
     );
-    if (picked != null) setState(() => _supplierInvoiceDate = picked);
+    if (picked != null && mounted) {
+      setState(() => _supplierInvoiceDate = picked);
+    }
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       _saveError = null;
       _fieldErrors = const {};
       _lineErrors = const {};
     });
-    final valid = _formKey.currentState!.validate();
+    final valid = validateAndReveal(_formKey);
     if (_lines.isEmpty) {
       markSaved();
       showInfoSnackBar(context, 'Add at least one item.');
@@ -187,6 +202,14 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
       context.go('/purchases/${bill.id}');
     } catch (e) {
       if (!mounted) return;
+      if (handleApprovalPending(
+        context,
+        e,
+        listPath: '/purchases',
+        onSaved: markSaved,
+      )) {
+        return;
+      }
       final (header, lines) = splitFieldErrors(e);
       setState(() {
         _saveError = e;
@@ -219,7 +242,7 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
             children: [
               LocationField(
                 value: _locationId,
-                label: 'Receiving location',
+                label: context.w('Receiving location'),
                 errorText: _fieldErrors['locationId'],
                 onChanged: (v) {
                   setState(() => _locationId = v);
@@ -228,11 +251,12 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
                 },
               ),
               PickerField(
-                label: 'Vendor',
+                label: context.w('Vendor'),
                 value: _party?.name,
                 onTap: _pickParty,
                 errorText: _fieldErrors['partyId'],
-                validator: () => _party == null ? 'Choose a vendor' : null,
+                validator: () =>
+                    _party == null ? context.w('Choose a vendor') : null,
               ),
             ],
           ),
@@ -248,7 +272,7 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
           FormRow(
             children: [
               PickerField(
-                label: 'Bill date',
+                label: context.w('Bill date'),
                 value: formatDate(_billDate),
                 icon: Icons.calendar_today_outlined,
                 errorText: _fieldErrors['billDate'],
@@ -257,7 +281,7 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
               TextFormField(
                 controller: _supplierInvoiceNo,
                 decoration: InputDecoration(
-                  labelText: 'Supplier invoice no. (optional)',
+                  labelText: context.w('Supplier invoice no. (optional)'),
                   errorText: _fieldErrors['supplierInvoiceNo'],
                 ),
                 onChanged: (_) => _clearError('supplierInvoiceNo'),
@@ -268,13 +292,21 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
           FormRow(
             children: [
               PickerField(
-                label: 'Supplier invoice date (optional)',
+                label: context.w('Supplier invoice date (optional)'),
                 value: _supplierInvoiceDate == null
                     ? null
                     : formatDate(_supplierInvoiceDate),
                 icon: Icons.event_outlined,
                 errorText: _fieldErrors['supplierInvoiceDate'],
                 onTap: _pickSupplierDate,
+              ),
+              CostCentreField(
+                value: _costCentreId,
+                errorText: _fieldErrors['costCentreId'],
+                onChanged: (v) => setState(() {
+                  _costCentreId = v;
+                  markDirty();
+                }),
               ),
               TextFormField(
                 controller: _notes,
@@ -293,53 +325,68 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
       key: _formKey,
       onChanged: markDirty,
       child: DocFormLayout(
-        title: 'New purchase bill',
+        bottomBar: DocSaveBar(
+          busy: _saving,
+          onPressed: _save,
+          label: context.w('Save bill'),
+        ),
+        title: context.w('New purchase bill'),
         main: [
           details,
-          SectionCard(
-            title: 'TDS and reverse charge',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TdsSectionPicker(
-                  value: _tdsSectionId,
-                  date: apiDate(_billDate),
-                  enabled: !_saving,
-                  errorText: _fieldErrors['tdsSectionId'],
-                  onChanged: (s) {
-                    setState(() {
-                      _tdsSectionId = s?.id;
-                      _tdsTouched = true;
-                    });
-                    schedulePreview();
-                  },
-                ),
-                TdsPreviewCard(
-                  partyId: _party?.id,
-                  sectionId: _tdsSectionId,
-                  date: apiDate(_billDate),
-                  gross: preview?.subtotal,
-                  documentTotal: preview?.total,
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Reverse charge (RCM)'),
-                  subtitle: const Text(
-                    'The supplier charges no GST. You pay the tax directly '
-                    'and a self-invoice number is issued.',
-                  ),
-                  value: _reverseCharge,
-                  onChanged: _saving
-                      ? null
-                      : (v) {
-                          setState(() => _reverseCharge = v);
-                          schedulePreview();
-                        },
-                ),
-              ],
-            ),
+          CustomFieldsSection(
+            entity: 'purchase',
+            values: _custom,
+            errors: _fieldErrors,
+            onChanged: (v) => setState(() {
+              _custom = v;
+              markDirty();
+            }),
           ),
+          if (ref.watch(businessProfileProvider).isIndia)
+            SectionCard(
+              title: 'TDS and reverse charge',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TdsSectionPicker(
+                    value: _tdsSectionId,
+                    date: apiDate(_billDate),
+                    enabled: !_saving,
+                    errorText: _fieldErrors['tdsSectionId'],
+                    onChanged: (s) {
+                      setState(() {
+                        _tdsSectionId = s?.id;
+                        _tdsTouched = true;
+                      });
+                      schedulePreview();
+                    },
+                  ),
+                  TdsPreviewCard(
+                    partyId: _party?.id,
+                    sectionId: _tdsSectionId,
+                    date: apiDate(_billDate),
+                    gross: preview?.subtotal,
+                    documentTotal: preview?.total,
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Reverse charge (RCM)'),
+                    subtitle: const Text(
+                      'The supplier charges no GST. You pay the tax directly '
+                      'and a self-invoice number is issued.',
+                    ),
+                    value: _reverseCharge,
+                    onChanged: _saving
+                        ? null
+                        : (v) {
+                            setState(() => _reverseCharge = v);
+                            schedulePreview();
+                          },
+                  ),
+                ],
+              ),
+            ),
           DocLinesSection(
             lines: _lines,
             previewLines: preview?.lines,
@@ -354,6 +401,7 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
         summary: SectionCard(
           title: 'Summary',
           child: DocSummaryPanel(
+            hideSave: true,
             ready: buildDraft() != null,
             preview: preview,
             previewError: previewError,

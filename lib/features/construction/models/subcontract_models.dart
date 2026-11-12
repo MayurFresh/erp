@@ -237,6 +237,7 @@ class WorkOrder {
     this.retention = const RetentionSummary(),
     this.lines,
     this.createdAt,
+    this.updatedAt,
     this.createdBy,
     this.cancelledAt,
     this.cancelReason,
@@ -268,6 +269,7 @@ class WorkOrder {
         ? asJsonList(json['lines']).map(WorkOrderLine.fromJson).toList()
         : null,
     createdAt: asDateTimeOrNull(json['createdAt']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
     createdBy: NamedRef.fromJsonOrNull(json['createdBy']),
     cancelledAt: asDateTimeOrNull(json['cancelledAt']),
     cancelReason: asStringOrNull(json['cancelReason']),
@@ -300,6 +302,7 @@ class WorkOrder {
   /// Detail only.
   final List<WorkOrderLine>? lines;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
   final NamedRef? createdBy;
   final DateTime? cancelledAt;
   final String? cancelReason;
@@ -479,6 +482,7 @@ class RaBill {
     this.notes,
     this.rejectReason,
     this.createdAt,
+    this.updatedAt,
     this.createdBy,
     this.submittedAt,
     this.approvedAt,
@@ -525,6 +529,7 @@ class RaBill {
     notes: asStringOrNull(json['notes']),
     rejectReason: asStringOrNull(json['rejectReason']),
     createdAt: asDateTimeOrNull(json['createdAt']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
     createdBy: NamedRef.fromJsonOrNull(json['createdBy']),
     submittedAt: asDateTimeOrNull(json['submittedAt']),
     approvedAt: asDateTimeOrNull(json['approvedAt']),
@@ -570,6 +575,7 @@ class RaBill {
   final String? notes;
   final String? rejectReason;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
   final NamedRef? createdBy;
   final DateTime? submittedAt;
   final DateTime? approvedAt;

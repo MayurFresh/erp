@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { assertFresh } from '../lib/stale.ts';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
@@ -15,6 +16,7 @@ import { nextNumber } from '../lib/series.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getLocation } from './locations.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const TRADES = [
   'mason', 'carpenter', 'bar_bender', 'helper', 'electrician',
@@ -61,6 +63,7 @@ const workerCreateBody = z.object({
   joinedOn: nullableDate,
 });
 const workerPatchBody = z.object({
+  expectedUpdatedAt: z.string().max(40).optional(),
   name: z.string().trim().min(1, 'Required').max(200).optional(),
   phone: nullableText(20),
   trade: z.enum(TRADES).optional(),
@@ -134,7 +137,7 @@ async function loadWorkerRows(tx: Tx, ctx: RequestContext, ids: string[]) {
     .select([
       'w.id', 'w.name', 'w.phone', 'w.trade', 'w.skill', 'w.daily_rate',
       'w.contractor_party_id', 'w.site_id', 'w.aadhaar_last4', 'w.bocw_reg_no',
-      'w.photo_file_id', 'w.joined_on', 'w.is_active', 'w.created_at',
+      'w.photo_file_id', 'w.joined_on', 'w.is_active', 'w.created_at', 'w.updated_at',
       'l.name as site_name', 'p.name as contractor_name',
       sql<number>`coalesce((select sum(a.amount - a.recovered) from labour_advances a where a.worker_id = w.id and a.status = 'open'), 0)::float8`.as('advance_balance'),
     ])
@@ -149,7 +152,7 @@ function workerJson(w: Awaited<ReturnType<typeof loadWorkerRows>>[number]) {
     contractorName: w.contractor_name, siteId: w.site_id, siteName: w.site_name,
     aadhaarLast4: w.aadhaar_last4, bocwRegNo: w.bocw_reg_no,
     photoFileId: w.photo_file_id, joinedOn: w.joined_on, isActive: w.is_active,
-    createdAt: w.created_at, advanceBalance: round2(w.advance_balance),
+    createdAt: w.created_at, updatedAt: w.updated_at, advanceBalance: round2(w.advance_balance),
   };
 }
 
@@ -458,6 +461,7 @@ export async function labourRoutes(app: FastifyInstance) {
     return ctx.tx(async (tx) => {
       const before = (await loadWorkerRows(tx, ctx, [id]))[0];
       if (!before || !canSeeWorker(ctx, before)) throw notFound('Worker');
+      assertFresh(before.updated_at, body.expectedUpdatedAt, 'worker');
       if (body.siteId === null && workerScope(ctx)) {
         throw badRequest('Select a home site in your location scope.', { siteId: 'Required' });
       }
@@ -759,3 +763,11 @@ export async function labourRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/workers', { body: workerCreateBody });
+documentRoute('PATCH', '/workers/:id', { body: workerPatchBody });
+documentRoute('PUT', '/attendance', { body: attendanceBody });
+documentRoute('POST', '/wage-sheets', { body: createWageBody });
+documentRoute('PATCH', '/wage-sheets/:id', { body: patchWageBody });
+documentRoute('POST', '/wage-sheets/:id/pay', { body: payWageBody });
+documentRoute('POST', '/wage-sheets/:id/cancel', { body: cancelWageBody });

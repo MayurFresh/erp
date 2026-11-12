@@ -1,127 +1,94 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
+import '../../core/business_profile.dart';
 import '../../core/money.dart';
 import '../../core/permissions.dart';
+import '../../core/theme.dart';
+import '../../core/design_tokens.dart';
+import '../../widgets/kpi_tile.dart';
 import '../../widgets/layout.dart';
+import '../../widgets/money_text.dart';
 import '../../widgets/states.dart';
+import '../../widgets/status_chip.dart';
 import '../auth/session.dart';
-import '../filings/needs_you_card.dart';
 import '../compliance/alerts_card.dart';
+import '../compliance/tax_perms.dart';
+import '../filings/filing_models.dart';
+import '../filings/filings_repository.dart';
+import '../filings/needs_you_card.dart';
+import '../insights/analytics_models.dart';
+import '../insights/analytics_repository.dart';
+import '../insights/analytics_widgets.dart';
 import '../invoices/invoice_widgets.dart';
+import '../reports/report_period.dart';
+import '../shell/nav.dart';
 import 'dashboard_repository.dart';
 
-class DashboardScreen extends ConsumerWidget {
+/// The owner's morning view: money position, trends, what is due.
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  RangePreset _preset = RangePreset.thisMonth;
+
+  @override
+  Widget build(BuildContext context) {
     final value = ref.watch(dashboardProvider);
     final session = ref.watch(sessionProvider).value;
     final perms = ref.watch(permissionsProvider);
+    final today = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
+    final company = session?.company?.name;
+    final canAnalyse = perms.can(Perm.reportsView);
+    final range = _preset.resolve();
+    final analytics = canAnalyse ? ref.watch(analyticsProvider(range)) : null;
     return AsyncValueView(
       value: value,
       onRetry: () => ref.invalidate(dashboardProvider),
       data: (d) => RefreshIndicator(
-        onRefresh: () => ref.refresh(dashboardProvider.future),
+        onRefresh: () async {
+          if (canAnalyse) ref.invalidate(analyticsProvider(range));
+          ref.invalidate(dashboardProvider);
+          await ref.read(dashboardProvider.future);
+        },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.only(bottom: Space.xl),
           children: [
-            PageHeader(
-              title: 'Dashboard',
-              subtitle: session?.company?.name,
-              actions: [
-                if (perms.can(Perm.invoicesCreate))
-                  FilledButton.icon(
-                    onPressed: () => context.go('/invoices/new'),
-                    icon: const Icon(Icons.add),
-                    label: const Text('New invoice'),
-                  ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _KpiGrid(
-                cards: [
-                  _Kpi(
-                    'Sales today',
-                    formatMoney(d.salesToday),
-                    Icons.today_outlined,
-                  ),
-                  _Kpi(
-                    'Sales this month',
-                    formatMoney(d.salesThisMonth),
-                    Icons.calendar_month_outlined,
-                  ),
-                  _Kpi(
-                    'Invoices this month',
-                    '${d.invoicesThisMonth}',
-                    Icons.receipt_long_outlined,
-                    onTap: perms.can(Perm.invoicesView)
-                        ? () => context.go('/invoices')
-                        : null,
-                  ),
-                  _Kpi(
-                    'Low-stock items',
-                    '${d.lowStockCount}',
-                    Icons.warning_amber_outlined,
-                    highlight: d.lowStockCount > 0,
-                    onTap: perms.can(Perm.stockView)
-                        ? () => context.go('/stock?lowOnly=true')
-                        : null,
-                  ),
-                  // v1.1 figures appear only when the server sends them.
-                  if (d.receivables != null)
-                    _Kpi(
-                      'Receivables',
-                      formatMoney(d.receivables),
-                      Icons.call_received,
-                      onTap: perms.can(Perm.paymentsView)
-                          ? () => context.go('/receipts')
-                          : null,
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: Layout.contentMaxWidth,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    PageHeader(
+                      title: 'Dashboard',
+                      subtitle: company == null ? today : '$company  ·  $today',
+                      actions: _headerActions(context, perms),
                     ),
-                  if (d.payables != null)
-                    _Kpi(
-                      'Payables',
-                      formatMoney(d.payables),
-                      Icons.call_made,
-                      onTap: perms.can(Perm.paymentsView)
-                          ? () => context.go('/payments')
-                          : null,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                      child: LayoutBuilder(
+                        builder: (context, box) => _body(
+                          context,
+                          d,
+                          perms,
+                          analytics?.value,
+                          range,
+                          box.maxWidth,
+                        ),
+                      ),
                     ),
-                  if (d.cashAndBank != null)
-                    _Kpi(
-                      'Cash & bank',
-                      formatMoney(d.cashAndBank),
-                      Icons.account_balance_outlined,
-                    ),
-                  if (d.purchasesThisMonth != null)
-                    _Kpi(
-                      'Purchases this month',
-                      formatMoney(d.purchasesThisMonth),
-                      Icons.shopping_cart_outlined,
-                      onTap: perms.can(Perm.purchasesView)
-                          ? () => context.go('/purchases')
-                          : null,
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Column(children: [NeedsYouCard(), AlertsCard()]),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: FormRow(
-                breakpoint: 900,
-                children: [
-                  _RecentInvoices(dashboard: d),
-                  _TopItems(dashboard: d),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -129,151 +96,346 @@ class DashboardScreen extends ConsumerWidget {
       ),
     );
   }
-}
 
-class _Kpi {
-  const _Kpi(
-    this.label,
-    this.value,
-    this.icon, {
-    this.onTap,
-    this.highlight = false,
-  });
+  Widget _body(
+    BuildContext context,
+    Dashboard d,
+    PermissionSet perms,
+    Analytics? a,
+    DateRange range,
+    double width,
+  ) {
+    void open(String path) => context.go(path);
+    VoidCallback? link(bool ok, String path) => ok ? () => open(path) : null;
+    final cols = chartColumns(width);
+    final calendar = perms.can(TaxPerm.complianceView)
+        ? ref.watch(filingCalendarProvider(contractFy(DateTime.now()))).value
+        : null;
+    final gst = _gstTile(calendar);
+    final tiles = a == null
+        ? _legacyTiles(d, perms, gst)
+        : [...statTiles(context, a, perms, open), ?gst];
+    final tileWidgets = [for (final t in tiles) (1, t)];
 
-  final String label;
-  final String value;
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool highlight;
-}
+    final cards = <(int, Widget)>[];
+    if (a != null) {
+      cards.add((
+        2,
+        salesPurchasesCard(
+          a,
+          onTap: link(perms.can(Perm.invoicesView), '/invoices'),
+        ),
+      ));
+      if (a.cashFlow != null) {
+        cards.add((
+          1,
+          cashCard(a, onTap: link(perms.can(Perm.paymentsView), '/receipts')),
+        ));
+      }
+      cards.add((
+        1,
+        ageingCard(
+          'Receivables ageing',
+          a.receivableAgeing,
+          onTap: () => open('/reports/receivables-ageing'),
+        ),
+      ));
+      cards.add((
+        1,
+        rankedCard(
+          'Top customers',
+          a.topCustomers,
+          subtitle: 'Share of sales in this period',
+          caption: shareCaption,
+          onTap: link(perms.can(Perm.partiesView), '/parties'),
+        ),
+      ));
+      cards.add((
+        1,
+        rankedCard(
+          'Top items',
+          a.topItems,
+          subtitle: 'By sales value',
+          onTap: link(perms.can(Perm.itemsView), '/items'),
+        ),
+      ));
+    } else {
+      cards.add((1, _TopItems(dashboard: d)));
+    }
+    cards.addAll([
+      // Only roles that can see returns ask for the filing calendar.
+      if (perms.can(TaxPerm.complianceView)) (1, const NeedsYouCard()),
+      (1, const AlertsCard()),
+      if (d.lowStockCount > 0)
+        (
+          1,
+          _LowStock(count: d.lowStockCount, canOpen: perms.can(Perm.stockView)),
+        ),
+      (2, _RecentInvoices(dashboard: d, canOpen: perms.can(Perm.invoicesView))),
+    ]);
 
-class _KpiGrid extends StatelessWidget {
-  const _KpiGrid({required this.cards});
-
-  final List<_Kpi> cards;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final columns = width >= 1000 ? 4 : (width >= 340 ? 2 : 1);
-        const gap = 12.0;
-        final cardWidth = (width - gap * (columns - 1)) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final kpi in cards)
-              SizedBox(
-                width: cardWidth,
-                child: _KpiCard(kpi: kpi),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (perms.can(Perm.reportsView)) ...[
+          Row(
+            children: [
+              Expanded(
+                child: PeriodChips(
+                  value: _preset,
+                  onChanged: (p) => setState(() => _preset = p),
+                ),
               ),
-          ],
-        );
-      },
+              TextButton(
+                onPressed: () => open('/insights'),
+                child: const Text('More detail'),
+              ),
+            ],
+          ),
+          const SizedBox(height: Space.sm),
+        ],
+        FlowGrid(
+          equalHeight: true,
+          columns: tileColumns(width),
+          children: tileWidgets,
+        ),
+        const SizedBox(height: Space.md),
+        FlowGrid(columns: cols, children: cards),
+      ],
     );
+  }
+
+  /// The company's quick actions from its business type, or the usual four
+  /// while the catalogue loads or when it has none.
+  List<Widget> _headerActions(BuildContext context, PermissionSet perms) {
+    final profile = ref.watch(businessProfileProvider);
+    final quick = ref
+        .watch(quickActionsProvider)
+        .where((q) => moduleAllows(q.route, profile))
+        .toList();
+    if (quick.isNotEmpty) {
+      return [
+        for (final (i, q) in quick.indexed)
+          i == 0
+              ? FilledButton.icon(
+                  onPressed: () => context.go(q.route),
+                  icon: const Icon(Icons.add),
+                  label: Text(q.label),
+                )
+              : OutlinedButton(
+                  onPressed: () => context.go(q.route),
+                  child: Text(q.label),
+                ),
+      ];
+    }
+    return [
+      if (perms.can(Perm.invoicesCreate))
+        FilledButton.icon(
+          onPressed: () => context.go('/invoices/new'),
+          icon: const Icon(Icons.add),
+          label: Text(context.w('New invoice')),
+        ),
+      if (perms.can(Perm.paymentsCreate))
+        OutlinedButton(
+          onPressed: () => context.go('/receipts/new'),
+          child: Text(context.w('Record receipt')),
+        ),
+      if (perms.can(Perm.purchasesCreate))
+        OutlinedButton(
+          onPressed: () => context.go('/purchases/new'),
+          child: Text(context.w('New bill')),
+        ),
+      if (perms.can(Perm.expensesCreate))
+        OutlinedButton(
+          onPressed: () => context.go('/expenses/new'),
+          child: const Text('New expense'),
+        ),
+    ];
+  }
+
+  Widget? _gstTile(List<FilingCalendarRow>? calendar) {
+    if (calendar == null) return null;
+    final due = calendar.where((r) => r.needsYou).toList();
+    final overdue = due.any((r) => r.status == 'overdue');
+    return KpiTile(
+      label: 'GST and TDS returns due',
+      value: due.isEmpty ? 'None' : '${due.length}',
+      hint: due.isEmpty
+          ? 'Nothing due this period'
+          : '${overdue ? 'Overdue: ' : 'Next: '}'
+                '${due.first.label}, ${formatDate(due.first.dueDate)}',
+      tone: due.isEmpty
+          ? StatusTone.neutral
+          : overdue
+          ? StatusTone.danger
+          : StatusTone.warning,
+      onTap: () => context.go('/filings/calendar'),
+    );
+  }
+
+  /// Tiles from `/dashboard` for roles without `reports.view`.
+  List<Widget> _legacyTiles(Dashboard d, PermissionSet perms, Widget? gst) {
+    return [
+      KpiTile(
+        label: 'Sales this month',
+        value: _rupees(d.salesThisMonth),
+        hint:
+            '${_rupees(d.salesToday)} today  ·  '
+            '${d.invoicesThisMonth} ${d.invoicesThisMonth == 1 ? 'invoice' : 'invoices'}',
+        onTap: perms.can(Perm.invoicesView)
+            ? () => context.go('/invoices')
+            : null,
+      ),
+      if (d.receivables != null)
+        KpiTile(
+          label: 'Receivables',
+          value: _rupees(d.receivables),
+          hint: 'Owed to you',
+          onTap: perms.can(Perm.paymentsView)
+              ? () => context.go('/receipts')
+              : null,
+        ),
+      if (d.payables != null)
+        KpiTile(
+          label: 'Payables',
+          value: _rupees(d.payables),
+          hint: 'You owe suppliers',
+          onTap: perms.can(Perm.paymentsView)
+              ? () => context.go('/payments')
+              : null,
+        ),
+      if (d.cashAndBank != null)
+        KpiTile(
+          label: 'Cash and bank',
+          value: _rupees(d.cashAndBank),
+          hint: 'Book balance',
+        ),
+      if (d.purchasesThisMonth != null)
+        KpiTile(
+          label: 'Purchases this month',
+          value: _rupees(d.purchasesThisMonth),
+          onTap: perms.can(Perm.purchasesView)
+              ? () => context.go('/purchases')
+              : null,
+        ),
+      ?gst,
+    ];
   }
 }
 
-class _KpiCard extends StatelessWidget {
-  const _KpiCard({required this.kpi});
+String _rupees(num? v) => formatMoneySigned(v, decimals: 0);
 
-  final _Kpi kpi;
+class _LowStock extends StatelessWidget {
+  const _LowStock({required this.count, required this.canOpen});
+
+  final int count;
+  final bool canOpen;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = kpi.highlight
-        ? theme.colorScheme.error
-        : theme.colorScheme.primary;
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: kpi.onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(kpi.icon, size: 20, color: color),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      kpi.label,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  kpi.value,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: kpi.highlight ? color : null,
-                  ),
-                ),
-              ),
-            ],
-          ),
+    return SectionCard(
+      title: 'Low stock',
+      padding: const EdgeInsets.fromLTRB(
+        Space.lg,
+        Space.lg,
+        Space.lg,
+        Space.sm,
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          '$count ${count == 1 ? 'item is' : 'items are'} below the reorder level',
         ),
+        subtitle: Text(
+          'Check stock before the next purchase order.',
+          style: theme.textTheme.bodySmall,
+        ),
+        trailing: canOpen ? const Icon(Icons.chevron_right) : null,
+        onTap: canOpen ? () => context.go('/stock?lowOnly=true') : null,
       ),
     );
   }
 }
 
 class _RecentInvoices extends StatelessWidget {
-  const _RecentInvoices({required this.dashboard});
+  const _RecentInvoices({required this.dashboard, required this.canOpen});
 
   final Dashboard dashboard;
+  final bool canOpen;
 
   @override
   Widget build(BuildContext context) {
     final invoices = dashboard.recentInvoices;
+    final theme = Theme.of(context);
     return SectionCard(
       title: 'Recent invoices',
+      trailing: canOpen
+          ? TextButton(
+              onPressed: () => context.go('/invoices'),
+              child: const Text('View all'),
+            )
+          : null,
       child: invoices.isEmpty
           ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No invoices yet.'),
+              padding: EdgeInsets.symmetric(vertical: Space.lg),
+              child: Text(
+                'No invoices yet. Create the first one from New invoice.',
+              ),
             )
           : Column(
               children: [
-                for (final invoice in invoices)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            invoice.number ?? 'Draft',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        InvoiceStatusPill(status: invoice.status),
-                      ],
-                    ),
-                    subtitle: Text(
-                      '${invoice.partyName} · ${formatDate(invoice.invoiceDate)}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: Text(formatMoney(invoice.total)),
+                for (final (i, invoice) in invoices.indexed) ...[
+                  if (i > 0) const Divider(),
+                  InkWell(
                     onTap: invoice.id == null
                         ? null
                         : () => context.go('/invoices/${invoice.id}'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: Space.sm),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: Space.sm,
+                                  runSpacing: Space.xs,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      invoice.number ?? 'Draft',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    InvoiceStatusPill(status: invoice.status),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${invoice.partyName}  ·  '
+                                  '${formatDate(invoice.invoiceDate)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: Space.md),
+                          MoneyText(
+                            invoice.total,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
+                ],
               ],
             ),
     );
@@ -288,26 +450,44 @@ class _TopItems extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = dashboard.topItems;
+    final theme = Theme.of(context);
     return SectionCard(
       title: 'Top items this month',
       child: items.isEmpty
           ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(vertical: Space.lg),
               child: Text('No sales this month yet.'),
             )
           : Column(
               children: [
-                for (final (index, item) in items.indexed)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      radius: 14,
-                      child: Text('${index + 1}'),
+                for (final (i, item) in items.indexed) ...[
+                  if (i > 0) const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Space.sm),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                'Qty ${formatQty(item.qty)}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: Space.md),
+                        MoneyText(item.amount),
+                      ],
                     ),
-                    title: Text(item.name, overflow: TextOverflow.ellipsis),
-                    subtitle: Text('Qty ${formatQty(item.qty)}'),
-                    trailing: Text(formatMoney(item.amount)),
                   ),
+                ],
               ],
             ),
     );

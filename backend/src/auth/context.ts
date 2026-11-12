@@ -49,6 +49,14 @@ export class RequestContext {
     if (!this.canAccessLocation(locationId)) throw forbidden('This location is outside your access.');
   }
 
+  /** The same caller acting in another of their companies (consolidation, inter-company). */
+  forCompany(companyId: string): RequestContext {
+    if (companyId === this.companyId) return this;
+    const m = this.memberships.find((x) => x.companyId === companyId);
+    if (!m) throw forbidden('You are not a member of that company.');
+    return new RequestContext(this.db, this.tenantId, this.userId, this.userName, this.memberships, m);
+  }
+
   /** Runs `fn` in a tenant-bound transaction. */
   tx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     return withTenant(this.db, this.tenantId, fn);
@@ -87,4 +95,13 @@ export async function loadMemberships(tx: Tx, userId: string): Promise<{ name: s
     }
   }
   return { name: user.name, memberships: [...byCompany.values()] };
+}
+
+/** Builds a context outside a request (jobs, approvals acting for the requester). Null when not a member. */
+export async function contextFor(
+  tx: Tx, db: Db, tenantId: string, userId: string, companyId: string,
+): Promise<RequestContext | null> {
+  const { name, memberships } = await loadMemberships(tx, userId);
+  const m = memberships.find((x) => x.companyId === companyId);
+  return m ? new RequestContext(db, tenantId, userId, name, memberships, m) : null;
 }

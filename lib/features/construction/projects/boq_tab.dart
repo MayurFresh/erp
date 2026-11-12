@@ -272,7 +272,7 @@ class _BoqLineFormState extends ConsumerState<BoqLineForm>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() => _busy = true);
     final repo = ref.read(constructionRepositoryProvider);
     try {
@@ -294,6 +294,7 @@ class _BoqLineFormState extends ConsumerState<BoqLineForm>
   }
 
   Future<void> _delete() async {
+    if (_busy) return;
     final o = _o!;
     final ok = await confirm(
       context,
@@ -314,7 +315,7 @@ class _BoqLineFormState extends ConsumerState<BoqLineForm>
       if (!mounted) return;
       final inUse = apiError(e)?.code == 'IN_USE';
       if (inUse) {
-        await showDialog<void>(
+        await showFormDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('This line is in use'),
@@ -352,7 +353,7 @@ class _BoqLineFormState extends ConsumerState<BoqLineForm>
       inputFormatters: [decimalInput()],
       decoration: InputDecoration(
         labelText: label,
-        prefixText: '₹ ',
+        prefixText: '$moneySymbol ',
         errorText: serverError(field),
       ),
       validator: required
@@ -500,6 +501,7 @@ class _BoqPasteFormState extends ConsumerState<BoqPasteForm> {
   }
 
   Future<void> _import() async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       final added = await ref

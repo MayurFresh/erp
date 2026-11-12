@@ -1,7 +1,10 @@
+import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
+import '../../core/json.dart';
 import '../../core/money.dart';
 import '../../core/permissions.dart';
 import '../../core/providers.dart';
@@ -46,6 +49,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _sku;
+  late final TextEditingController _barcode;
   late final TextEditingController _hsn;
   late final TextEditingController _unit;
   late final TextEditingController _salePrice;
@@ -54,6 +58,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
   late double _gstRate;
   late bool _trackStock;
   late bool _active;
+  late Json _custom;
   bool _saving = false;
 
   bool get _editing => widget.item != null;
@@ -71,6 +76,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
     final item = widget.item;
     _name = TextEditingController(text: item?.name);
     _sku = TextEditingController(text: item?.sku);
+    _barcode = TextEditingController(text: item?.barcode);
     _hsn = TextEditingController(text: item?.hsnCode);
     _unit = TextEditingController(text: item?.unit ?? 'pcs');
     _salePrice = TextEditingController(text: formatPlain(item?.salePrice));
@@ -81,6 +87,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
     _gstRate = item?.gstRate ?? 18;
     _trackStock = item?.trackStock ?? true;
     _active = item?.isActive ?? true;
+    _custom = item?.custom ?? const {};
   }
 
   @override
@@ -88,6 +95,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
     for (final c in [
       _name,
       _sku,
+      _barcode,
       _hsn,
       _unit,
       _salePrice,
@@ -101,11 +109,12 @@ class _ItemFormState extends ConsumerState<ItemForm>
 
   Future<void> _save({required bool showCost}) async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final original = widget.item;
     final input = ItemInput(
       name: _name.text.trim(),
       sku: trimmedOrNull(_sku.text),
+      barcode: trimmedOrNull(_barcode.text),
       hsnCode: trimmedOrNull(_hsn.text),
       unit: _unit.text.trim(),
       gstRate: _gstRate,
@@ -116,6 +125,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
       trackStock: _trackStock,
       reorderLevel: parseNumber(_reorder.text) ?? 0,
       isActive: _active,
+      custom: _custom,
     );
     setState(() => _saving = true);
     try {
@@ -129,7 +139,15 @@ class _ItemFormState extends ConsumerState<ItemForm>
       showInfoSnackBar(context, 'Saved "${saved.name}"');
       context.go('/items');
     } catch (e) {
-      if (mounted) showSubmitError(e);
+      if (mounted) {
+        showSubmitError(
+          e,
+          onReload: () {
+            markSaved();
+            context.go('/items');
+          },
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -140,6 +158,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
 
   Widget _buildBody(BuildContext context) {
     final perms = ref.watch(permissionsProvider);
+    final isIndia = ref.watch(businessProfileProvider).isIndia;
     final showCost = perms.can(Perm.itemsViewCost);
     final canSave = _editing
         ? perms.can(Perm.itemsEdit)
@@ -149,6 +168,20 @@ class _ItemFormState extends ConsumerState<ItemForm>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            OutlinedButton(
+              onPressed: _saving ? null : () => leave('/items'),
+              child: Text(canSave ? 'Cancel' : 'Back'),
+            ),
+            if (canSave)
+              BusyButton(
+                busy: _saving,
+                onPressed: () => _save(showCost: showCost),
+                label: _editing ? 'Save changes' : 'Create item',
+              ),
+          ],
+        ),
         children: [
           Text(
             _editing ? 'Edit item' : 'New item',
@@ -181,25 +214,47 @@ class _ItemFormState extends ConsumerState<ItemForm>
                       onChanged: (_) => clearServerError('sku'),
                     ),
                     TextFormField(
-                      controller: _hsn,
+                      controller: _barcode,
                       enabled: canSave,
                       decoration: const InputDecoration(
-                        labelText: 'HSN / SAC (optional)',
+                        labelText: 'Barcode (optional)',
+                        helperText: 'Used when picking and packing orders',
                       ),
-                      keyboardType: TextInputType.number,
-                      forceErrorText: serverError('hsnCode'),
-                      onChanged: (_) {
-                        clearServerError('hsnCode');
-                        setState(() {});
-                      },
+                      forceErrorText: serverError('barcode'),
+                      onChanged: (_) => clearServerError('barcode'),
                       validator: (v) {
-                        final text = v?.trim() ?? '';
-                        if (text.isEmpty) return null;
-                        return RegExp(r'^\d{4,8}$').hasMatch(text)
-                            ? null
-                            : 'Use 4 to 8 digits';
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return null;
+                        if (t.length < 4 || t.length > 64) {
+                          return 'Use 4 to 64 characters';
+                        }
+                        if (t.contains(RegExp(r'\s'))) {
+                          return 'No spaces allowed';
+                        }
+                        return null;
                       },
                     ),
+                    if (isIndia)
+                      TextFormField(
+                        controller: _hsn,
+                        enabled: canSave,
+                        decoration: const InputDecoration(
+                          labelText: 'HSN / SAC (optional)',
+                        ),
+                        keyboardType: TextInputType.number,
+                        forceErrorText: serverError('hsnCode'),
+                        onChanged: (_) {
+                          clearServerError('hsnCode');
+                          setState(() {});
+                        },
+                        validator: (v) {
+                          final text = v?.trim() ?? '';
+                          if (text.isEmpty) return null;
+                          return RegExp(r'^\d{4,8}$').hasMatch(text)
+                              ? null
+                              : 'Use 4 to 8 digits';
+                        },
+                      ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -250,9 +305,9 @@ class _ItemFormState extends ConsumerState<ItemForm>
                 TextFormField(
                   controller: _salePrice,
                   enabled: canSave,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Sale price',
-                    prefixText: '₹ ',
+                    prefixText: '$moneySymbol ',
                   ),
                   keyboardType: decimalKeyboard,
                   inputFormatters: [decimalInput()],
@@ -265,9 +320,9 @@ class _ItemFormState extends ConsumerState<ItemForm>
                   TextFormField(
                     controller: _purchasePrice,
                     enabled: canSave,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Purchase price (optional)',
-                      prefixText: '₹ ',
+                      prefixText: '$moneySymbol ',
                     ),
                     keyboardType: decimalKeyboard,
                     inputFormatters: [decimalInput()],
@@ -285,7 +340,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
               children: [
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Track stock'),
+                  title: Text(context.w('Track stock')),
                   subtitle: const Text(
                     'Invoices reduce stock and fail when it would go negative',
                   ),
@@ -296,25 +351,31 @@ class _ItemFormState extends ConsumerState<ItemForm>
                 ),
                 if (_trackStock) ...[
                   const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _reorder,
-                    enabled: canSave,
-                    decoration: const InputDecoration(
-                      labelText: 'Reorder level',
-                      helperText: 'Flagged as low stock at or below this',
-                    ),
-                    keyboardType: decimalKeyboard,
-                    inputFormatters: [decimalInput(decimals: 3)],
-                    forceErrorText: serverError('reorderLevel'),
-                    onChanged: (_) => clearServerError('reorderLevel'),
-                    validator: (v) => optionalNumber(v, min: 0),
+                  FormRow(
+                    children: [
+                      TextFormField(
+                        controller: _reorder,
+                        enabled: canSave,
+                        decoration: const InputDecoration(
+                          labelText: 'Reorder level',
+                          helperText: 'Flagged as low stock at or below this',
+                        ),
+                        keyboardType: decimalKeyboard,
+                        inputFormatters: [decimalInput(decimals: 3)],
+                        forceErrorText: serverError('reorderLevel'),
+                        onChanged: (_) => clearServerError('reorderLevel'),
+                        validator: (v) => optionalNumber(v, min: 0),
+                      ),
+                    ],
                   ),
                 ],
                 if (_editing)
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Active'),
-                    subtitle: const Text('Inactive items cannot be invoiced'),
+                    subtitle: Text(
+                      context.w('Inactive items cannot be invoiced'),
+                    ),
                     value: _active,
                     onChanged: canSave
                         ? (v) => setState(() => _active = v)
@@ -323,22 +384,11 @@ class _ItemFormState extends ConsumerState<ItemForm>
               ],
             ),
           ),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _saving ? null : () => leave('/items'),
-                child: Text(canSave ? 'Cancel' : 'Back'),
-              ),
-              if (canSave)
-                BusyButton(
-                  busy: _saving,
-                  onPressed: () => _save(showCost: showCost),
-                  label: _editing ? 'Save changes' : 'Create item',
-                ),
-            ],
+          CustomFieldsSection(
+            entity: 'item',
+            values: _custom,
+            errors: serverErrors,
+            onChanged: (v) => setState(() => _custom = v),
           ),
         ],
       ),

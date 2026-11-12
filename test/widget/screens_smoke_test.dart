@@ -60,7 +60,7 @@ void main() {
     ) async {
       final app = await bootApp(tester, size);
       // Restored session lands on the dashboard.
-      expect(find.text('Sales today'), findsOneWidget);
+      expect(find.text('Sales and purchases by month'), findsOneWidget);
 
       for (final MapEntry(key: route, value: marker) in routes.entries) {
         await app.go(route);
@@ -88,22 +88,29 @@ void main() {
           )
           .first;
       for (final label in [
-        'OVERVIEW',
-        'SALES',
-        'PURCHASES',
-        'INVENTORY',
-        'MASTERS',
-        'ADMINISTRATION',
+        'Overview',
+        'Sales',
+        'Purchases',
+        'Inventory',
+        'Masters',
+        'Administration',
         'Audit log',
       ]) {
-        await tester.scrollUntilVisible(
-          find.text(label),
-          100,
-          scrollable: menu,
+        // The page behind the menu can show the same word.
+        final entry = find.descendant(
+          of: find.byType(NavigationDrawer),
+          matching: find.text(label),
         );
-        expect(find.text(label), findsOneWidget, reason: label);
+        await tester.scrollUntilVisible(entry, 100, scrollable: menu);
+        expect(entry, findsOneWidget, reason: label);
       }
-      await tester.tap(find.text('Audit log'));
+      final audit = find.descendant(
+        of: find.byType(NavigationDrawer),
+        matching: find.text('Audit log'),
+      );
+      await tester.ensureVisible(audit);
+      await tester.pumpAndSettle();
+      await tester.tap(audit);
       await tester.pumpAndSettle();
       expect(app.router.state.uri.path, '/audit');
       app.expectClean('menu at $size');
@@ -115,7 +122,7 @@ void main() {
   ) async {
     final app = await bootApp(tester, const Size(1440, 900), v11: false);
     expect(find.text('Receivables'), findsNothing);
-    expect(find.text('Sales today'), findsOneWidget);
+    expect(find.text('Sales this month'), findsOneWidget);
     for (final route in ['/invoices', '/invoices/inv1', '/parties/p1']) {
       await app.go(route);
       app.expectClean(route);

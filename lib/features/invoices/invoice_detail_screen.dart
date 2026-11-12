@@ -1,3 +1,5 @@
+import '../controls/cost_centre_widgets.dart';
+import '../controls/custom_fields_section.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -6,11 +8,13 @@ import 'package:go_router/go_router.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
+import '../../core/business_profile.dart';
 import '../../core/india_states.dart';
 import '../../core/money.dart';
+import '../../core/pdf_brand.dart';
 import '../../core/pdf_fonts.dart';
-import '../../core/permissions.dart';
 import '../../core/providers.dart';
+import '../../core/permissions.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
@@ -18,6 +22,7 @@ import '../company/company_model.dart';
 import '../company/company_repository.dart';
 import '../parties/parties_repository.dart';
 import '../parties/party_model.dart';
+import 'einvoice_section.dart';
 import 'invoice_model.dart';
 import '../../core/whatsapp.dart';
 import 'invoice_pdf.dart';
@@ -84,10 +89,12 @@ class InvoiceDetailScreen extends ConsumerWidget {
         // The PDF still has the name and GSTIN from the invoice.
       }
     }
+    final co = company ?? const Company(id: '', name: 'Company', stateCode: '');
     return buildInvoicePdf(
       invoice,
-      company ?? const Company(id: '', name: 'Company', stateCode: ''),
+      co,
       party: party,
+      brand: await loadPdfBrand(ref.read(apiClientProvider), co),
       theme: await pdfTheme(),
     );
   }
@@ -275,18 +282,20 @@ class InvoiceDetailScreen extends ConsumerWidget {
                     spacing: 32,
                     runSpacing: 12,
                     children: [
-                      LabeledValue('Party', invoice.partyName),
-                      LabeledValue('GSTIN', invoice.partyGstin ?? ''),
-                      LabeledValue(
-                        'Place of supply',
-                        stateLabel(invoice.placeOfSupply),
-                      ),
-                      LabeledValue(
-                        'Supply type',
-                        invoice.isInterState
-                            ? 'Inter-state (IGST)'
-                            : 'Intra-state (CGST + SGST)',
-                      ),
+                      LabeledValue(context.w('Party'), invoice.partyName),
+                      if (ref.watch(businessProfileProvider).isIndia) ...[
+                        LabeledValue('GSTIN', invoice.partyGstin ?? ''),
+                        LabeledValue(
+                          'Place of supply',
+                          stateLabel(invoice.placeOfSupply),
+                        ),
+                        LabeledValue(
+                          'Supply type',
+                          invoice.isInterState
+                              ? 'Inter-state (IGST)'
+                              : 'Intra-state (CGST + SGST)',
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -320,6 +329,10 @@ class InvoiceDetailScreen extends ConsumerWidget {
                 showReturned: lines.any((l) => l.returnedQty > 0),
               ),
             ),
+            if (ref.watch(businessProfileProvider).hasModule('einvoice'))
+              EInvoiceSection(invoice: invoice),
+            CostCentreCard(costCentreId: invoice.costCentreId),
+            CustomValuesCard(entity: 'invoice', custom: invoice.custom),
             if (invoice.notes != null && invoice.notes!.isNotEmpty)
               SectionCard(title: 'Notes', child: Text(invoice.notes!)),
           ],

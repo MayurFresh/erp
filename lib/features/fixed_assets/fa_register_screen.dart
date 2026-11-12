@@ -16,6 +16,7 @@ import 'fa_depreciation_tab.dart';
 import 'fa_it_schedule_tab.dart';
 import 'fa_models.dart';
 import 'fa_repository.dart';
+import '../../core/app_colors.dart';
 
 /// `/fixed-assets`: the register, depreciation runs and the IT schedule.
 class FixedAssetsScreen extends ConsumerWidget {
@@ -216,8 +217,8 @@ class _AssetRegisterTabState extends ConsumerState<AssetRegisterTab> {
                 (a) => Pill(
                   a.disposed ? 'Disposed' : 'Active',
                   color: a.disposed
-                      ? Colors.grey.shade700
-                      : Colors.green.shade700,
+                      ? context.colors.onNeutralContainer
+                      : context.colors.success,
                 ),
               ),
             ],

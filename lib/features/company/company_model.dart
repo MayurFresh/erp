@@ -30,6 +30,14 @@ class Company {
     this.constitution,
     this.responsiblePerson,
     this.itrForm,
+    this.businessType = 'general',
+    this.plan = 'business',
+    this.enabledModules,
+    this.terms = const {},
+    this.country = 'IN',
+    this.currency = 'INR',
+    this.logoFileId,
+    this.brandColor,
   });
 
   factory Company.fromJson(Json json) => Company(
@@ -61,6 +69,17 @@ class Company {
         ? null
         : ResponsiblePerson.fromJson(asJson(json['responsiblePerson'])),
     itrForm: asStringOrNull(json['itrForm']),
+    businessType: asString(json['businessType'], 'general'),
+    plan: asString(json['plan'], 'business'),
+    enabledModules: asStringListOrNull(json['enabledModules']),
+    terms: {
+      for (final e in (asJsonOrNull(json['terms']) ?? const {}).entries)
+        e.key: e.value.toString(),
+    },
+    country: asString(json['country'], 'IN'),
+    currency: asString(json['currency'], 'INR'),
+    logoFileId: asStringOrNull(json['logoFileId']),
+    brandColor: asStringOrNull(json['brandColor']),
   );
 
   final String id;
@@ -108,6 +127,29 @@ class Company {
 
   /// `itr3`, `itr4`, `itr5`, `itr6` or `null` (API v1.6).
   final String? itrForm;
+
+  /// Business type id from `GET /business-types` (API v1.8.2).
+  final String businessType;
+
+  /// `solo`, `team`, `business` or `enterprise`.
+  final String plan;
+
+  /// `null` = the defaults for [businessType].
+  final List<String>? enabledModules;
+
+  /// Word overrides, e.g. `{'customer': 'Patient'}`.
+  final Map<String, String> terms;
+
+  /// ISO 3166-1 alpha-2.
+  final String country;
+
+  /// ISO 4217.
+  final String currency;
+
+  final String? logoFileId;
+
+  /// `#RRGGBB`, used on PDFs and client reports.
+  final String? brandColor;
 
   bool get einvoiceSandbox => einvoiceMode == 'sandbox';
 

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/money.dart';
-import '../../core/validators.dart';
 import '../../widgets/filter_dropdown.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
@@ -13,6 +12,7 @@ import '../income_tax/it_widgets.dart';
 import '../reports/report_widgets.dart' show tabularFigures;
 import 'fa_models.dart';
 import 'fa_repository.dart';
+import '../../widgets/form_support.dart';
 
 /// Income-tax block depreciation for a financial year, with the first-year
 /// opening WDV editable per block.
@@ -182,7 +182,7 @@ class _OpeningWdvDialogState extends ConsumerState<OpeningWdvDialog> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     final v = parseIndianNumber(_value.text)!;
     try {
       await ref
@@ -206,7 +206,7 @@ class _OpeningWdvDialogState extends ConsumerState<OpeningWdvDialog> {
         inputFormatters: [moneyInput()],
         decoration: InputDecoration(
           labelText: 'Opening WDV for FY ${widget.fy}',
-          prefixText: '₹ ',
+          prefixText: '$moneySymbol ',
           helperText: 'Written down value at the start of the year',
         ),
         validator: (v) => validateMoney(v, label: 'Opening WDV', min: 0),

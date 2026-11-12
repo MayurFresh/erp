@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/app_colors.dart';
 import '../../core/money.dart';
-import '../../widgets/layout.dart';
 import '../../widgets/search_picker.dart';
+import '../../widgets/status_chip.dart';
 import '../../widgets/states.dart';
 import '../reports/report_widgets.dart' show tabularFigures;
 import 'compliance_models.dart';
@@ -158,21 +159,17 @@ Future<void> shareText(BuildContext context, String text, String what) async {
 /// Colour for a severity or status word.
 Color statusColor(BuildContext context, String status) {
   final s = Theme.of(context).colorScheme;
+  final c = context.colors;
   return switch (status) {
-    'ok' ||
-    'valid' ||
-    'matched' ||
-    'posted' ||
-    'info' ||
-    'accept' => Colors.green.shade700,
-    'warn' || 'expiring' || 'mismatch' || 'pending' => Colors.orange.shade800,
+    'ok' || 'valid' || 'matched' || 'posted' || 'info' || 'accept' => c.success,
+    'warn' || 'expiring' || 'mismatch' || 'pending' => c.warning,
     'due' ||
     'overdue' ||
     'expired' ||
     'cancelled' ||
     'reject' ||
     'missing_in_books' ||
-    'missing_in_2b' => s.error,
+    'missing_in_2b' => c.danger,
     _ => s.onSurfaceVariant,
   };
 }
@@ -184,8 +181,7 @@ class StatusPill extends StatelessWidget {
   final String? label;
 
   @override
-  Widget build(BuildContext context) =>
-      Pill(label ?? status, color: statusColor(context, status));
+  Widget build(BuildContext context) => StatusChip(status, label: label);
 }
 
 /// Banner listing [messages]; nothing when empty.

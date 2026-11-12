@@ -6,6 +6,7 @@ import '../../../core/json.dart';
 import '../../../core/money.dart';
 import '../../../widgets/form_support.dart';
 import '../../../widgets/layout.dart';
+import '../../../core/api_exception.dart';
 import '../../../widgets/states.dart';
 import '../common/c_perms.dart';
 import '../common/c_revisions.dart';
@@ -226,7 +227,7 @@ class _RaFormState extends ConsumerState<_RaForm> with DirtyTracking<_RaForm> {
       RaBillMath.compute(_measures(), _terms, overrides: _overrides());
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final math = _math;
     if (math.isNegative) {
       markSaved();
@@ -259,7 +260,11 @@ class _RaFormState extends ConsumerState<_RaForm> with DirtyTracking<_RaForm> {
       final repo = ref.read(subcontractRepositoryProvider);
       final Json _ = body;
       final bill = _editing
-          ? await repo.updateRaBill(widget.original!.id, body)
+          ? await repo.updateRaBill(
+              widget.original!.id,
+              body,
+              expectedUpdatedAt: widget.original!.updatedAt,
+            )
           : await repo.createRaBill(body);
       ref.bumpC(const [CKind.raBills]);
       ref.invalidate(raBillProvider(bill.id));
@@ -267,7 +272,20 @@ class _RaFormState extends ConsumerState<_RaForm> with DirtyTracking<_RaForm> {
       showSuccess(context, '${bill.number} saved');
       context.go('/ra-bills/${bill.id}');
     } catch (error) {
-      if (mounted) showErrorSnackBar(context, error);
+      if (mounted) {
+        final stale = apiError(error)?.code == ApiException.staleEdit;
+        showErrorSnackBar(
+          context,
+          error,
+          actionLabel: stale ? 'Reload' : null,
+          onAction: stale
+              ? () {
+                  markSaved();
+                  context.go('/ra-bills/${widget.original?.id}');
+                }
+              : null,
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -285,7 +303,7 @@ class _RaFormState extends ConsumerState<_RaForm> with DirtyTracking<_RaForm> {
     onChanged: (_) => setState(() {}),
     decoration: InputDecoration(
       labelText: label,
-      prefixText: '₹ ',
+      prefixText: '$moneySymbol ',
       helperText: 'Default ${formatMoney(def)}',
     ),
     validator: (v) {

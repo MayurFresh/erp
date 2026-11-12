@@ -1,3 +1,4 @@
+import '../platform/platform_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -84,11 +85,12 @@ class _UserEditFormState extends ConsumerState<UserEditForm>
       ref.read(sessionProvider).value?.user?.id == widget.user.id;
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       serverErrors = const {};
       _blocked = null;
     });
-    final valid = _formKey.currentState!.validate();
+    final valid = validateAndReveal(_formKey);
     if (!_allLocations && _locationIds.isEmpty) {
       setState(
         () => serverErrors = {'locationIds': 'Choose at least one location'},
@@ -137,7 +139,7 @@ class _UserEditFormState extends ConsumerState<UserEditForm>
   }
 
   Future<void> _resetPassword() async {
-    final done = await showDialog<bool>(
+    final done = await showFormDialog<bool>(
       context: context,
       builder: (_) => _ResetPasswordDialog(user: widget.user),
     );
@@ -147,6 +149,39 @@ class _UserEditFormState extends ConsumerState<UserEditForm>
         'Password changed for ${widget.user.name}; they were signed out '
         'everywhere.',
       );
+    }
+  }
+
+  Future<void> _platformAction(
+    String? confirm,
+    String done,
+    Future<void> Function(PlatformRepository) run,
+  ) async {
+    if (confirm != null) {
+      final ok = await showFormDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          content: Text(confirm),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const Key('user.confirm'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Reset'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    try {
+      await run(ref.read(platformRepositoryProvider));
+      if (mounted) showInfoSnackBar(context, done);
+    } catch (e) {
+      if (mounted) showErrorSnackBar(context, e);
     }
   }
 
@@ -164,6 +199,15 @@ class _UserEditFormState extends ConsumerState<UserEditForm>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            OutlinedButton(
+              onPressed: _saving ? null : () => leave('/users'),
+              child: const Text('Cancel'),
+            ),
+            BusyButton(busy: _saving, onPressed: _save, label: 'Save changes'),
+          ],
+        ),
         children: [
           Wrap(
             alignment: WrapAlignment.spaceBetween,
@@ -179,10 +223,37 @@ class _UserEditFormState extends ConsumerState<UserEditForm>
                   Text(widget.user.email, style: theme.textTheme.bodyMedium),
                 ],
               ),
-              OutlinedButton.icon(
-                onPressed: _resetPassword,
-                icon: const Icon(Icons.password),
-                label: const Text('Reset password'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _resetPassword,
+                    icon: const Icon(Icons.password),
+                    label: const Text('Reset password'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('user.reset2fa'),
+                    onPressed: () => _platformAction(
+                      'Reset two-factor sign-in for ${widget.user.name}? '
+                          'They will have to set it up again.',
+                      'Two-factor sign-in reset',
+                      (r) => r.reset2fa(widget.user.id),
+                    ),
+                    icon: const Icon(Icons.phonelink_erase),
+                    label: const Text('Reset 2FA'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('user.unlock'),
+                    onPressed: () => _platformAction(
+                      null,
+                      '${widget.user.name} can sign in again',
+                      (r) => r.unlockUser(widget.user.id),
+                    ),
+                    icon: const Icon(Icons.lock_open),
+                    label: const Text('Unlock'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -347,22 +418,6 @@ class _UserEditFormState extends ConsumerState<UserEditForm>
               ],
             ),
           ),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _saving ? null : () => leave('/users'),
-                child: const Text('Cancel'),
-              ),
-              BusyButton(
-                busy: _saving,
-                onPressed: _save,
-                label: 'Save changes',
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -404,10 +459,14 @@ class _PasswordFieldsState extends State<PasswordFields> {
         autofillHints: const [AutofillHints.newPassword],
         decoration: InputDecoration(
           labelText: widget.label,
-          helperText: 'At least 8 characters',
+          helperText: '8+ characters with a letter and a digit',
           suffixIcon: IconButton(
             tooltip: _obscure ? 'Show password' : 'Hide password',
-            icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+            icon: Icon(
+              _obscure
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+            ),
             onPressed: () => setState(() => _obscure = !_obscure),
           ),
         ),
@@ -415,7 +474,11 @@ class _PasswordFieldsState extends State<PasswordFields> {
         onChanged: (_) => widget.onChanged?.call(),
         validator: (v) {
           if (v == null || v.isEmpty) return 'Enter a password';
-          return v.length < 8 ? 'Use at least 8 characters' : null;
+          return v.length < 8 ||
+                  !RegExp('[A-Za-z]').hasMatch(v) ||
+                  !RegExp('[0-9]').hasMatch(v)
+              ? 'Use 8+ characters with a letter and a digit'
+              : null;
         },
       ),
       const SizedBox(height: 16),
@@ -455,7 +518,7 @@ class _ResetPasswordDialogState extends ConsumerState<_ResetPasswordDialog> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() {
       _saving = true;
       _error = null;

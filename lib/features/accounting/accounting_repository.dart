@@ -110,7 +110,14 @@ class AccountingRepository {
     };
     if (body.isEmpty) return original;
     return Account.fromJson(
-      await _api.patchJson('/accounts/${original.id}', body: body),
+      await _api.patchJson(
+        '/accounts/${original.id}',
+        body: {
+          ...body,
+          if (original.updatedAt != null)
+            'expectedUpdatedAt': original.updatedAt!.toUtc().toIso8601String(),
+        },
+      ),
     );
   }
 

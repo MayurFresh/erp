@@ -12,6 +12,7 @@ import 'tax_models.dart';
 import 'tax_pickers.dart';
 import 'tax_repository.dart';
 import '../../widgets/busy.dart';
+import '../../core/app_colors.dart';
 
 final _allTdsProvider = FutureProvider.autoDispose<List<TdsSection>>((ref) {
   ref.watch(activeCompanyIdProvider);
@@ -37,7 +38,7 @@ class TdsSectionsScreen extends ConsumerWidget {
               FilledButton.icon(
                 style: bigButton,
                 onPressed: () async {
-                  final saved = await showDialog<bool>(
+                  final saved = await showFormDialog<bool>(
                     context: context,
                     builder: (_) => const _TdsDialog(),
                   );
@@ -116,7 +117,8 @@ class _TdsList extends ConsumerWidget {
     spacing: 6,
     children: [
       if (!s.verified) const UnverifiedBadge(),
-      if (!s.isActive) const Pill('inactive', color: Colors.grey),
+      if (!s.isActive)
+        Pill('inactive', color: AppColors.light.onNeutralContainer),
     ],
   );
 
@@ -301,7 +303,7 @@ class _TdsDialogState extends ConsumerState<_TdsDialog> with ServerFieldErrors {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     setState(() => _saving = true);
     try {
       await ref.read(taxRepositoryProvider).createTdsSection({
@@ -422,7 +424,7 @@ class _TdsDialogState extends ConsumerState<_TdsDialog> with ServerFieldErrors {
                     firstDate: DateTime(2017),
                     lastDate: DateTime(2100),
                   );
-                  if (p != null) setState(() => _from = p);
+                  if (p != null && mounted) setState(() => _from = p);
                 },
                 icon: const Icon(Icons.event),
                 label: Text('Effective from ${formatDate(_from)}'),
@@ -434,7 +436,7 @@ class _TdsDialogState extends ConsumerState<_TdsDialog> with ServerFieldErrors {
     ),
     actions: [
       TextButton(
-        onPressed: _saving ? null : () => Navigator.of(context).pop(),
+        onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       BusyButton(busy: _saving, onPressed: _save, label: 'Add'),

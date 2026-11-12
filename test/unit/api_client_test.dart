@@ -55,6 +55,7 @@ Map<String, Object> authResult(String access, String refresh) => {
 
 void main() {
   idempotencyAndErrorTests();
+  doubleSubmitTests();
   late InMemoryTokenStore store;
   late FakeAdapter adapter;
   late ApiClient api;
@@ -141,6 +142,44 @@ void main() {
     expect(results.map((r) => r['path']), ['/items', '/parties', '/stock']);
     expect(api.refreshToken, 'r2');
     expect(await store.readRefreshToken(), 'r2');
+  });
+
+  test('concurrent saves share one refresh and each replays once', () async {
+    var refreshes = 0;
+    adapter.handler = (o) {
+      if (o.path == '/auth/refresh') {
+        refreshes++;
+        return jsonBody(200, authResult('new', 'r2'));
+      }
+      if (o.headers['Authorization'] == 'Bearer old') {
+        return errorBody(401, 'TOKEN_EXPIRED');
+      }
+      return jsonBody(200, {'id': o.path});
+    };
+    await Future.wait([
+      api.post('/invoices', body: {'a': 1}),
+      api.post('/payments', body: {'a': 2}),
+      api.patch('/parties/p1', body: {'a': 3}),
+    ]);
+    expect(refreshes, 1);
+    for (final path in ['/invoices', '/payments', '/parties/p1']) {
+      expect(adapter.requests.where((r) => r.path == path).length, 2);
+    }
+  });
+
+  test('a replay that is refused again signs out instead of looping', () async {
+    adapter.handler = (o) {
+      if (o.path == '/auth/refresh') {
+        return jsonBody(200, authResult('new', 'r2'));
+      }
+      return errorBody(401, 'TOKEN_EXPIRED');
+    };
+    await expectLater(
+      api.post('/invoices', body: {'a': 1}),
+      throwsA(isA<ApiException>()),
+    );
+    expect(adapter.requests.where((r) => r.path == '/invoices').length, 2);
+    expect(adapter.requests.where((r) => r.path == '/auth/refresh').length, 1);
   });
 
   test('clears the session when refresh fails', () async {
@@ -313,6 +352,52 @@ void idempotencyAndErrorTests() {
       await sub.cancel();
       expect(expired, 1);
       expect(api.sessionNotice, isNotNull);
+    });
+  });
+}
+
+void doubleSubmitTests() {
+  group('double submit', () {
+    late FakeAdapter adapter;
+    late ApiClient api;
+    setUp(() {
+      adapter = FakeAdapter((_) => jsonBody(200, {'id': '1'}));
+      api = ApiClient(
+        baseUrl: 'http://api.test/api/v1',
+        tokenStore: InMemoryTokenStore(),
+        httpClientAdapter: adapter,
+      );
+    });
+
+    test('two identical posts at once send one request', () async {
+      final a = api.post('/invoices', body: {'x': 1});
+      final b = api.post('/invoices', body: {'x': 1});
+      await Future.wait([a, b]);
+      expect(adapter.requests.length, 1);
+      await api.post('/invoices', body: {'x': 1});
+      expect(adapter.requests.length, 2);
+    });
+
+    test('a retry after a dropped connection reuses the key', () async {
+      adapter.handler = (_) => throw DioException(
+        requestOptions: RequestOptions(path: '/invoices'),
+        type: DioExceptionType.connectionError,
+      );
+      await expectLater(
+        api.post('/invoices', body: {'x': 1}),
+        throwsA(isA<ApiException>()),
+      );
+      adapter.handler = (_) => jsonBody(200, {});
+      await api.post('/invoices', body: {'x': 1});
+      expect(
+        adapter.requests[1].headers['Idempotency-Key'],
+        adapter.requests[0].headers['Idempotency-Key'],
+      );
+      await api.post('/invoices', body: {'x': 1});
+      expect(
+        adapter.requests[2].headers['Idempotency-Key'],
+        isNot(adapter.requests[1].headers['Idempotency-Key']),
+      );
     });
   });
 }

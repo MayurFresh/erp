@@ -35,8 +35,8 @@ const List<NavEntry> realEstateNavEntries = [
   NavEntry(
     path: '/payment-plans',
     label: 'Payment plans',
-    icon: Icons.account_tree_outlined,
-    selectedIcon: Icons.account_tree,
+    icon: Icons.schedule_outlined,
+    selectedIcon: Icons.schedule,
     permission: RePerm.unitsView,
     createPermission: RePerm.unitsManage,
   ),
@@ -51,8 +51,8 @@ const List<NavEntry> realEstateNavEntries = [
   NavEntry(
     path: '/demands',
     label: 'Demands',
-    icon: Icons.request_quote_outlined,
-    selectedIcon: Icons.request_quote,
+    icon: Icons.markunread_mailbox_outlined,
+    selectedIcon: Icons.markunread_mailbox,
     permission: RePerm.bookingsView,
   ),
   NavEntry(

@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:printing/printing.dart';
 
 import '../../core/money.dart';
+import '../../core/pdf_brand.dart';
 import '../../core/pdf_fonts.dart';
+import '../../core/providers.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
@@ -53,9 +55,11 @@ class _DemandBody extends ConsumerWidget {
     } catch (_) {
       company = ref.read(sessionProvider).value?.company;
     }
+    final co = company ?? const Company(id: '', name: 'Company', stateCode: '');
     return buildDemandPdf(
       demand,
-      company ?? const Company(id: '', name: 'Company', stateCode: ''),
+      co,
+      brand: await loadPdfBrand(ref.read(apiClientProvider), co),
       theme: await pdfTheme(),
     );
   }

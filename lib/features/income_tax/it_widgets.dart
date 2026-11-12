@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/money.dart';
 import '../../widgets/layout.dart';
+import '../../core/app_colors.dart';
+import '../../widgets/form_support.dart';
 
 /// "Unverified" badge for a response with a non-empty `unverified` list;
 /// tap to see which figures. Nothing when [items] is empty.
@@ -47,7 +49,7 @@ class UnverifiedNote extends StatelessWidget {
                 ],
               ),
             ),
-            child: Pill('Unverified', color: Colors.orange.shade800),
+            child: Pill('Unverified', color: context.colors.warning),
           ),
         ),
       ),
@@ -118,7 +120,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
       ),
       FilledButton(
         onPressed: () {
-          if (_form.currentState!.validate()) {
+          if (validateAndReveal(_form)) {
             Navigator.pop(context, _reason.text.trim());
           }
         },

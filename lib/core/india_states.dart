@@ -1,3 +1,5 @@
+import 'validators.dart' show gstinChecksumValid;
+
 /// GST state codes (the first two digits of a GSTIN).
 class IndiaState {
   const IndiaState(this.code, this.name);
@@ -80,10 +82,21 @@ String? stateCodeFromGstin(String? gstin) {
 }
 
 /// Form validator for an optional GSTIN field.
-String? validateGstin(String? value, {bool required = false}) {
+///
+/// [original] is the value already saved. When the text still equals it, the
+/// check digit is skipped so older data can be edited and saved.
+String? validateGstin(
+  String? value, {
+  bool required = false,
+  String? original,
+}) {
   final text = value?.trim().toUpperCase() ?? '';
   if (text.isEmpty) return required ? 'GSTIN is required' : null;
   if (!isValidGstin(text)) return 'Enter a valid 15-character GSTIN';
   if (stateCodeFromGstin(text) == null) return 'Unknown state code in GSTIN';
+  if (original != null && original.trim().toUpperCase() == text) return null;
+  if (!gstinChecksumValid(text)) {
+    return 'GSTIN is not valid: check the last character';
+  }
   return null;
 }

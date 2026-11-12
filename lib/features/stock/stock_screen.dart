@@ -15,6 +15,7 @@ import '../locations/location_filter.dart';
 import 'adjust_stock_dialog.dart';
 import 'stock_models.dart';
 import 'stock_repository.dart';
+import '../../widgets/form_support.dart';
 
 class StockScreen extends ConsumerStatefulWidget {
   const StockScreen({super.key, this.initialLowOnly = false});
@@ -54,7 +55,7 @@ class _StockScreenState extends ConsumerState<StockScreen> {
   }
 
   Future<void> _adjust() async {
-    final move = await showDialog<StockMove>(
+    final move = await showFormDialog<StockMove>(
       context: context,
       builder: (_) => AdjustStockDialog(initialLocationId: _locationId),
     );

@@ -359,6 +359,9 @@ class ComplianceRepository {
   Future<SetupHealth> health() async =>
       SetupHealth.fromJson(await _api.getJson('/setup/health'));
 
+  Future<String> exportTally(String from, String to) =>
+      _api.getText('/export/tally', query: {'from': from, 'to': to});
+
   Future<String> exportCsv(String dataset, {String? from, String? to}) =>
       _api.getText('/export/$dataset', query: {'from': ?from, 'to': ?to});
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/business_profile.dart';
 
 import '../../core/money.dart';
 import '../../widgets/search_picker.dart';
@@ -15,7 +16,7 @@ Future<Item?> pickItem(
   final repo = ref.read(itemsRepositoryProvider);
   return showSearchPicker<Item>(
     context: context,
-    title: 'Choose an item',
+    title: context.w('Choose an item'),
     hintText: 'Search name, SKU or HSN',
     emptyMessage: 'No active items match.',
     search: (q) async {

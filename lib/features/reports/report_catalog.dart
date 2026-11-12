@@ -46,6 +46,7 @@ class ReportInfo {
 
 const String kFinancialStatements = 'Financial statements';
 const String kRegistersAndGst = 'Registers & GST';
+const String kShareWithClients = 'Share with clients';
 const String kPartiesAndStock = 'Outstanding & stock';
 
 /// Every report, in hub order.
@@ -141,6 +142,24 @@ const List<ReportInfo> reportCatalog = [
     group: kPartiesAndStock,
     allOf: [Perm.reportsView],
     route: '/msme-dues',
+  ),
+  ReportInfo(
+    name: 'cost-centres',
+    title: 'Cost centre report',
+    description: 'Income, expense and margin by cost centre',
+    icon: Icons.account_tree_outlined,
+    group: kRegistersAndGst,
+    allOf: [Perm.accountsView],
+    route: '/cost-centre-report',
+  ),
+  ReportInfo(
+    name: 'client-report',
+    title: 'Client report',
+    description: 'A branded PDF report or slides with charts, to show clients',
+    icon: Icons.slideshow_outlined,
+    group: kShareWithClients,
+    allOf: [Perm.reportsView],
+    route: '/reports/client-report',
   ),
 ];
 

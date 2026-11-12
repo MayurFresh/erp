@@ -24,6 +24,7 @@ class Item {
     required this.gstRate,
     required this.salePrice,
     this.sku,
+    this.barcode,
     this.hsnCode,
     this.purchasePrice,
     this.trackStock = true,
@@ -31,6 +32,7 @@ class Item {
     this.isActive = true,
     this.createdAt,
     this.updatedAt,
+    this.custom = const {},
   });
 
   factory Item.fromJson(Json json) => Item(
@@ -38,6 +40,7 @@ class Item {
     companyId: asString(json['companyId']),
     name: asString(json['name']),
     sku: asStringOrNull(json['sku']),
+    barcode: asStringOrNull(json['barcode']),
     hsnCode: asStringOrNull(json['hsnCode']),
     unit: asString(json['unit']),
     gstRate: asDouble(json['gstRate']),
@@ -48,12 +51,14 @@ class Item {
     isActive: asBool(json['isActive'], true),
     createdAt: asDateTimeOrNull(json['createdAt']),
     updatedAt: asDateTimeOrNull(json['updatedAt']),
+    custom: asJson(json['custom']),
   );
 
   final String id;
   final String companyId;
   final String name;
   final String? sku;
+  final String? barcode;
   final String? hsnCode;
   final String unit;
   final double gstRate;
@@ -66,6 +71,9 @@ class Item {
   final bool isActive;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  /// Custom field values (`key → value`).
+  final Json custom;
 }
 
 /// Editable fields of an item (create and PATCH bodies).
@@ -76,16 +84,19 @@ class ItemInput {
     required this.gstRate,
     required this.salePrice,
     this.sku,
+    this.barcode,
     this.hsnCode,
     this.purchasePrice,
     this.trackStock = true,
     this.reorderLevel = 0,
     this.isActive = true,
+    this.custom = const {},
   });
 
   factory ItemInput.fromItem(Item item) => ItemInput(
     name: item.name,
     sku: item.sku,
+    barcode: item.barcode,
     hsnCode: item.hsnCode,
     unit: item.unit,
     gstRate: item.gstRate,
@@ -94,10 +105,12 @@ class ItemInput {
     trackStock: item.trackStock,
     reorderLevel: item.reorderLevel,
     isActive: item.isActive,
+    custom: item.custom,
   );
 
   final String name;
   final String? sku;
+  final String? barcode;
   final String? hsnCode;
   final String unit;
   final double gstRate;
@@ -107,11 +120,15 @@ class ItemInput {
   final double reorderLevel;
   final bool isActive;
 
+  /// Custom field values; sent separately by the repository.
+  final Json custom;
+
   /// [includeCost] adds `purchasePrice` (only with `items.view_cost`);
   /// [includeActive] adds `isActive` (PATCH only).
   Json toJson({required bool includeCost, bool includeActive = false}) => {
     'name': name,
     'sku': sku,
+    'barcode': barcode,
     'hsnCode': hsnCode,
     'unit': unit,
     'gstRate': gstRate,

@@ -76,8 +76,16 @@ class ConstructionRepository {
       changes['siteIds'] = body['siteIds'];
     }
     if (changes.isEmpty) return original;
+    final stamp = original.updatedAt;
     return Project.fromJson(
-      await _api.patchJson('/projects/${original.id}', body: changes),
+      await _api.patchJson(
+        '/projects/${original.id}',
+        body: {
+          ...changes,
+          if (stamp != null)
+            'expectedUpdatedAt': stamp.toUtc().toIso8601String(),
+        },
+      ),
     );
   }
 
@@ -357,8 +365,16 @@ class ConstructionRepository {
   Future<Worker> updateWorker(Worker original, Json body) async {
     final changes = changedFields(original.toInputJson(), body);
     if (changes.isEmpty) return original;
+    final stamp = original.updatedAt;
     return Worker.fromJson(
-      await _api.patchJson('/workers/${original.id}', body: changes),
+      await _api.patchJson(
+        '/workers/${original.id}',
+        body: {
+          ...changes,
+          if (stamp != null)
+            'expectedUpdatedAt': stamp.toUtc().toIso8601String(),
+        },
+      ),
     );
   }
 

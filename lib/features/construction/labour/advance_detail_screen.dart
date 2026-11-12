@@ -28,6 +28,7 @@ class _AdvanceDetailScreenState extends ConsumerState<AdvanceDetailScreen> {
   bool _busy = false;
 
   Future<void> _cancel(LabourAdvance advance) async {
+    if (_busy) return;
     final reason = await showReasonDialog(
       context,
       title: 'Cancel advance',

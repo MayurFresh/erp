@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { assertFresh } from '../lib/stale.ts';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
 import { postJournal, reverseVoucher } from '../accounting/journal.ts';
@@ -15,6 +16,7 @@ import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { advanceFigures, computeRaBill, latestCumQtys, projectLocationId, requireProjectVisible, round2, user, visibleProjectIds } from './subcontract-common.ts';
 import { getWorkOrder } from './work-orders.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const reasonBody = z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) });
@@ -28,7 +30,7 @@ const common = {
   cess: moneyField.optional(), otherDeduction: moneyField.optional(), otherDeductionNote: nullableText(300),
 };
 const createBody = z.object({ workOrderId: z.uuid(), ...common, submit: z.boolean().optional() });
-const patchBody = z.object(common);
+const patchBody = z.object({ ...common, expectedUpdatedAt: z.string().max(40).optional(), });
 const listQuery = pagingQuery.extend({
   workOrderId: z.uuid().optional(), projectId: z.uuid().optional(), contractorId: z.uuid().optional(),
   status: z.enum(['draft', 'submitted', 'approved', 'cancelled']).optional(),
@@ -54,7 +56,7 @@ export async function loadRaBills(tx: Tx, ids: string[], withLines: boolean) {
     const totalDeductions = round2(b.retention + b.advance_recovery + b.tds + b.cess + b.other_deduction);
     const amountDue = b.status === 'approved' ? round2(b.net_payable - b.amount_paid) : 0;
     return {
-      id: b.id, number: b.number, workOrderId: b.work_order_id, workOrderNumber: b.wo_number, projectId: b.project_id,
+      id: b.id, updatedAt: b.updated_at, number: b.number, workOrderId: b.work_order_id, workOrderNumber: b.wo_number, projectId: b.project_id,
       projectName: b.project_name, contractorPartyId: b.contractor_party_id, contractorName: b.contractor_name,
       billSeq: b.bill_seq, date: b.bill_date, periodFrom: b.period_from, periodTo: b.period_to, dueDate: b.due_date,
       status: b.status, isFinal: b.is_final,
@@ -205,6 +207,7 @@ export async function raBillRoutes(app: FastifyInstance) {
     const body = parse(patchBody, req.body);
     return ctx.tx(async (tx) => {
       const { bill } = await getBill(tx, ctx, id, true);
+      assertFresh(bill.updated_at, body.expectedUpdatedAt, 'RA bill');
       const wo = await getWorkOrder(tx, ctx, bill.work_order_id, true);
       if (bill.status !== 'draft') throw conflict('Only a draft RA bill can be edited.');
       const existing = new Map((await tx.selectFrom('ra_bill_lines').select(['work_order_line_id', 'cum_qty']).where('ra_bill_id', '=', id).execute())
@@ -325,3 +328,8 @@ export async function raBillRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/ra-bills', { body: createBody });
+documentRoute('PATCH', '/ra-bills/:id', { body: patchBody });
+documentRoute('POST', '/ra-bills/:id/reject', { body: rejectBody });
+documentRoute('POST', '/ra-bills/:id/cancel', { body: reasonBody });

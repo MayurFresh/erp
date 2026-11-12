@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/money.dart';
-import '../../core/validators.dart';
 import '../../widgets/busy.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
@@ -12,6 +11,7 @@ import '../filings/filing_widgets.dart';
 import 'gst_filing_models.dart';
 import 'gst_filing_repository.dart';
 import 'gst_form_widgets.dart';
+import '../../widgets/form_support.dart';
 
 /// Credit / cash ledger snapshot form (balances copied from the portal) and
 /// the history of snapshots.
@@ -42,7 +42,7 @@ class _LedgerState extends ConsumerState<LedgerSnapshotSection>
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     try {
       await runBlocking(
         context,
@@ -263,7 +263,7 @@ Future<GstPayment?> showGstPaymentDialog(
   Heads prefill = const Heads(),
   double interest = 0,
   double lateFee = 0,
-}) => showDialog<GstPayment>(
+}) => showFormDialog<GstPayment>(
   context: context,
   builder: (_) => _PaymentDialog(
     ref: ref,
@@ -330,12 +330,12 @@ class _PaymentDialogState extends State<_PaymentDialog> with DirtyTracking {
     );
     if (a != null) {
       markDirty();
-      setState(() => _account = a);
+      if (mounted) setState(() => _account = a);
     }
   }
 
   Future<void> _save() async {
-    final ok = _form.currentState!.validate();
+    final ok = validateAndReveal(_form);
     final total = [
       for (final k in [...gstHeads, 'interest', 'lateFee']) money(_c[k]!),
     ].fold<double>(0, (a, b) => a + b);

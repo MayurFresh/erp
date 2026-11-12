@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import 'api_exception.dart';
 import 'config.dart';
+import 'dirty_registry.dart';
 import 'json.dart';
 import 'token_store.dart';
 
@@ -200,7 +202,16 @@ class ApiClient {
   Future<dynamic> _send(Future<Response<dynamic>> Function() call) async {
     try {
       final response = await call();
-      return response.data;
+      final data = response.data;
+      if (response.requestOptions.method != 'GET') {
+        DirtyRegistry.instance.noteSaved();
+      }
+      if (response.statusCode == 202 &&
+          data is Map &&
+          data['approvalRequest'] is Map) {
+        throw ApprovalPendingException.fromBody(asJson(data));
+      }
+      return data;
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
@@ -226,20 +237,61 @@ class ApiClient {
   /// is reused by internal retries (token refresh) because it lives in the
   /// request options. Pass [idempotencyKey] to keep one key across several
   /// attempts of the same user submit.
-  Future<dynamic> post(String path, {Object? body, String? idempotencyKey}) =>
-      _send(
-        () => _dio.post<dynamic>(
-          path,
-          data: body ?? const <String, dynamic>{},
-          options: path.startsWith('/auth/')
-              ? null
-              : Options(
-                  headers: {
-                    'Idempotency-Key': idempotencyKey ?? newIdempotencyKey(),
-                  },
-                ),
-        ),
-      );
+  Future<dynamic> post(String path, {Object? body, String? idempotencyKey}) {
+    final isAuth = path.startsWith('/auth/');
+    final signature = _signature('POST', path, body);
+    return _dedupe(signature, () async {
+      // A submit that failed without an answer (offline, timeout, 5xx) is
+      // retried with the key it first used, so the server cannot post twice.
+      final key =
+          idempotencyKey ?? _retryKeys[signature] ?? newIdempotencyKey();
+      try {
+        final result = await _send(
+          () => _dio.post<dynamic>(
+            path,
+            data: body ?? const <String, dynamic>{},
+            options: isAuth ? null : Options(headers: {'Idempotency-Key': key}),
+          ),
+        );
+        _retryKeys.remove(signature);
+        return result;
+      } on ApiException catch (e) {
+        if (e.statusCode == 0 || e.statusCode >= 500) {
+          if (_retryKeys.length > 50) _retryKeys.remove(_retryKeys.keys.first);
+          _retryKeys[signature] = key;
+        } else {
+          _retryKeys.remove(signature);
+        }
+        rethrow;
+      }
+    });
+  }
+
+  final _inFlight = <String, Future<dynamic>>{};
+  final _retryKeys = <String, String>{};
+
+  static String _signature(String method, String path, Object? body) {
+    String encoded;
+    try {
+      encoded = jsonEncode(body);
+    } catch (_) {
+      encoded = '${body.hashCode}';
+    }
+    return '$method $path $encoded';
+  }
+
+  /// A second identical mutation (same method, path and body) while one is
+  /// running shares the running request instead of sending another.
+  Future<dynamic> _dedupe(String signature, Future<dynamic> Function() run) {
+    final running = _inFlight[signature];
+    if (running != null) return running;
+    final future = run();
+    _inFlight[signature] = future;
+    future.whenComplete(() {
+      if (identical(_inFlight[signature], future)) _inFlight.remove(signature);
+    }).ignore();
+    return future;
+  }
 
   static final _random = Random.secure();
   static const _keyChars =
@@ -253,8 +305,10 @@ class ApiClient {
     ),
   );
 
-  Future<dynamic> patch(String path, {Object? body}) =>
-      _send(() => _dio.patch<dynamic>(path, data: body));
+  Future<dynamic> patch(String path, {Object? body}) => _dedupe(
+    _signature('PATCH', path, body),
+    () => _send(() => _dio.patch<dynamic>(path, data: body)),
+  );
 
   /// Fetches a text body such as CSV (`GET /export/:dataset`).
   Future<String> getText(String path, {Map<String, dynamic>? query}) async =>
@@ -267,8 +321,23 @@ class ApiClient {
           ))
           as String;
 
-  Future<dynamic> delete(String path) =>
-      _send(() => _dio.delete<dynamic>(path));
+  /// Fetches a binary body such as an uploaded image (`GET /files/:id`).
+  Future<Uint8List> getBytes(String path) async {
+    try {
+      final response = await _dio.get<List<int>>(
+        path,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      return Uint8List.fromList(response.data ?? const []);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<dynamic> delete(String path) => _dedupe(
+    _signature('DELETE', path, null),
+    () => _send(() => _dio.delete<dynamic>(path)),
+  );
 
   Future<Json> getJson(String path, {Map<String, dynamic>? query}) async =>
       asJson(await get(path, query: query));

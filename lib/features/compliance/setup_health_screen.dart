@@ -6,6 +6,7 @@ import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import 'compliance_models.dart';
 import 'compliance_repository.dart';
+import '../../core/app_colors.dart';
 
 /// `/setup-health`: a score and a checklist of what is still missing.
 class SetupHealthScreen extends ConsumerWidget {
@@ -59,9 +60,9 @@ class _ScoreCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = score >= 80
-        ? Colors.green.shade700
+        ? context.colors.success
         : score >= 50
-        ? Colors.orange.shade800
+        ? context.colors.warning
         : theme.colorScheme.error;
     return Card(
       child: Padding(
@@ -114,12 +115,12 @@ class _CheckTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       child: ListTile(
         leading: Icon(
-          check.ok ? Icons.check_circle : Icons.error_outline,
+          check.ok ? Icons.check_circle_outline : Icons.error_outline,
           color: check.ok
-              ? Colors.green.shade700
+              ? context.colors.success
               : check.required
               ? scheme.error
-              : Colors.orange.shade800,
+              : context.colors.warning,
         ),
         title: Text(check.title),
         subtitle: check.detail.isEmpty ? null : Text(check.detail),

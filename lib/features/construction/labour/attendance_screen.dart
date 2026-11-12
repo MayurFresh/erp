@@ -10,6 +10,7 @@ import '../common/c_revisions.dart';
 import '../common/c_widgets.dart';
 import '../data/construction_repository.dart';
 import '../models/labour_models.dart';
+import '../../../core/app_colors.dart';
 
 /// Bulk attendance sheet for one site and date.
 class AttendanceScreen extends ConsumerStatefulWidget {
@@ -207,8 +208,8 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        _Count('Present', summary.present, Colors.green.shade800),
-        _Count('Half', summary.halfDay, Colors.orange.shade900),
+        _Count('Present', summary.present, context.colors.success),
+        _Count('Half', summary.halfDay, context.colors.warning),
         _Count('Absent', summary.absent, theme.colorScheme.error),
         _Count('Not marked', summary.unmarked, theme.colorScheme.outline),
         Text(
@@ -275,7 +276,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                     value: _siteId,
                     onChanged: (value) async {
                       if (value == _siteId || !await _canLeave()) return;
-                      setState(() => _siteId = value);
+                      if (mounted) setState(() => _siteId = value);
                       if (value != null) _load();
                     },
                   ),
@@ -344,7 +345,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
 
   Future<void> _changeDate(DateTime value) async {
     if (DateUtils.isSameDay(value, _date) || !await _canLeave()) return;
-    setState(() => _date = value);
+    if (mounted) setState(() => _date = value);
     _load();
   }
 }
@@ -435,8 +436,8 @@ class _AttendanceRowCard extends StatelessWidget {
         minimumSize: const Size(0, 48),
         selectedBackgroundColor: switch (row.status) {
           AttendanceStatus.absent => theme.colorScheme.errorContainer,
-          AttendanceStatus.halfDay => Colors.orange.shade100,
-          _ => Colors.green.shade100,
+          AttendanceStatus.halfDay => context.colors.warningContainer,
+          _ => context.colors.successContainer,
         },
         selectedForegroundColor: Colors.black,
         textStyle: const TextStyle(fontWeight: FontWeight.w700),

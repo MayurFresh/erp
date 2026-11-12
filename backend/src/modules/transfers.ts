@@ -17,6 +17,7 @@ import { auditOf, writeAudit } from './audit.ts';
 import { checkIndentLink, fulfilIndent, reverseFulfilment } from './indents.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -219,3 +220,6 @@ export async function transferRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/transfers', { body: createBody });
+documentRoute('POST', '/transfers/:id/cancel', { body: cancelBody });

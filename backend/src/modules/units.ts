@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { assertFresh } from '../lib/stale.ts';
 import { z } from 'zod';
 import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
@@ -10,6 +11,7 @@ import { scopedLocationIds } from '../lib/scope.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getProject } from './projects.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const UNIT_STATUSES = ['available', 'hold', 'booked', 'agreement', 'possession'] as const;
 
@@ -30,6 +32,7 @@ const createBody = z.union([
   z.object({ projectId: z.uuid(), ...unitFields }),
 ]);
 const patchBody = z.object({
+  expectedUpdatedAt: z.string().max(40).optional(),
   code: unitFields.code.optional(),
   wing: nullableText(20),
   floor: z.preprocess(blankToNull, z.coerce.number().int().min(-5).max(200).nullable().optional()),
@@ -77,7 +80,7 @@ type UnitRow = Awaited<ReturnType<ReturnType<typeof unitSelect>['executeTakeFirs
 const unitJson = (r: UnitRow) => ({
   id: r.id, projectId: r.project_id, projectName: r.project_name, code: r.code, wing: r.wing, floor: r.floor,
   unitType: r.unit_type, carpetArea: r.carpet_area, balconyArea: r.balcony_area, listPrice: r.list_price,
-  status: r.status, bookingId: r.booking_id, notes: r.notes, createdAt: r.created_at,
+  status: r.status, bookingId: r.booking_id, notes: r.notes, createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
 async function loadUnits(tx: Tx, ids: string[]) {
@@ -195,6 +198,7 @@ export async function unitRoutes(app: FastifyInstance) {
     try {
       return await ctx.tx(async (tx) => {
         const before = await getUnit(tx, ctx, id, true);
+        assertFresh(before.updated_at, body.expectedUpdatedAt, 'unit');
         if (body.status !== undefined && body.status !== before.status) {
           const ok = (['available', 'hold'] as string[]).includes(body.status) && (['available', 'hold'] as string[]).includes(before.status);
           if (!ok) throw conflict('Status changes with bookings only; a unit can move between available and hold.', 'CONFLICT');
@@ -303,3 +307,8 @@ export async function unitRoutes(app: FastifyInstance) {
     }
   });
 }
+
+documentRoute('POST', '/units', { body: createBody });
+documentRoute('PATCH', '/units/:id', { body: patchBody });
+documentRoute('POST', '/payment-plans', { body: planCreateBody });
+documentRoute('PATCH', '/payment-plans/:id', { body: planPatchBody });

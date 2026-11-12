@@ -1,3 +1,4 @@
+import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,8 +14,12 @@ import '../auth/session.dart';
 import '../documents/document_widgets.dart';
 import '../payments/payment_model.dart';
 import '../payments/payments_repository.dart';
+import '../platform/reminder_action.dart';
 import 'parties_repository.dart';
 import 'party_model.dart';
+import '../../core/app_colors.dart';
+import '../reports/pdf_actions.dart';
+import 'statement_pdf.dart';
 
 typedef StatementKey = ({String partyId, String? from, String? to});
 
@@ -46,6 +51,19 @@ class PartyDetailScreen extends ConsumerWidget {
             (perms.can(Perm.paymentsView) || perms.can(Perm.accountsView));
         String q(String path) => '$path?partyId=$partyId';
         final actions = [
+          if (showStatement)
+            ...pdfDocActions(
+              context,
+              ref,
+              fileName: statementFileName(party),
+              build: (p) async => buildStatementPdf(
+                party,
+                await ref.read(partiesRepositoryProvider).statement(party.id),
+                p.company,
+                brand: p.brand,
+                theme: p.theme,
+              ),
+            ),
           if (party.isCustomer && perms.can(Perm.invoicesCreate))
             DocAction(
               label: 'New invoice',
@@ -71,6 +89,12 @@ class PartyDetailScreen extends ConsumerWidget {
               label: 'Record payment',
               icon: Icons.call_made,
               onPressed: () => context.push(q('/payments/new')),
+            ),
+          if (party.isCustomer && perms.can(Perm.invoicesView))
+            DocAction(
+              label: 'Send reminder',
+              icon: Icons.notifications_active_outlined,
+              onPressed: () => sendPaymentReminder(context, ref, party.id),
             ),
           if (perms.can(Perm.partiesEdit))
             DocAction(
@@ -105,6 +129,7 @@ class PartyDetailScreen extends ConsumerWidget {
             ),
             if (party.address != null && party.address!.isNotEmpty)
               SectionCard(title: 'Address', child: Text(party.address!)),
+            CustomValuesCard(entity: 'party', custom: party.custom),
             _BalanceCard(party: party, showOutstanding: showOutstanding),
             if (showOutstanding) _OutstandingSection(party: party),
             if (showStatement) _StatementSection(partyId: partyId),
@@ -133,7 +158,7 @@ class _BalanceCard extends ConsumerWidget {
         ? ('Receivable', theme.colorScheme.primary)
         : balance < -0.004
         ? ('Payable', theme.colorScheme.tertiary)
-        : ('Settled', Colors.green);
+        : ('Settled', context.colors.success);
     final caption = Row(
       children: [
         Icon(Icons.account_balance_wallet_outlined, color: color),
@@ -310,7 +335,7 @@ class _StatementSectionState extends ConsumerState<_StatementSection> {
       lastDate: DateTime(now.year + 1, 12, 31),
       initialDateRange: _range,
     );
-    if (picked != null) setState(() => _range = picked);
+    if (picked != null && mounted) setState(() => _range = picked);
   }
 
   @override

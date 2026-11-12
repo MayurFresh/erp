@@ -6,6 +6,7 @@ import '../../../core/json.dart';
 import '../../../core/money.dart';
 import '../../../widgets/form_support.dart';
 import '../../../widgets/layout.dart';
+import '../../../core/api_exception.dart';
 import '../../../widgets/states.dart';
 import '../../parties/party_model.dart';
 import '../../tax/tax_pickers.dart';
@@ -147,10 +148,12 @@ class _WorkOrderFormState extends ConsumerState<_WorkOrderForm>
   Future<void> _pickContractor() async {
     final party = await pickParty(context, ref, type: PartyType.vendor);
     if (party != null) {
-      setState(() {
-        _contractor = NamedRef(id: party.id, name: party.name);
-        _contractorError = null;
-      });
+      if (mounted) {
+        setState(() {
+          _contractor = NamedRef(id: party.id, name: party.name);
+          _contractorError = null;
+        });
+      }
     }
   }
 
@@ -165,22 +168,37 @@ class _WorkOrderFormState extends ConsumerState<_WorkOrderForm>
       if (!mounted) return;
       final picked = await pickBoqLine(context, ref, lines: boq);
       if (picked == null) return;
-      setState(() {
-        line.boqLineId = picked.id;
-        line.boqCode = picked.code;
-        if (line.description.text.trim().isEmpty) {
-          line.description.text = picked.description;
-        }
-        if (line.unit.text.trim().isEmpty) line.unit.text = picked.unit;
-        if (line.qty.text.trim().isEmpty) {
-          line.qty.text = formatPlain(picked.qty);
-        }
-        if (line.rate.text.trim().isEmpty) {
-          line.rate.text = formatPlain(picked.rate);
-        }
-      });
+      if (mounted) {
+        setState(() {
+          line.boqLineId = picked.id;
+          line.boqCode = picked.code;
+          if (line.description.text.trim().isEmpty) {
+            line.description.text = picked.description;
+          }
+          if (line.unit.text.trim().isEmpty) line.unit.text = picked.unit;
+          if (line.qty.text.trim().isEmpty) {
+            line.qty.text = formatPlain(picked.qty);
+          }
+          if (line.rate.text.trim().isEmpty) {
+            line.rate.text = formatPlain(picked.rate);
+          }
+        });
+      }
     } catch (error) {
-      if (mounted) showErrorSnackBar(context, error);
+      if (mounted) {
+        final stale = apiError(error)?.code == ApiException.staleEdit;
+        showErrorSnackBar(
+          context,
+          error,
+          actionLabel: stale ? 'Reload' : null,
+          onAction: stale
+              ? () {
+                  markSaved();
+                  context.go('/work-orders/${widget.original?.id}');
+                }
+              : null,
+        );
+      }
     }
   }
 
@@ -223,7 +241,8 @@ class _WorkOrderFormState extends ConsumerState<_WorkOrderForm>
   }
 
   Future<void> _save() async {
-    final valid = _formKey.currentState!.validate();
+    if (_busy) return;
+    final valid = validateAndReveal(_formKey);
     if (_contractor == null) {
       setState(() => _contractorError = 'Choose a contractor');
       return;
@@ -233,7 +252,11 @@ class _WorkOrderFormState extends ConsumerState<_WorkOrderForm>
     try {
       final repo = ref.read(subcontractRepositoryProvider);
       final wo = _editing
-          ? await repo.updateWorkOrder(widget.original!.id, _body())
+          ? await repo.updateWorkOrder(
+              widget.original!.id,
+              _body(),
+              expectedUpdatedAt: widget.original!.updatedAt,
+            )
           : await repo.createWorkOrder(_body());
       ref.bumpC(const [CKind.workOrders]);
       ref.invalidate(workOrderProvider(wo.id));
@@ -597,9 +620,9 @@ class _LineEditor extends StatelessWidget {
                   controller: line.rate,
                   keyboardType: decimalKeyboard,
                   inputFormatters: [decimalInput()],
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Rate',
-                    prefixText: '₹ ',
+                    prefixText: '$moneySymbol ',
                   ),
                   onChanged: (_) => onChanged(),
                   validator: (v) => requiredNumber(v, label: 'Rate', min: 0),

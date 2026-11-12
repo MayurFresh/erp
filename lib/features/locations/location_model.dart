@@ -25,6 +25,7 @@ class Location {
     this.pincode,
     this.isActive = true,
     this.createdAt,
+    this.updatedAt,
   });
 
   factory Location.fromJson(Json json) => Location(
@@ -39,8 +40,10 @@ class Location {
     pincode: asStringOrNull(json['pincode']),
     isActive: asBool(json['isActive'], true),
     createdAt: asDateTimeOrNull(json['createdAt']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
   );
 
+  final DateTime? updatedAt;
   final String id;
   final String companyId;
   final String? parentId;

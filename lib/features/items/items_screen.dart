@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
 import '../../core/money.dart';
 import '../../core/permissions.dart';
@@ -45,6 +46,7 @@ class _ItemsScreenState extends ConsumerState<ItemsScreen> {
     ref.listen(revisionProvider(DataKind.items), (_, _) => _paged.refresh());
     ref.listen(activeCompanyIdProvider, (_, _) => _paged.refresh());
     final perms = ref.watch(permissionsProvider);
+    final isIndia = ref.watch(businessProfileProvider).isIndia;
     final showCost = perms.can(Perm.itemsViewCost);
     final canEdit = perms.can(Perm.itemsEdit);
 
@@ -60,7 +62,7 @@ class _ItemsScreenState extends ConsumerState<ItemsScreen> {
               FilledButton.icon(
                 onPressed: () => context.go('/items/new'),
                 icon: const Icon(Icons.add),
-                label: const Text('New item'),
+                label: Text(context.w('New item')),
               ),
           ],
         ),
@@ -69,7 +71,9 @@ class _ItemsScreenState extends ConsumerState<ItemsScreen> {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
               child: SearchField(
-                hintText: 'Search name, SKU or HSN',
+                hintText: isIndia
+                    ? 'Search name, SKU or HSN'
+                    : 'Search name or SKU',
                 onChanged: (q) {
                   _query = q;
                   _paged.refresh();
@@ -89,10 +93,11 @@ class _ItemsScreenState extends ConsumerState<ItemsScreen> {
             columns: [
               TableColumnSpec('Name', (i) => Text(i.name)),
               TableColumnSpec('SKU', (i) => Text(i.sku ?? '—')),
-              TableColumnSpec('HSN', (i) => Text(i.hsnCode ?? '—')),
+              if (isIndia)
+                TableColumnSpec('HSN', (i) => Text(i.hsnCode ?? '—')),
               TableColumnSpec('Unit', (i) => Text(i.unit)),
               TableColumnSpec(
-                'GST',
+                isIndia ? 'GST' : 'Tax',
                 (i) => Text(formatPercent(i.gstRate)),
                 numeric: true,
               ),
@@ -131,9 +136,9 @@ class _ItemsScreenState extends ConsumerState<ItemsScreen> {
               subtitle: Text(
                 [
                   if (i.sku != null) i.sku!,
-                  if (i.hsnCode != null) 'HSN ${i.hsnCode}',
+                  if (isIndia && i.hsnCode != null) 'HSN ${i.hsnCode}',
                   i.unit,
-                  'GST ${formatPercent(i.gstRate)}',
+                  '${isIndia ? 'GST' : 'Tax'} ${formatPercent(i.gstRate)}',
                 ].join(' · '),
               ),
               trailing: Column(

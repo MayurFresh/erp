@@ -6,6 +6,7 @@ import '../../widgets/states.dart';
 import '../compliance/compliance_widgets.dart' show recentFys;
 import 'it_models.dart';
 import 'it_repository.dart';
+import '../../core/app_colors.dart';
 
 /// `/ca-check`: "Do I need a CA?" (API v1.6 §8).
 class CaCheckScreen extends ConsumerStatefulWidget {
@@ -83,8 +84,8 @@ class _CaItemCard extends StatelessWidget {
           Pill(
             item.isRequired ? 'Required' : 'Advised',
             color: item.isRequired
-                ? Colors.red.shade700
-                : Colors.orange.shade800,
+                ? context.colors.danger
+                : context.colors.warning,
           ),
           const SizedBox(height: 8),
           Text(

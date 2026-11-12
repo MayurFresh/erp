@@ -21,8 +21,13 @@ export async function validRates(tx: Tx, date: string, kind: RateKind | null): P
 export interface RateCheck { rate: number; hsn?: string | null; field: string; label?: string; anyKind?: boolean }
 
 /** Throws one 400 naming every line whose rate is not valid on `date`. */
-export async function assertGstRates(tx: Tx, date: string, checks: RateCheck[]): Promise<void> {
+export async function assertGstRates(tx: Tx, date: string, checks: RateCheck[], companyId?: string): Promise<void> {
   if (!checks.length) return;
+  // Outside India there is no GST rate master: the company enters its own tax rate (VAT, sales tax).
+  if (companyId) {
+    const company = await tx.selectFrom('companies').select('country').where('id', '=', companyId).executeTakeFirst();
+    if (company && company.country !== 'IN') return;
+  }
   const cache = new Map<string, Set<number>>();
   const details: Record<string, string> = {};
   for (const c of checks) {

@@ -8,6 +8,7 @@ import type { Tx } from '../db/database.ts';
 import { addDays, financialYear, isValidDate, todayIst } from '../lib/dates.ts';
 import { paymentInfo } from '../lib/docs.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
+import { documentRoute } from '../lib/openapi.ts';
 import { computeGst } from '../lib/gst.ts';
 import { optionalText } from '../lib/india.ts';
 import { moneyField, percentField, qtyField } from '../lib/numbers.ts';
@@ -18,9 +19,14 @@ import { assertGstRates } from '../lib/rates.ts';
 import { calcTds, cancelDeduction, insertDeduction } from '../lib/tds.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { createOrSubmit, registerApprovalDoc } from './approvals.ts';
+import { resolveCostCentre } from './cost-centres.ts';
+import { customInput, validateCustom } from '../lib/custom-fields.ts';
 import { checkIndentLink, fulfilIndent, reverseFulfilment } from './indents.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
+import { warehouseReceive, warehouseReverse, whLineFields } from './warehouse.ts';
+import { applyGrnBilling, loadGrnLines, priceVarianceError, priceVariances, releaseGrnBilling } from './p2p-match.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -31,6 +37,8 @@ const lineBody = z.object({
   rate: moneyField.optional(),
   discountPct: percentField.optional(),
   description: optionalText(300),
+  grnLineId: z.uuid().optional(),
+  ...whLineFields,
 });
 const createBody = z.object({
   locationId: z.uuid(),
@@ -42,6 +50,9 @@ const createBody = z.object({
   indentId: z.uuid().nullable().optional(),
   tdsSectionId: z.uuid().nullable().optional(),
   reverseCharge: z.boolean().optional(),
+  costCentreId: z.uuid().nullable().optional(),
+  acceptVariance: z.boolean().optional(),
+  custom: customInput,
   lines: z.array(lineBody).min(1, 'Add at least one line').max(200, 'At most 200 lines'),
 });
 const cancelBody = z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) });
@@ -72,16 +83,29 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
   const ids = [...new Set(body.lines.map((l) => l.itemId))];
   const items = await tx.selectFrom('items').selectAll().where('company_id', '=', ctx.companyId).where('id', 'in', ids).execute();
   const byId = new Map(items.map((i) => [i.id, i]));
+  const grn = await loadGrnLines(tx, ctx, body.lines, party.id, location.id);
   const lines = body.lines.map((l, idx) => {
     const item = byId.get(l.itemId);
     if (!item) throw badRequest(`Line ${idx + 1}: item not found.`, { [`lines.${idx}.itemId`]: 'Not found' });
     if (!item.is_active) throw badRequest(`Line ${idx + 1}: ${item.name} is inactive.`, { [`lines.${idx}.itemId`]: 'Inactive' });
-    return { item, qty: l.qty, rate: l.rate ?? item.purchase_price, discountPct: l.discountPct ?? 0, description: l.description ?? item.name };
+    const g = grn.get(idx);
+    return {
+      item, qty: l.qty, rate: l.rate ?? (g ? g.poRate : item.purchase_price), discountPct: l.discountPct ?? (g ? g.discountPct : 0),
+      description: l.description ?? item.name, grn: g,
+    };
   });
+  if (grn.size) {
+    const tol = (await tx.selectFrom('companies').select('po_price_tolerance_pct').where('id', '=', ctx.companyId).executeTakeFirstOrThrow()).po_price_tolerance_pct;
+    const diffs = priceVariances(lines.map((l, index) => ({ index, qty: l.qty, rate: l.rate, discountPct: l.discountPct })), grn, tol);
+    if (diffs.length) {
+      if (!body.acceptVariance) throw priceVarianceError(diffs);
+      ctx.require('purchases.override');
+    }
+  }
 
   await assertGstRates(tx, billDate, lines.map((l, idx) => ({
     rate: l.item.gst_rate, hsn: l.item.hsn_code, field: `lines.${idx}.itemId`, label: `${l.item.name} (line ${idx + 1})`,
-  })));
+  })), ctx.companyId);
 
   // Input tax: supplier's state against the receiving location's state.
   const supplierState = party.state_code ?? location.state_code;
@@ -103,7 +127,7 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
   return {
     location, party, billDate, dueDate: addDays(billDate, party.credit_days), fy: financialYear(billDate),
     placeOfSupply: location.state_code, lines, gst, tds, reverseCharge, total, roundOff, tdsAmount,
-    netPayable: round2(total - tdsAmount), msmeDueDate,
+    netPayable: round2(total - tdsAmount), msmeDueDate, purchaseOrderId: [...grn.values()][0]?.purchaseOrderId ?? null,
   };
 }
 
@@ -120,11 +144,12 @@ function preparedJson(ctx: RequestContext, p: Prepared, body: CreateBody) {
     tdsSectionId: p.tds?.sectionId ?? null, tdsSectionCode: p.tds?.sectionCode ?? null, tdsBase: p.tds?.base ?? 0,
     tdsRate: p.tds?.rate ?? 0, tdsAmount: p.tdsAmount, netPayable: p.netPayable, reverseCharge: p.reverseCharge,
     rcmSelfInvoiceNo: null, msmeDueDate: p.msmeDueDate, msmeCategory: p.party.msme_category,
+    purchaseOrderId: p.purchaseOrderId, varianceAccepted: body.acceptVariance ?? false,
     notes: body.notes ?? null, createdAt: new Date(), createdBy: { id: ctx.userId, name: ctx.userName },
     cancelledAt: null, cancelReason: null,
     lines: p.lines.map((l, i) => ({
       id: null, itemId: l.item.id, description: l.description, hsnCode: l.item.hsn_code, qty: l.qty, unit: l.item.unit,
-      rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate, ...p.gst.lines[i]!,
+      rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate, grnLineId: l.grn?.grnLineId ?? null, ...p.gst.lines[i]!,
     })),
   };
 }
@@ -154,7 +179,8 @@ export function purchaseJson(r: PurchaseRow) {
     tdsAmount: r.tds_amount, netPayable: r.net_payable, reverseCharge: r.reverse_charge, rcmSelfInvoiceNo: r.rcm_self_invoice_no,
     msmeDueDate: r.msme_due_date, msmeCategory: r.msme_due_date ? r.party_msme_category : null, notes: r.notes,
     createdAt: r.created_at, createdBy: { id: r.created_by, name: r.created_by_name },
-    cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason,
+    cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason, costCentreId: r.cost_centre_id, custom: r.custom ?? {},
+    purchaseOrderId: r.purchase_order_id, varianceAccepted: r.variance_accepted,
   };
 }
 
@@ -173,9 +199,122 @@ async function loadPurchase(tx: Tx, ctx: RequestContext, id: string) {
       id: l.id, itemId: l.item_id, description: l.description, hsnCode: l.hsn_code, qty: l.qty, unit: l.unit,
       rate: l.rate, discountPct: l.discount_pct, taxableValue: l.taxable_value, gstRate: l.gst_rate,
       cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.line_total,
+      grnLineId: l.grn_line_id, grniValue: l.grni_value, varianceValue: l.variance_value,
     })),
   };
 }
+
+/** Creates a purchase bill (shared by the route and a final approval). */
+export async function createPurchase(ctx: RequestContext, tx: Tx, body: CreateBody) {
+  const p = await prepare(tx, ctx, body);
+  const costCentreId = await resolveCostCentre(tx, ctx, body.costCentreId);
+  const custom = await validateCustom(tx, ctx.companyId, 'purchase', body.custom);
+  const number = await nextNumber(tx, ctx, 'purchase', p.fy);
+  const rcmNo = p.reverseCharge ? await nextNumber(tx, ctx, 'rcm_invoice', p.fy) : null;
+  const row = await tx.insertInto('purchases').values({
+    tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: p.location.id, party_id: p.party.id, number,
+    supplier_invoice_no: body.supplierInvoiceNo ?? null, supplier_invoice_date: body.supplierInvoiceDate ?? null,
+    fy: p.fy, bill_date: p.billDate, due_date: p.dueDate, place_of_supply: p.placeOfSupply, supply_type: p.gst.supplyType,
+    subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, round_off: p.roundOff,
+    total: p.total, tds_section_id: p.tds?.sectionId ?? null, tds_base: p.tds?.base ?? 0, tds_rate: p.tds?.rate ?? 0,
+    tds_amount: p.tdsAmount, reverse_charge: p.reverseCharge, rcm_self_invoice_no: rcmNo, msme_due_date: p.msmeDueDate, notes: body.notes ?? null, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
+    indent_id: body.indentId ?? null, cost_centre_id: costCentreId, custom,
+    purchase_order_id: p.purchaseOrderId, variance_accepted: p.purchaseOrderId ? (body.acceptVariance ?? false) : false,
+  }).returning('id').executeTakeFirstOrThrow();
+
+  // Lines billed from a goods receipt clear Goods received not invoiced instead of entering stock again.
+  const running = new Map<string, { billed: number; cleared: number }>();
+  const match = p.lines.map((l) => {
+    const g = l.grn;
+    if (!g || !l.item.track_stock) return null;
+    return { g, qty: l.qty };
+  }).map((m, i) => {
+    if (!m) return null;
+    const st = running.get(m.g.grnLineId) ?? { billed: m.g.billedQty, cleared: m.g.clearedValue };
+    const last = Math.abs(st.billed + m.qty - m.g.acceptedQty) < 0.0005;
+    const clearing = last ? round2(m.g.value - st.cleared) : round2(m.qty * m.g.unitCost);
+    st.billed += m.qty;
+    st.cleared += clearing;
+    running.set(m.g.grnLineId, st);
+    return { clearing, variance: round2(p.gst.lines[i]!.taxableValue - clearing) };
+  });
+
+  await tx.insertInto('purchase_lines').values(p.lines.map((l, i) => {
+    const g = p.gst.lines[i]!;
+    return {
+      tenant_id: ctx.tenantId, purchase_id: row.id, line_no: i + 1, item_id: l.item.id, description: l.description,
+      hsn_code: l.item.hsn_code, qty: l.qty, unit: l.item.unit, rate: l.rate, discount_pct: l.discountPct,
+      taxable_value: g.taxableValue, gst_rate: l.item.gst_rate, cgst: g.cgst, sgst: g.sgst, igst: g.igst, line_total: g.lineTotal,
+      grn_line_id: l.grn?.grnLineId ?? null, grni_value: match[i]?.clearing ?? 0, variance_value: match[i]?.variance ?? 0,
+    };
+  })).execute();
+  await applyGrnBilling(tx, p.lines.flatMap((l, i) => l.grn ? [{
+    grnLineId: l.grn.grnLineId, poLineId: l.grn.poLineId, purchaseOrderId: l.grn.purchaseOrderId, qty: l.qty,
+    clearing: match[i]?.clearing ?? 0,
+  }] : []));
+
+  // Tracked items enter stock at their taxable value (GST is claimed separately as input credit).
+  // Lines from a goods receipt are already in stock.
+  const tracked = p.lines.map((l, i) => ({ l, g: p.gst.lines[i]! })).filter((x) => x.l.item.track_stock);
+  const fresh = tracked.filter((x) => !x.l.grn);
+  await lockItems(tx, ctx.companyId, tracked.map((x) => x.l.item.id));
+  if (fresh.length) {
+    await tx.insertInto('stock_moves').values(fresh.map(({ l, g }) => ({
+      tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: p.location.id, item_id: l.item.id, qty: l.qty,
+      rate: l.rate, cost_rate: Math.round((g.taxableValue / l.qty) * 10_000) / 10_000, value: g.taxableValue,
+      ref_type: 'purchase', ref_id: row.id, note: number, created_by: ctx.userId,
+    }))).execute();
+  }
+
+  const acc = await systemAccounts(tx, ctx);
+  const stockValue = tracked.reduce((s, x) => s + x.g.taxableValue, 0);
+  const inventoryValue = fresh.reduce((s, x) => s + x.g.taxableValue, 0);
+  const grniValue = round2(match.reduce((s, m) => s + (m?.clearing ?? 0), 0));
+  const varianceValue = round2(match.reduce((s, m) => s + (m?.variance ?? 0), 0));
+  const loc = p.location.id;
+  await postJournal(tx, auditOf(ctx), {
+    date: p.billDate, voucherType: 'purchase', voucherId: row.id, number,
+    narration: `Purchase from ${p.party.name}${body.supplierInvoiceNo ? ` (bill ${body.supplierInvoiceNo})` : ''}`,
+    lines: [
+      { accountId: acc.inventory, amount: inventoryValue, locationId: loc },
+      { accountId: acc.grni, amount: grniValue, locationId: loc },
+      { accountId: acc.purchase_price_variance, amount: varianceValue, locationId: loc },
+      { accountId: acc.purchases_nonstock, amount: p.gst.subtotal - stockValue, locationId: loc, costCentreId },
+      { accountId: acc.input_cgst, amount: p.gst.cgst, locationId: loc },
+      { accountId: acc.input_sgst, amount: p.gst.sgst, locationId: loc },
+      { accountId: acc.input_igst, amount: p.gst.igst, locationId: loc },
+      { accountId: acc.round_off, amount: p.roundOff, locationId: loc },
+      { accountId: acc.payables, amount: -p.netPayable, partyId: p.party.id, locationId: loc },
+      { accountId: acc.tds_payable, amount: -p.tdsAmount, locationId: loc },
+      { accountId: acc.rcm_payable, amount: p.reverseCharge ? -p.gst.taxTotal : 0, locationId: loc },
+    ],
+  });
+  if (p.tds) {
+    await insertDeduction(tx, ctx, {
+      sourceType: 'purchase', sourceId: row.id, number, date: p.billDate, partyId: p.party.id, sectionId: p.tds.sectionId,
+      sectionCode: p.tds.sectionCode, gross: p.tds.gross, base: p.tds.base, rate: p.tds.rate, amount: p.tds.amount,
+    });
+  }
+
+  if (body.indentId) {
+    await fulfilIndent(tx, ctx, body.indentId, { type: 'purchase', id: row.id, locationId: p.location.id },
+      p.lines.map((l) => ({ itemId: l.item.id, qty: l.qty })));
+  }
+  await warehouseReceive(tx, ctx, { locationId: p.location.id, refType: 'purchase', refId: row.id, note: number, lines: body.lines.filter((_, i) => !p.lines[i]?.grn) });
+  const saved = await loadPurchase(tx, ctx, row.id);
+  await writeAudit(tx, auditOf(ctx), 'purchase', row.id, 'create', null,
+    { number, total: saved.total, partyId: saved.partyId, locationId: saved.locationId,
+      ...(p.purchaseOrderId ? { purchaseOrderId: p.purchaseOrderId, varianceAccepted: body.acceptVariance ?? false } : {}) });
+  return saved;
+}
+
+registerApprovalDoc('purchase', {
+  permission: 'purchases.create',
+  create: async (ctx, tx, payload) => {
+    const d = await createPurchase(ctx, tx, parse(createBody, payload));
+    return { id: d.id, number: d.number };
+  },
+});
 
 export async function purchaseRoutes(app: FastifyInstance) {
   app.get('/purchases', async (req) => {
@@ -222,75 +361,10 @@ export async function purchaseRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('purchases.create');
     const body = parse(createBody, req.body);
-    const purchase = await ctx.tx(async (tx) => {
-      const p = await prepare(tx, ctx, body);
-      const number = await nextNumber(tx, ctx, 'purchase', p.fy);
-      const rcmNo = p.reverseCharge ? await nextNumber(tx, ctx, 'rcm_invoice', p.fy) : null;
-      const row = await tx.insertInto('purchases').values({
-        tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: p.location.id, party_id: p.party.id, number,
-        supplier_invoice_no: body.supplierInvoiceNo ?? null, supplier_invoice_date: body.supplierInvoiceDate ?? null,
-        fy: p.fy, bill_date: p.billDate, due_date: p.dueDate, place_of_supply: p.placeOfSupply, supply_type: p.gst.supplyType,
-        subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, round_off: p.roundOff,
-        total: p.total, tds_section_id: p.tds?.sectionId ?? null, tds_base: p.tds?.base ?? 0, tds_rate: p.tds?.rate ?? 0,
-        tds_amount: p.tdsAmount, reverse_charge: p.reverseCharge, rcm_self_invoice_no: rcmNo, msme_due_date: p.msmeDueDate, notes: body.notes ?? null, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
-        indent_id: body.indentId ?? null,
-      }).returning('id').executeTakeFirstOrThrow();
-
-      await tx.insertInto('purchase_lines').values(p.lines.map((l, i) => {
-        const g = p.gst.lines[i]!;
-        return {
-          tenant_id: ctx.tenantId, purchase_id: row.id, line_no: i + 1, item_id: l.item.id, description: l.description,
-          hsn_code: l.item.hsn_code, qty: l.qty, unit: l.item.unit, rate: l.rate, discount_pct: l.discountPct,
-          taxable_value: g.taxableValue, gst_rate: l.item.gst_rate, cgst: g.cgst, sgst: g.sgst, igst: g.igst, line_total: g.lineTotal,
-        };
-      })).execute();
-
-      // Tracked items enter stock at their taxable value (GST is claimed separately as input credit).
-      const tracked = p.lines.map((l, i) => ({ l, g: p.gst.lines[i]! })).filter((x) => x.l.item.track_stock);
-      await lockItems(tx, ctx.companyId, tracked.map((x) => x.l.item.id));
-      if (tracked.length) {
-        await tx.insertInto('stock_moves').values(tracked.map(({ l, g }) => ({
-          tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: p.location.id, item_id: l.item.id, qty: l.qty,
-          rate: l.rate, cost_rate: Math.round((g.taxableValue / l.qty) * 10_000) / 10_000, value: g.taxableValue,
-          ref_type: 'purchase', ref_id: row.id, note: number, created_by: ctx.userId,
-        }))).execute();
-      }
-
-      const acc = await systemAccounts(tx, ctx);
-      const stockValue = tracked.reduce((s, x) => s + x.g.taxableValue, 0);
-      const loc = p.location.id;
-      await postJournal(tx, auditOf(ctx), {
-        date: p.billDate, voucherType: 'purchase', voucherId: row.id, number,
-        narration: `Purchase from ${p.party.name}${body.supplierInvoiceNo ? ` (bill ${body.supplierInvoiceNo})` : ''}`,
-        lines: [
-          { accountId: acc.inventory, amount: stockValue, locationId: loc },
-          { accountId: acc.purchases_nonstock, amount: p.gst.subtotal - stockValue, locationId: loc },
-          { accountId: acc.input_cgst, amount: p.gst.cgst, locationId: loc },
-          { accountId: acc.input_sgst, amount: p.gst.sgst, locationId: loc },
-          { accountId: acc.input_igst, amount: p.gst.igst, locationId: loc },
-          { accountId: acc.round_off, amount: p.roundOff, locationId: loc },
-          { accountId: acc.payables, amount: -p.netPayable, partyId: p.party.id, locationId: loc },
-          { accountId: acc.tds_payable, amount: -p.tdsAmount, locationId: loc },
-          { accountId: acc.rcm_payable, amount: p.reverseCharge ? -p.gst.taxTotal : 0, locationId: loc },
-        ],
-      });
-      if (p.tds) {
-        await insertDeduction(tx, ctx, {
-          sourceType: 'purchase', sourceId: row.id, number, date: p.billDate, partyId: p.party.id, sectionId: p.tds.sectionId,
-          sectionCode: p.tds.sectionCode, gross: p.tds.gross, base: p.tds.base, rate: p.tds.rate, amount: p.tds.amount,
-        });
-      }
-
-      if (body.indentId) {
-        await fulfilIndent(tx, ctx, body.indentId, { type: 'purchase', id: row.id, locationId: p.location.id },
-          p.lines.map((l) => ({ itemId: l.item.id, qty: l.qty })));
-      }
-      const saved = await loadPurchase(tx, ctx, row.id);
-      await writeAudit(tx, auditOf(ctx), 'purchase', row.id, 'create', null,
-        { number, total: saved.total, partyId: saved.partyId, locationId: saved.locationId });
-      return saved;
-    });
-    return reply.status(201).send(purchase);
+    const r = await ctx.tx((tx) => createOrSubmit(ctx, tx, 'purchase', body, (t) => createPurchase(ctx, t, body),
+      (d) => ({ amount: d.total, date: d.billDate, partyId: d.partyId, locationId: d.locationId, narration: body.notes ?? null })));
+    if (r.request) return reply.status(202).send({ approvalRequest: r.request });
+    return reply.status(201).send(r.doc);
   });
 
   app.post<{ Params: { id: string } }>('/purchases/:id/cancel', async (req) => {
@@ -330,8 +404,14 @@ export async function purchaseRoutes(app: FastifyInstance) {
       }
       await reverseVoucher(tx, auditOf(ctx), id, todayIst(), `Cancelled ${current.number}: ${reason}`);
       await reverseFulfilment(tx, ctx, current.indent_id, id);
+      await releaseGrnBilling(tx, id);
+      await warehouseReverse(tx, ctx, 'purchase', id);
       await writeAudit(tx, auditOf(ctx), 'purchase', id, 'cancel', { status: 'posted' }, { status: 'cancelled', reason });
       return loadPurchase(tx, ctx, id);
     });
   });
 }
+
+documentRoute('POST', '/purchases', { summary: 'Create and post a purchase bill', body: createBody });
+documentRoute('POST', '/purchases/preview', { summary: 'Compute totals and tax without saving', body: createBody });
+documentRoute('POST', '/purchases/:id/cancel', { summary: 'Cancel a purchase bill', body: cancelBody });

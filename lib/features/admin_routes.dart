@@ -20,14 +20,18 @@ import 'accounting/accounts_screen.dart';
 import 'accounting/journal_create_screen.dart';
 import 'accounting/journals_screen.dart';
 import 'accounting/ledger_screen.dart';
+import 'insights/insights_screen.dart';
+import 'reports/client_report/client_report_screen.dart';
 import 'reports/financial_report_screens.dart';
 import 'reports/gst_summary_screen.dart';
 import 'reports/register_report_screen.dart';
 import 'reports/report_models.dart' show AgeingType;
 import 'reports/reports_hub_screen.dart';
 import 'reports/stock_ageing_screens.dart';
+import 'business/business_profile_screen.dart';
 import 'settings/company_profile_screen.dart';
 import 'settings/my_account_screen.dart';
+import 'settings/integrations_screen.dart';
 import 'settings/roles_screens.dart';
 import 'settings/user_edit_screen.dart';
 import 'shell/nav.dart';
@@ -74,9 +78,17 @@ List<RouteBase> adminRoutes() => [
     ],
   ),
   GoRoute(
+    path: '/insights',
+    pageBuilder: (_, state) => sectionPage(state, const InsightsScreen()),
+  ),
+  GoRoute(
     path: '/reports',
     pageBuilder: (_, state) => sectionPage(state, const ReportsHubScreen()),
     routes: [
+      GoRoute(
+        path: 'client-report',
+        builder: (_, _) => const ClientReportScreen(),
+      ),
       GoRoute(
         path: 'sales-register',
         builder: (_, _) => const RegisterReportScreen(purchase: false),
@@ -102,8 +114,17 @@ List<RouteBase> adminRoutes() => [
     ],
   ),
   GoRoute(
+    path: '/business-profile',
+    pageBuilder: (_, state) =>
+        sectionPage(state, const BusinessProfileScreen()),
+  ),
+  GoRoute(
     path: '/company',
     pageBuilder: (_, state) => sectionPage(state, const CompanyProfileScreen()),
+  ),
+  GoRoute(
+    path: '/integrations',
+    pageBuilder: (_, state) => sectionPage(state, const IntegrationsScreen()),
   ),
   GoRoute(
     path: '/roles',
@@ -171,8 +192,24 @@ const List<NavEntry> reportNavEntries = [
   ),
 ];
 
+/// Sits under Dashboard in the Overview group.
+const NavEntry insightsNavEntry = NavEntry(
+  path: '/insights',
+  label: 'Insights',
+  icon: Icons.query_stats_outlined,
+  selectedIcon: Icons.query_stats,
+  permission: Perm.reportsView,
+);
+
 /// Menu entries for the existing "Administration" group.
 const List<NavEntry> settingsNavEntries = [
+  NavEntry(
+    path: '/business-profile',
+    label: 'Business profile',
+    icon: Icons.category_outlined,
+    selectedIcon: Icons.category,
+    permission: Perm.companyManage,
+  ),
   NavEntry(
     path: '/company',
     label: 'Company profile',
@@ -187,6 +224,13 @@ const List<NavEntry> settingsNavEntries = [
     selectedIcon: Icons.admin_panel_settings,
     permission: Perm.rolesManage,
     createPermission: Perm.rolesManage,
+  ),
+  NavEntry(
+    path: '/integrations',
+    label: 'Integrations',
+    icon: Icons.hub_outlined,
+    selectedIcon: Icons.hub,
+    permission: Perm.integrationsManage,
   ),
 ];
 

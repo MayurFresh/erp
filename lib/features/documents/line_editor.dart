@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/design_tokens.dart';
 import '../../core/money.dart';
 import '../../widgets/form_support.dart';
 import '../../widgets/layout.dart';
@@ -331,6 +332,7 @@ class DocSummaryPanel extends StatelessWidget {
     required this.onSave,
     required this.saveLabel,
     required this.hint,
+    this.hideSave = false,
     this.subject = 'the document',
     this.placeLabel = 'Place of supply',
   });
@@ -343,6 +345,9 @@ class DocSummaryPanel extends StatelessWidget {
   final bool saving;
   final VoidCallback onSave;
   final String saveLabel;
+
+  /// True when the save button lives in the page's sticky bar instead.
+  final bool hideSave;
 
   /// Shown until the form is complete enough to preview.
   final String hint;
@@ -367,16 +372,44 @@ class DocSummaryPanel extends StatelessWidget {
           const SizedBox(height: 12),
           ApiErrorBox(error: error, subject: subject),
         ],
-        const SizedBox(height: 16),
-        BusyButton(
-          busy: saving,
-          onPressed: onSave,
-          icon: Icons.save_outlined,
-          label: saveLabel,
-        ),
+        if (!hideSave) ...[
+          const SizedBox(height: 16),
+          BusyButton(
+            busy: saving,
+            onPressed: onSave,
+            icon: Icons.save_outlined,
+            label: saveLabel,
+          ),
+        ],
       ],
     );
   }
+}
+
+/// Sticky save strip for [DocFormLayout.bottomBar].
+class DocSaveBar extends StatelessWidget {
+  const DocSaveBar({
+    super.key,
+    required this.busy,
+    required this.onPressed,
+    required this.label,
+  });
+
+  final bool busy;
+  final VoidCallback onPressed;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => FormActionBar(
+    children: [
+      BusyButton(
+        busy: busy,
+        onPressed: onPressed,
+        icon: Icons.save_outlined,
+        label: label,
+      ),
+    ],
+  );
 }
 
 /// Page frame for create screens: details and lines on the left and the
@@ -387,57 +420,71 @@ class DocFormLayout extends StatelessWidget {
     required this.title,
     required this.main,
     required this.summary,
+    this.bottomBar,
   });
 
   final String title;
   final List<Widget> main;
   final Widget summary;
 
+  /// Sticky strip under the scrolling form, e.g. a [FormActionBar].
+  final Widget? bottomBar;
+
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
-    child: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1200),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final heading = Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(
-                title,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-            );
-            if (constraints.maxWidth >= 1000) {
+  Widget build(BuildContext context) {
+    final gutter = pageGutter(context);
+    final scroll = SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(gutter, Space.md, gutter, Space.lg),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: Layout.contentMaxWidth),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final heading = Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              );
+              if (constraints.maxWidth >= 1000) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    heading,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: main,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        SizedBox(width: 360, child: summary),
+                      ],
+                    ),
+                  ],
+                );
+              }
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  heading,
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: main,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      SizedBox(width: 360, child: summary),
-                    ],
-                  ),
-                ],
+                children: [heading, ...main, summary],
               );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [heading, ...main, summary],
-            );
-          },
+            },
+          ),
         ),
       ),
-    ),
-  );
+    );
+    if (bottomBar == null) return scroll;
+    return Column(
+      children: [
+        Expanded(child: scroll),
+        bottomBar!,
+      ],
+    );
+  }
 }
 
 /// Date picker for document dates: 2000-01-01 to today + 365 days.

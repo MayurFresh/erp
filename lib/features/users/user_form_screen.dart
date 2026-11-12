@@ -42,8 +42,9 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() => serverErrors = const {});
-    final valid = _formKey.currentState!.validate();
+    final valid = validateAndReveal(_formKey);
     if (!_allLocations && _locationIds.isEmpty) {
       setState(
         () => serverErrors = {
@@ -92,6 +93,15 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            OutlinedButton(
+              onPressed: _saving ? null : () => leave('/users'),
+              child: const Text('Cancel'),
+            ),
+            BusyButton(busy: _saving, onPressed: _save, label: 'Create user'),
+          ],
+        ),
         children: [
           Text('New user', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 16),
@@ -99,17 +109,16 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextFormField(
-                  controller: _name,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                  textCapitalization: TextCapitalization.words,
-                  forceErrorText: serverError('name'),
-                  onChanged: (_) => clearServerError('name'),
-                  validator: (v) => requiredField(v, 'Name'),
-                ),
-                const SizedBox(height: 16),
                 FormRow(
                   children: [
+                    TextFormField(
+                      controller: _name,
+                      decoration: const InputDecoration(labelText: 'Name'),
+                      textCapitalization: TextCapitalization.words,
+                      forceErrorText: serverError('name'),
+                      onChanged: (_) => clearServerError('name'),
+                      validator: (v) => requiredField(v, 'Name'),
+                    ),
                     TextFormField(
                       controller: _email,
                       decoration: const InputDecoration(labelText: 'Email'),
@@ -131,27 +140,35 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
                   ],
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _password,
-                  obscureText: _obscure,
-                  decoration: InputDecoration(
-                    labelText: 'Initial password',
-                    helperText: 'At least 8 characters; share it securely',
-                    suffixIcon: IconButton(
-                      tooltip: _obscure ? 'Show password' : 'Hide password',
-                      icon: Icon(
-                        _obscure ? Icons.visibility : Icons.visibility_off,
+                FormRow(
+                  children: [
+                    TextFormField(
+                      controller: _password,
+                      obscureText: _obscure,
+                      decoration: InputDecoration(
+                        labelText: 'Initial password',
+                        helperText: 'At least 8 characters; share it securely',
+                        suffixIcon: IconButton(
+                          tooltip: _obscure ? 'Show password' : 'Hide password',
+                          icon: Icon(
+                            _obscure
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
                       ),
-                      onPressed: () => setState(() => _obscure = !_obscure),
+                      forceErrorText: serverError('password'),
+                      onChanged: (_) => clearServerError('password'),
+                      validator: (v) {
+                        if (v == null || v.isEmpty) {
+                          return 'Password is required';
+                        }
+                        if (v.length < 8) return 'Use at least 8 characters';
+                        return null;
+                      },
                     ),
-                  ),
-                  forceErrorText: serverError('password'),
-                  onChanged: (_) => clearServerError('password'),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Password is required';
-                    if (v.length < 8) return 'Use at least 8 characters';
-                    return null;
-                  },
+                  ],
                 ),
               ],
             ),
@@ -204,18 +221,6 @@ class _UserFormScreenState extends ConsumerState<UserFormScreen>
                   ),
               ],
             ),
-          ),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _saving ? null : () => leave('/users'),
-                child: const Text('Cancel'),
-              ),
-              BusyButton(busy: _saving, onPressed: _save, label: 'Create user'),
-            ],
           ),
         ],
       ),

@@ -8,6 +8,9 @@ import '../../widgets/form_support.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
+import '../business/business_models.dart';
+import '../business/business_repository.dart';
+import 'role_matrix.dart';
 import 'settings_models.dart';
 import 'settings_repository.dart';
 import '../../widgets/busy.dart';
@@ -16,6 +19,49 @@ import '../../widgets/busy.dart';
 /// roles.
 class RolesScreen extends ConsumerWidget {
   const RolesScreen({super.key});
+
+  /// Offers the job-title roles of the company's business type that do not
+  /// exist yet, and creates the ones picked.
+  Future<void> _addFromTemplate(BuildContext context, WidgetRef ref) async {
+    final catalogue = await ref.read(businessCatalogueProvider.future);
+    final roles = await ref.read(adminRolesProvider.future);
+    if (!context.mounted) return;
+    final type = catalogue.byId(
+      ref.read(sessionProvider).value?.company?.businessType ?? 'general',
+    );
+    final have = {for (final r in roles) r.name.toLowerCase()};
+    final options = [
+      for (final t in type?.roles ?? const <RoleTemplateDef>[])
+        if (!have.contains(t.name.toLowerCase())) t,
+    ];
+    if (options.isEmpty) {
+      showInfoSnackBar(context, 'Every template role already exists.');
+      return;
+    }
+    final picked = await showFormDialog<List<RoleTemplateDef>>(
+      context: context,
+      builder: (_) => _TemplateDialog(options: options),
+    );
+    if (picked == null || picked.isEmpty || !context.mounted) return;
+    try {
+      final repo = ref.read(settingsRepositoryProvider);
+      for (final t in picked) {
+        await repo.createRole(
+          RoleInput(
+            name: t.name,
+            description: t.description,
+            permissions: t.permissions.toSet(),
+          ),
+        );
+      }
+      ref.bump(const [DataKind.users]);
+      if (context.mounted) {
+        showInfoSnackBar(context, 'Added ${picked.length} roles.');
+      }
+    } catch (e) {
+      if (context.mounted) showErrorSnackBar(context, e);
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,6 +74,12 @@ class RolesScreen extends ConsumerWidget {
           title: 'Roles',
           subtitle: 'What each role may see and do',
           actions: [
+            if (canManage)
+              OutlinedButton.icon(
+                onPressed: () => _addFromTemplate(context, ref),
+                icon: const Icon(Icons.library_add_outlined),
+                label: const Text('Add from template'),
+              ),
             if (canManage)
               FilledButton.icon(
                 onPressed: () => context.go('/roles/new'),
@@ -229,7 +281,7 @@ class _RoleFormState extends ConsumerState<RoleForm>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     if (_selected.isEmpty) {
       setState(
         () => serverErrors = {'permissions': 'Choose at least one permission'},
@@ -294,6 +346,20 @@ class _RoleFormState extends ConsumerState<RoleForm>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            OutlinedButton(
+              onPressed: _saving ? null : () => leave('/roles'),
+              child: Text(readOnly ? 'Back' : 'Cancel'),
+            ),
+            if (!readOnly)
+              BusyButton(
+                busy: _saving,
+                onPressed: _save,
+                label: _role == null ? 'Create role' : 'Save changes',
+              ),
+          ],
+        ),
         maxWidth: 1100,
         children: [
           Text(title, style: theme.textTheme.headlineSmall),
@@ -379,6 +445,14 @@ class _RoleFormState extends ConsumerState<RoleForm>
             ),
           LayoutBuilder(
             builder: (context, constraints) {
+              if (constraints.maxWidth >= 560) {
+                return RoleMatrix(
+                  modules: modules,
+                  selected: _selected,
+                  enabled: !readOnly,
+                  onToggle: _toggle,
+                );
+              }
               if (constraints.maxWidth < 840) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -404,6 +478,7 @@ class _RoleFormState extends ConsumerState<RoleForm>
               );
             },
           ),
+          if (_role != null) _RoleUsers(roleId: _role!.id),
           if (unknown.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
@@ -412,23 +487,6 @@ class _RoleFormState extends ConsumerState<RoleForm>
                 style: theme.textTheme.bodySmall,
               ),
             ),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _saving ? null : () => leave('/roles'),
-                child: Text(readOnly ? 'Back' : 'Cancel'),
-              ),
-              if (!readOnly)
-                BusyButton(
-                  busy: _saving,
-                  onPressed: _save,
-                  label: _role == null ? 'Create role' : 'Save changes',
-                ),
-            ],
-          ),
         ],
       ),
     );
@@ -479,6 +537,109 @@ class _ModuleCard extends StatelessWidget {
               onChanged: enabled ? (v) => onToggle([d.key], v ?? false) : null,
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _TemplateDialog extends StatefulWidget {
+  const _TemplateDialog({required this.options});
+
+  final List<RoleTemplateDef> options;
+
+  @override
+  State<_TemplateDialog> createState() => _TemplateDialogState();
+}
+
+class _TemplateDialogState extends State<_TemplateDialog> {
+  final Set<String> _chosen = {};
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Add roles from template'),
+    content: SizedBox(
+      width: 420,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final t in widget.options)
+              CheckboxListTile(
+                value: _chosen.contains(t.name),
+                title: Text(t.name),
+                subtitle: Text(
+                  '${t.description} (${t.permissions.length} permissions)',
+                ),
+                onChanged: (v) => setState(
+                  () =>
+                      v == true ? _chosen.add(t.name) : _chosen.remove(t.name),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).maybePop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _chosen.isEmpty
+            ? null
+            : () => Navigator.pop(context, [
+                for (final t in widget.options)
+                  if (_chosen.contains(t.name)) t,
+              ]),
+        child: const Text('Add'),
+      ),
+    ],
+  );
+}
+
+/// Names of the active users holding a role.
+final _roleUsersProvider = FutureProvider.autoDispose
+    .family<List<UserRow>, String>((ref, roleId) async {
+      ref.watch(revisionProvider(DataKind.users));
+      final page = await ref
+          .watch(apiClientProvider)
+          .getPage('/users', UserRow.fromJson, query: {'limit': 200});
+      return [
+        for (final u in page.data)
+          if (u.assignments.any((a) => a.roleId == roleId)) u,
+      ];
+    });
+
+class _RoleUsers extends ConsumerWidget {
+  const _RoleUsers({required this.roleId});
+
+  final String roleId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final users = ref.watch(_roleUsersProvider(roleId));
+    return SectionCard(
+      title: 'People with this role',
+      icon: Icons.people_outline,
+      child: users.when(
+        loading: () => const LinearProgressIndicator(),
+        error: (_, _) => const Text('Could not load the people.'),
+        data: (list) => list.isEmpty
+            ? const Text('Nobody has this role yet.')
+            : Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final u in list)
+                    Chip(
+                      label: Text(u.name),
+                      avatar: Icon(
+                        u.isActive ? Icons.person : Icons.person_off_outlined,
+                        size: 16,
+                      ),
+                    ),
+                ],
+              ),
       ),
     );
   }

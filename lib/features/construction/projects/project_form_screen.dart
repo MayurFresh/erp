@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/business_profile.dart';
 
 import '../../../core/json.dart';
 import '../../../core/money.dart';
@@ -11,6 +14,7 @@ import '../../../widgets/picker_field.dart';
 import '../../../widgets/search_picker.dart';
 import '../../../widgets/states.dart';
 import '../../auth/session.dart';
+import '../../controls/custom_fields_section.dart';
 import '../../locations/location_model.dart';
 import '../../locations/locations_repository.dart';
 import '../../parties/party_model.dart';
@@ -78,6 +82,7 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
   late DateTime? _start =
       parseApiDate(_p?.startDate) ?? (_p == null ? today() : null);
   late DateTime? _end = parseApiDate(_p?.endDate);
+  late Json _custom = _p?.custom ?? const {};
   late final Set<String> _siteIds = {...?_p?.sites.map((s) => s.id)};
   bool _saving = false;
 
@@ -95,7 +100,9 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
   Future<void> _pickClient() async {
     final party = await pickParty(context, ref, type: PartyType.customer);
     if (party != null) {
-      setState(() => _client = NamedRef(id: party.id, name: party.name));
+      if (mounted) {
+        setState(() => _client = NamedRef(id: party.id, name: party.name));
+      }
     }
   }
 
@@ -103,7 +110,7 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
     final repo = ref.read(usersRepositoryProvider);
     final user = await showSearchPicker<UserRow>(
       context: context,
-      title: 'Choose the project manager',
+      title: context.w('Choose the project manager'),
       hintText: 'Search name or email',
       search: (q) async => (await repo.users(
         q: q,
@@ -113,11 +120,17 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
       subtitleBuilder: (context, u) => Text(u.email),
     );
     if (user != null) {
-      setState(() => _manager = NamedRef(id: user.id, name: user.name));
+      if (mounted) {
+        setState(() => _manager = NamedRef(id: user.id, name: user.name));
+      }
     }
   }
 
   Json _body() => {
+    if (_p == null
+        ? _custom.isNotEmpty
+        : jsonEncode(_p.custom) != jsonEncode(_custom))
+      'custom': _p == null ? _custom : customPatch(_p.custom, _custom),
     'code': _code.text.trim(),
     'name': _name.text.trim(),
     'clientPartyId': _client?.id,
@@ -132,7 +145,7 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() => _saving = true);
     final repo = ref.read(constructionRepositoryProvider);
     try {
@@ -167,6 +180,21 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            FilledButton.icon(
+              style: bigButton,
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check),
+              label: Text(_editing ? 'Save changes' : 'Create project'),
+            ),
+          ],
+        ),
         maxWidth: 900,
         children: [
           Padding(
@@ -177,7 +205,7 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
             ),
           ),
           SectionCard(
-            title: 'Project',
+            title: context.w('Project'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -217,7 +245,7 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
                       errorText: serverError('clientPartyId'),
                     ),
                     _ClearablePicker(
-                      label: 'Project manager (optional)',
+                      label: context.w('Project manager (optional)'),
                       value: _manager?.name,
                       onTap: perms.can(Perm.usersManage) ? _pickManager : null,
                       onClear: () => setState(() => _manager = null),
@@ -244,7 +272,7 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
                       inputFormatters: [decimalInput()],
                       decoration: InputDecoration(
                         labelText: 'Contract value',
-                        prefixText: '₹ ',
+                        prefixText: '$moneySymbol ',
                         errorText: serverError('contractValue'),
                       ),
                       validator: (v) => optionalNumber(v, min: 0),
@@ -341,19 +369,11 @@ class _ProjectFormState extends ConsumerState<_ProjectForm>
               ],
             ),
           ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              style: bigButton,
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(_editing ? 'Save changes' : 'Create project'),
-            ),
+          CustomFieldsSection(
+            entity: 'project',
+            values: _custom,
+            errors: serverErrors,
+            onChanged: (v) => setState(() => _custom = v),
           ),
         ],
       ),

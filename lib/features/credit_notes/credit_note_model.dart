@@ -27,12 +27,16 @@ class CreditNote implements TaxSummary {
     this.taxTotal = 0,
     this.roundOff = 0,
     this.total = 0,
+    this.costCentreId,
     this.createdAt,
     this.createdBy,
     this.cancelledAt,
     this.cancelReason,
     this.lines,
   });
+
+  /// Cost centre the document is tagged to.
+  final String? costCentreId;
 
   factory CreditNote.fromJson(Json json) => CreditNote(
     id: asStringOrNull(json['id']),
@@ -58,6 +62,7 @@ class CreditNote implements TaxSummary {
     taxTotal: asDouble(json['taxTotal']),
     roundOff: asDouble(json['roundOff']),
     total: asDouble(json['total']),
+    costCentreId: asStringOrNull(json['costCentreId']),
     createdAt: asDateTimeOrNull(json['createdAt']),
     createdBy: UserRef.maybe(json['createdBy']),
     cancelledAt: asDateTimeOrNull(json['cancelledAt']),
@@ -121,6 +126,7 @@ class CreditNoteDraft {
     required this.reason,
     required this.lines,
     this.noteDate,
+    this.costCentreId,
     this.restock = true,
   });
 
@@ -132,11 +138,14 @@ class CreditNoteDraft {
   /// invoiceLineId → qty (only positive quantities are sent).
   final Map<String, double> lines;
 
+  final String? costCentreId;
+
   Json toJson() => withoutNulls({
     'invoiceId': invoiceId,
     'noteDate': noteDate,
     'reason': reason,
     'restock': restock,
+    'costCentreId': costCentreId,
     'lines': [
       for (final MapEntry(:key, :value) in lines.entries)
         if (value > 0) {'invoiceLineId': key, 'qty': value},

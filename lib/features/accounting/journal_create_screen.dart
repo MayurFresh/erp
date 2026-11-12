@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../widgets/busy.dart';
+
 import '../../core/money.dart';
 import '../../core/permissions.dart';
 import '../../core/providers.dart';
@@ -16,6 +18,7 @@ import '../reports/report_widgets.dart' show tabularFigures;
 import 'account_picker.dart';
 import 'accounting_models.dart';
 import 'accounting_repository.dart';
+import '../../core/app_colors.dart';
 
 /// One editable row of the journal grid.
 class _LineState {
@@ -90,10 +93,12 @@ class _JournalCreateScreenState extends ConsumerState<JournalCreateScreen> {
       helpText: 'Journal date',
     );
     if (picked != null) {
-      setState(() {
-        _date = picked;
-        _serverErrors = Map.of(_serverErrors)..remove('date');
-      });
+      if (mounted) {
+        setState(() {
+          _date = picked;
+          _serverErrors = Map.of(_serverErrors)..remove('date');
+        });
+      }
     }
   }
 
@@ -176,6 +181,9 @@ class _JournalCreateScreenState extends ConsumerState<JournalCreateScreen> {
       context.go('/journals');
     } catch (e) {
       if (!mounted) return;
+      if (handleApprovalPending(context, e, listPath: '/journals')) {
+        return;
+      }
       final fields = apiError(e)?.fieldErrors ?? const <String, String>{};
       setState(() {
         _serverErrors = {
@@ -205,6 +213,19 @@ class _JournalCreateScreenState extends ConsumerState<JournalCreateScreen> {
 
     return FormPage(
       maxWidth: 1100,
+      bottomBar: FormActionBar(
+        children: [
+          OutlinedButton(
+            onPressed: _saving ? null : () => context.go('/journals'),
+            child: const Text('Cancel'),
+          ),
+          BusyButton(
+            busy: _saving,
+            onPressed: draft.canSave ? _save : null,
+            label: 'Post journal',
+          ),
+        ],
+      ),
       children: [
         Text('New journal', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
@@ -306,22 +327,6 @@ class _JournalCreateScreenState extends ConsumerState<JournalCreateScreen> {
               ),
             ),
           ),
-        Wrap(
-          alignment: WrapAlignment.end,
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            OutlinedButton(
-              onPressed: _saving ? null : () => context.go('/journals'),
-              child: const Text('Cancel'),
-            ),
-            BusyButton(
-              busy: _saving,
-              onPressed: draft.canSave ? _save : null,
-              label: 'Post journal',
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -400,7 +405,7 @@ class _JournalLineRow extends StatelessWidget {
     decoration: InputDecoration(
       labelText: wide ? null : label,
       hintText: wide ? '0.00' : null,
-      prefixText: '₹ ',
+      prefixText: '$moneySymbol ',
       isDense: true,
     ),
     textAlign: TextAlign.right,
@@ -555,7 +560,7 @@ class _TotalsCard extends StatelessWidget {
     final balanced = draft.isBalanced;
     final empty = draft.totalDebitPaise == 0 && draft.totalCreditPaise == 0;
     final color = balanced
-        ? Colors.green.shade700
+        ? context.colors.success
         : empty
         ? theme.colorScheme.onSurfaceVariant
         : theme.colorScheme.error;
@@ -586,7 +591,7 @@ class _TotalsCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  balanced ? Icons.check_circle : Icons.error_outline,
+                  balanced ? Icons.check_circle_outline : Icons.error_outline,
                   color: color,
                 ),
                 const SizedBox(width: 8),

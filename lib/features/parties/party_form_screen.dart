@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
 import '../../core/india_states.dart';
+import '../../core/json.dart';
 import '../../core/money.dart';
 import '../../core/permissions.dart';
 import '../../core/providers.dart';
@@ -14,6 +18,7 @@ import '../auth/session.dart';
 import 'parties_repository.dart';
 import '../tax/tax_pickers.dart';
 import 'party_model.dart';
+import '../controls/custom_fields_section.dart';
 import '../../widgets/busy.dart';
 
 /// Create (`/parties/new`) or edit (`/parties/:id`) a customer or vendor.
@@ -64,6 +69,8 @@ class _PartyFormState extends ConsumerState<PartyForm>
 
   bool get _editing => widget.party != null;
 
+  late Json _custom;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +89,7 @@ class _PartyFormState extends ConsumerState<PartyForm>
     _tdsSectionId = p?.tdsSectionId;
     _type = p?.type ?? PartyType.customer;
     _stateCode = p?.stateCode;
+    _custom = p?.custom ?? const {};
   }
 
   @override
@@ -114,7 +122,7 @@ class _PartyFormState extends ConsumerState<PartyForm>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     final gstin = trimmedOrNull(_gstin.text.toUpperCase());
     final body = <String, dynamic>{
       'type': _type.name,
@@ -132,6 +140,12 @@ class _PartyFormState extends ConsumerState<PartyForm>
       'msmeCategory': _msme,
       'tdsSectionId': _tdsSectionId,
     };
+    final originalParty = widget.party;
+    if (originalParty == null) {
+      if (_custom.isNotEmpty) body['custom'] = _custom;
+    } else if (jsonEncode(originalParty.custom) != jsonEncode(_custom)) {
+      body['custom'] = customPatch(originalParty.custom, _custom);
+    }
     setState(() => _saving = true);
     try {
       final repo = ref.read(partiesRepositoryProvider);
@@ -145,7 +159,15 @@ class _PartyFormState extends ConsumerState<PartyForm>
       showInfoSnackBar(context, 'Saved "${saved.name}"');
       context.go('/parties/${saved.id}');
     } catch (e) {
-      if (mounted) showSubmitError(e);
+      if (mounted) {
+        showSubmitError(
+          e,
+          onReload: () {
+            markSaved();
+            context.go('/parties/${widget.party?.id}');
+          },
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -156,6 +178,7 @@ class _PartyFormState extends ConsumerState<PartyForm>
 
   Widget _buildBody(BuildContext context) {
     final perms = ref.watch(permissionsProvider);
+    final isIndia = ref.watch(businessProfileProvider).isIndia;
     final canSave = _editing
         ? perms.can(Perm.partiesEdit)
         : perms.can(Perm.partiesCreate);
@@ -164,9 +187,29 @@ class _PartyFormState extends ConsumerState<PartyForm>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            OutlinedButton(
+              onPressed: _saving
+                  ? null
+                  : () => context.go(
+                      widget.party == null
+                          ? '/parties'
+                          : '/parties/${widget.party!.id}',
+                    ),
+              child: Text(canSave ? 'Cancel' : 'Back'),
+            ),
+            if (canSave)
+              BusyButton(
+                busy: _saving,
+                onPressed: _save,
+                label: _editing ? 'Save changes' : context.w('Create party'),
+              ),
+          ],
+        ),
         children: [
           Text(
-            _editing ? 'Edit party' : 'New party',
+            context.w(_editing ? 'Edit party' : 'New party'),
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 16),
@@ -176,14 +219,14 @@ class _PartyFormState extends ConsumerState<PartyForm>
               children: [
                 SegmentedButton<PartyType>(
                   showSelectedIcon: false,
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: PartyType.customer,
-                      label: Text('Customer'),
+                      label: Text(context.w('Customer')),
                     ),
                     ButtonSegment(
                       value: PartyType.vendor,
-                      label: Text('Vendor'),
+                      label: Text(context.w('Vendor')),
                     ),
                     ButtonSegment(value: PartyType.both, label: Text('Both')),
                   ],
@@ -202,48 +245,53 @@ class _PartyFormState extends ConsumerState<PartyForm>
                   onChanged: (_) => clearServerError('name'),
                   validator: (v) => requiredField(v, 'Name'),
                 ),
-                const SizedBox(height: 16),
-                FormRow(
-                  children: [
-                    TextFormField(
-                      controller: _gstin,
-                      enabled: canSave,
-                      decoration: const InputDecoration(
-                        labelText: 'GSTIN (optional)',
-                        helperText: 'Sets the state automatically',
-                        counterText: '',
+                if (isIndia) ...[
+                  const SizedBox(height: 16),
+                  FormRow(
+                    children: [
+                      TextFormField(
+                        controller: _gstin,
+                        enabled: canSave,
+                        decoration: const InputDecoration(
+                          labelText: 'GSTIN (optional)',
+                          helperText: 'Sets the state automatically',
+                          counterText: '',
+                        ),
+                        maxLength: 15,
+                        textCapitalization: TextCapitalization.characters,
+                        forceErrorText: serverError('gstin'),
+                        onChanged: _gstinChanged,
+                        validator: (v) {
+                          final error = validateGstin(
+                            v,
+                            original: widget.party?.gstin,
+                          );
+                          if (error != null) return error;
+                          final code = stateCodeFromGstin(
+                            v?.trim().toUpperCase(),
+                          );
+                          if (code != null &&
+                              _stateCode != null &&
+                              code != _stateCode) {
+                            return 'GSTIN is from state $code, not $_stateCode';
+                          }
+                          return null;
+                        },
                       ),
-                      maxLength: 15,
-                      textCapitalization: TextCapitalization.characters,
-                      forceErrorText: serverError('gstin'),
-                      onChanged: _gstinChanged,
-                      validator: (v) {
-                        final error = validateGstin(v);
-                        if (error != null) return error;
-                        final code = stateCodeFromGstin(
-                          v?.trim().toUpperCase(),
-                        );
-                        if (code != null &&
-                            _stateCode != null &&
-                            code != _stateCode) {
-                          return 'GSTIN is from state $code, not $_stateCode';
-                        }
-                        return null;
-                      },
-                    ),
-                    StateDropdown(
-                      value: _stateCode,
-                      required: false,
-                      label: 'State (place of supply)',
-                      enabled: canSave,
-                      errorText: serverError('stateCode'),
-                      onChanged: (v) {
-                        clearServerError('stateCode');
-                        setState(() => _stateCode = v);
-                      },
-                    ),
-                  ],
-                ),
+                      StateDropdown(
+                        value: _stateCode,
+                        required: false,
+                        label: 'State (place of supply)',
+                        enabled: canSave,
+                        errorText: serverError('stateCode'),
+                        onChanged: (v) {
+                          clearServerError('stateCode');
+                          setState(() => _stateCode = v);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -287,25 +335,28 @@ class _PartyFormState extends ConsumerState<PartyForm>
                 const SizedBox(height: 16),
                 FormRow(
                   children: [
-                    TextFormField(
-                      controller: _pan,
-                      enabled: canSave,
-                      decoration: const InputDecoration(
-                        labelText: 'PAN (optional)',
-                        counterText: '',
+                    if (isIndia)
+                      TextFormField(
+                        controller: _pan,
+                        enabled: canSave,
+                        decoration: const InputDecoration(
+                          labelText: 'PAN (optional)',
+                          counterText: '',
+                        ),
+                        maxLength: 10,
+                        textCapitalization: TextCapitalization.characters,
+                        forceErrorText: serverError('pan'),
+                        onChanged: (_) => clearServerError('pan'),
+                        validator: validatePan,
                       ),
-                      maxLength: 10,
-                      textCapitalization: TextCapitalization.characters,
-                      forceErrorText: serverError('pan'),
-                      onChanged: (_) => clearServerError('pan'),
-                      validator: validatePan,
-                    ),
                     TextFormField(
                       controller: _pincode,
                       enabled: canSave,
-                      decoration: const InputDecoration(
-                        labelText: 'PIN code (optional)',
-                        helperText: 'Needed for e-invoices',
+                      decoration: InputDecoration(
+                        labelText: isIndia
+                            ? 'PIN code (optional)'
+                            : 'Postal code (optional)',
+                        helperText: isIndia ? 'Needed for e-invoices' : null,
                         counterText: '',
                       ),
                       maxLength: 6,
@@ -322,9 +373,9 @@ class _PartyFormState extends ConsumerState<PartyForm>
                     TextFormField(
                       controller: _creditLimit,
                       enabled: canSave,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Credit limit',
-                        prefixText: '₹ ',
+                        prefixText: '$moneySymbol ',
                       ),
                       keyboardType: decimalKeyboard,
                       inputFormatters: [decimalInput()],
@@ -364,84 +415,77 @@ class _PartyFormState extends ConsumerState<PartyForm>
               ],
             ),
           ),
-          SectionCard(
-            title: 'MSME and TDS',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                FormRow(
-                  children: [
-                    TextFormField(
-                      controller: _udyam,
-                      enabled: canSave,
-                      decoration: const InputDecoration(
-                        labelText: 'Udyam number (optional)',
-                        hintText: 'UDYAM-XX-00-0000000',
-                      ),
-                      textCapitalization: TextCapitalization.characters,
-                      forceErrorText: serverError('udyamNo'),
-                      onChanged: (_) => clearServerError('udyamNo'),
-                    ),
-                    DropdownButtonFormField<String?>(
-                      initialValue: _msme,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'MSME category',
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: null, child: Text('Not MSME')),
-                        DropdownMenuItem(value: 'micro', child: Text('Micro')),
-                        DropdownMenuItem(value: 'small', child: Text('Small')),
-                        DropdownMenuItem(
-                          value: 'medium',
-                          child: Text('Medium'),
+          if (isIndia)
+            SectionCard(
+              title: 'MSME and TDS',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FormRow(
+                    children: [
+                      TextFormField(
+                        controller: _udyam,
+                        enabled: canSave,
+                        decoration: const InputDecoration(
+                          labelText: 'Udyam number (optional)',
+                          hintText: 'UDYAM-XX-00-0000000',
                         ),
-                      ],
-                      onChanged: canSave
-                          ? (v) => setState(() {
-                              _msme = v;
-                              clearServerError('msmeCategory');
-                              _formKey.currentState?.validate();
-                            })
-                          : null,
+                        textCapitalization: TextCapitalization.characters,
+                        forceErrorText: serverError('udyamNo'),
+                        onChanged: (_) => clearServerError('udyamNo'),
+                      ),
+                      DropdownButtonFormField<String?>(
+                        initialValue: _msme,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'MSME category',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: null,
+                            child: Text('Not MSME'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'micro',
+                            child: Text('Micro'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'small',
+                            child: Text('Small'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'medium',
+                            child: Text('Medium'),
+                          ),
+                        ],
+                        onChanged: canSave
+                            ? (v) => setState(() {
+                                _msme = v;
+                                clearServerError('msmeCategory');
+                                _formKey.currentState?.validate();
+                              })
+                            : null,
+                      ),
+                    ],
+                  ),
+                  if (_type != PartyType.customer) ...[
+                    const SizedBox(height: 16),
+                    TdsSectionPicker(
+                      value: _tdsSectionId,
+                      enabled: canSave,
+                      label: 'Default TDS section (on purchases)',
+                      errorText: serverError('tdsSectionId'),
+                      onChanged: (s) => setState(() => _tdsSectionId = s?.id),
                     ),
                   ],
-                ),
-                if (_type != PartyType.customer) ...[
-                  const SizedBox(height: 16),
-                  TdsSectionPicker(
-                    value: _tdsSectionId,
-                    enabled: canSave,
-                    label: 'Default TDS section (on purchases)',
-                    errorText: serverError('tdsSectionId'),
-                    onChanged: (s) => setState(() => _tdsSectionId = s?.id),
-                  ),
                 ],
-              ],
-            ),
-          ),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _saving
-                    ? null
-                    : () => context.go(
-                        widget.party == null
-                            ? '/parties'
-                            : '/parties/${widget.party!.id}',
-                      ),
-                child: Text(canSave ? 'Cancel' : 'Back'),
               ),
-              if (canSave)
-                BusyButton(
-                  busy: _saving,
-                  onPressed: _save,
-                  label: _editing ? 'Save changes' : 'Create party',
-                ),
-            ],
+            ),
+          CustomFieldsSection(
+            entity: 'party',
+            values: _custom,
+            errors: serverErrors,
+            onChanged: (v) => setState(() => _custom = v),
           ),
         ],
       ),

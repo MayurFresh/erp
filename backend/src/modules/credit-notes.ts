@@ -14,8 +14,12 @@ import { scopedLocationIds } from '../lib/scope.ts';
 import { nextNumber } from '../lib/series.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { createOrSubmit, registerApprovalDoc } from './approvals.ts';
+import { resolveCostCentre } from './cost-centres.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
+import { documentRoute } from '../lib/openapi.ts';
+import { warehouseReverse, warehouseUnreturn } from './warehouse.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -26,6 +30,7 @@ const createBody = z.object({
   noteDate: docDate.optional(),
   reason: z.string().trim().min(3, 'Give a reason').max(300),
   restock: z.boolean().optional(),
+  costCentreId: z.uuid().nullable().optional(),
   lines: z.array(z.object({ invoiceLineId: z.uuid(), qty: qtyField.refine((v) => v > 0, 'Must be more than zero') }))
     .min(1, 'Choose at least one line').max(200),
 });
@@ -57,6 +62,15 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody, lock: bool
   if (lock) linesQ = linesQ.orderBy('il.id').forUpdate('il');
   const invLines = await linesQ.execute();
 
+  // Discount already credited on each fixed-discount line by earlier posted notes.
+  const fixedIds = invLines.filter((x) => x.discount_amount !== null).map((x) => x.id);
+  const credited = new Map<string, number>();
+  if (fixedIds.length) {
+    const prior = await tx.selectFrom('credit_note_lines as cl').innerJoin('credit_notes as n', 'n.id', 'cl.credit_note_id')
+      .select(['cl.invoice_line_id', 'cl.discount_amount']).where('cl.invoice_line_id', 'in', fixedIds).where('n.status', '=', 'posted').execute();
+    for (const r of prior) credited.set(r.invoice_line_id, (credited.get(r.invoice_line_id) ?? 0) + Math.round(Number(r.discount_amount ?? 0) * 100));
+  }
+
   const seen = new Set<string>();
   const lines = body.lines.map((l, idx) => {
     const src = invLines.find((x) => x.id === l.invoiceLineId);
@@ -67,13 +81,22 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody, lock: bool
     if (l.qty > returnable + 0.0005) {
       throw badRequest(`Line ${idx + 1}: only ${returnable} ${src.unit} can still be returned.`, { [`lines.${idx}.qty`]: `At most ${returnable}` });
     }
-    return { src, qty: l.qty };
+    // A fixed discount is reversed in paise: pro-rata by quantity, the remainder on the last of the quantity.
+    let discountAmount: number | undefined;
+    if (src.discount_amount !== null) {
+      const total = Math.round(Number(src.discount_amount) * 100);
+      const left = total - (credited.get(src.id) ?? 0);
+      const last = l.qty >= returnable - 0.0005;
+      discountAmount = (last ? left : Math.min(left, Math.round(total * l.qty / src.qty))) / 100;
+    }
+    return { src, qty: l.qty, discountAmount };
   });
 
   // Same tax treatment as the invoice.
   const seller = invoice.supply_type === 'intra' ? invoice.place_of_supply : 'XX';
   const gst = computeGst(seller, invoice.place_of_supply, lines.map((l) => ({
-    qty: l.qty, rate: l.src.rate, discountPct: l.src.discount_pct, gstRate: l.src.gst_rate,
+    qty: l.qty, rate: l.src.rate, discountPct: l.src.discount_pct, discountAmount: l.discountAmount,
+    gstRate: invoice.reverse_charge ? 0 : l.src.gst_rate,
   })));
   const location = await getLocation(tx, ctx, invoice.location_id);
   const party = await tx.selectFrom('parties').select(['id', 'name']).where('id', '=', invoice.party_id).executeTakeFirstOrThrow();
@@ -117,6 +140,7 @@ function noteJson(r: NoteRow) {
     status: r.status, subtotal: r.subtotal, cgst: r.cgst, sgst: r.sgst, igst: r.igst,
     taxTotal: round2(r.cgst + r.sgst + r.igst), roundOff: r.round_off, total: r.total, createdAt: r.created_at,
     createdBy: { id: r.created_by, name: r.created_by_name }, cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason,
+    costCentreId: r.cost_centre_id,
   };
 }
 
@@ -133,6 +157,95 @@ async function loadNote(tx: Tx, ctx: RequestContext, id: string) {
     })),
   };
 }
+
+/** Creates a credit note (shared by the route and a final approval). */
+export async function createCreditNote(
+  ctx: RequestContext, tx: Tx, body: CreateBody,
+  /** Sales returns: restock only these invoice lines (overrides `restock`). */
+  opts?: { restockLineIds?: ReadonlySet<string> },
+) {
+  const p = await prepare(tx, ctx, body, true);
+  const costCentreId = await resolveCostCentre(tx, ctx, body.costCentreId !== undefined ? body.costCentreId : p.invoice.cost_centre_id);
+  const number = await nextNumber(tx, ctx, 'credit_note', p.fy);
+  const due = round2(p.invoice.total - p.invoice.amount_paid);
+  const applied = round2(Math.min(p.gst.total, Math.max(due, 0)));
+
+  const row = await tx.insertInto('credit_notes').values({
+    tenant_id: ctx.tenantId, company_id: ctx.companyId, invoice_id: p.invoice.id, location_id: p.location.id,
+    party_id: p.party.id, number, fy: p.fy, note_date: p.noteDate, reason: body.reason,
+    restock: opts?.restockLineIds ? p.lines.some((l) => opts.restockLineIds!.has(l.src.id)) : p.restock,
+    place_of_supply: p.invoice.place_of_supply, supply_type: p.gst.supplyType, subtotal: p.gst.subtotal,
+    cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, round_off: p.gst.roundOff, total: p.gst.total,
+    applied_amount: applied, cost_centre_id: costCentreId, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
+  }).returning('id').executeTakeFirstOrThrow();
+
+  await tx.insertInto('credit_note_lines').values(p.lines.map((l, i) => {
+    const g = p.gst.lines[i]!;
+    return {
+      tenant_id: ctx.tenantId, credit_note_id: row.id, invoice_line_id: l.src.id, line_no: i + 1, item_id: l.src.item_id,
+      description: l.src.description, hsn_code: l.src.hsn_code, qty: l.qty, unit: l.src.unit, rate: l.src.rate,
+      discount_pct: l.src.discount_pct, discount_amount: l.discountAmount ?? null, taxable_value: g.taxableValue, gst_rate: l.src.gst_rate,
+      cgst: g.cgst, sgst: g.sgst, igst: g.igst, line_total: g.lineTotal,
+    };
+  })).execute();
+  for (const l of p.lines) {
+    await tx.updateTable('invoice_lines').set((eb) => ({ returned_qty: eb('returned_qty', '+', l.qty) })).where('id', '=', l.src.id).execute();
+  }
+  if (applied > 0) {
+    await tx.updateTable('invoices').set((eb) => ({ amount_paid: eb('amount_paid', '+', applied) })).where('id', '=', p.invoice.id).execute();
+  }
+
+  // Restock returned goods at the cost they left at.
+  let restockValue = 0;
+  const tracked = p.lines.filter((l) => l.src.track_stock && (opts?.restockLineIds ? opts.restockLineIds.has(l.src.id) : p.restock));
+  if (tracked.length) {
+    await lockItems(tx, ctx.companyId, tracked.map((l) => l.src.item_id));
+    const sold = await tx.selectFrom('stock_moves').select(['item_id', 'cost_rate'])
+      .where('ref_type', '=', 'invoice').where('ref_id', '=', p.invoice.id).execute();
+    const moves = tracked.map((l) => {
+      const costRate = sold.find((m) => m.item_id === l.src.item_id)?.cost_rate ?? 0;
+      const value = round2(l.qty * costRate);
+      restockValue += value;
+      return {
+        tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: p.location.id, item_id: l.src.item_id, qty: l.qty,
+        rate: l.src.rate, cost_rate: costRate, value, ref_type: 'credit_note', ref_id: row.id, note: number, created_by: ctx.userId,
+      };
+    });
+    await tx.insertInto('stock_moves').values(moves).execute();
+    const back = new Map<string, number>();
+    for (const l of tracked) back.set(l.src.item_id, (back.get(l.src.item_id) ?? 0) + l.qty);
+    await warehouseReverse(tx, ctx, 'invoice', p.invoice.id, back, row.id);
+  }
+
+  const acc = await systemAccounts(tx, ctx);
+  const loc = p.location.id;
+  await postJournal(tx, auditOf(ctx), {
+    date: p.noteDate, voucherType: 'credit_note', voucherId: row.id, number,
+    narration: `Sales return from ${p.party.name} against ${p.invoice.number}: ${body.reason}`,
+    lines: [
+      { accountId: acc.sales_returns, amount: p.gst.subtotal, locationId: loc, costCentreId },
+      { accountId: acc.output_cgst, amount: p.gst.cgst, locationId: loc },
+      { accountId: acc.output_sgst, amount: p.gst.sgst, locationId: loc },
+      { accountId: acc.output_igst, amount: p.gst.igst, locationId: loc },
+      { accountId: acc.round_off, amount: p.gst.roundOff, locationId: loc },
+      { accountId: acc.receivables, amount: -p.gst.total, partyId: p.party.id, locationId: loc },
+      { accountId: acc.inventory, amount: round2(restockValue), locationId: loc },
+      { accountId: acc.cogs, amount: -round2(restockValue), locationId: loc, costCentreId },
+    ],
+  });
+  const saved = await loadNote(tx, ctx, row.id);
+  await writeAudit(tx, auditOf(ctx), 'credit_note', row.id, 'create', null,
+    { number, invoiceId: p.invoice.id, total: p.gst.total, applied, restock: p.restock });
+  return saved;
+}
+
+registerApprovalDoc('credit_note', {
+  permission: 'credit_notes.create',
+  create: async (ctx, tx, payload) => {
+    const d = await createCreditNote(ctx, tx, parse(createBody, payload));
+    return { id: d.id, number: d.number };
+  },
+});
 
 export async function creditNoteRoutes(app: FastifyInstance) {
   app.get('/credit-notes', async (req) => {
@@ -176,77 +289,10 @@ export async function creditNoteRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('credit_notes.create');
     const body = parse(createBody, req.body);
-    const note = await ctx.tx(async (tx) => {
-      const p = await prepare(tx, ctx, body, true);
-      const number = await nextNumber(tx, ctx, 'credit_note', p.fy);
-      const due = round2(p.invoice.total - p.invoice.amount_paid);
-      const applied = round2(Math.min(p.gst.total, Math.max(due, 0)));
-
-      const row = await tx.insertInto('credit_notes').values({
-        tenant_id: ctx.tenantId, company_id: ctx.companyId, invoice_id: p.invoice.id, location_id: p.location.id,
-        party_id: p.party.id, number, fy: p.fy, note_date: p.noteDate, reason: body.reason, restock: p.restock,
-        place_of_supply: p.invoice.place_of_supply, supply_type: p.gst.supplyType, subtotal: p.gst.subtotal,
-        cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, round_off: p.gst.roundOff, total: p.gst.total,
-        applied_amount: applied, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
-      }).returning('id').executeTakeFirstOrThrow();
-
-      await tx.insertInto('credit_note_lines').values(p.lines.map((l, i) => {
-        const g = p.gst.lines[i]!;
-        return {
-          tenant_id: ctx.tenantId, credit_note_id: row.id, invoice_line_id: l.src.id, line_no: i + 1, item_id: l.src.item_id,
-          description: l.src.description, hsn_code: l.src.hsn_code, qty: l.qty, unit: l.src.unit, rate: l.src.rate,
-          discount_pct: l.src.discount_pct, taxable_value: g.taxableValue, gst_rate: l.src.gst_rate,
-          cgst: g.cgst, sgst: g.sgst, igst: g.igst, line_total: g.lineTotal,
-        };
-      })).execute();
-      for (const l of p.lines) {
-        await tx.updateTable('invoice_lines').set((eb) => ({ returned_qty: eb('returned_qty', '+', l.qty) })).where('id', '=', l.src.id).execute();
-      }
-      if (applied > 0) {
-        await tx.updateTable('invoices').set((eb) => ({ amount_paid: eb('amount_paid', '+', applied) })).where('id', '=', p.invoice.id).execute();
-      }
-
-      // Restock returned goods at the cost they left at.
-      let restockValue = 0;
-      const tracked = p.restock ? p.lines.filter((l) => l.src.track_stock) : [];
-      if (tracked.length) {
-        await lockItems(tx, ctx.companyId, tracked.map((l) => l.src.item_id));
-        const sold = await tx.selectFrom('stock_moves').select(['item_id', 'cost_rate'])
-          .where('ref_type', '=', 'invoice').where('ref_id', '=', p.invoice.id).execute();
-        const moves = tracked.map((l) => {
-          const costRate = sold.find((m) => m.item_id === l.src.item_id)?.cost_rate ?? 0;
-          const value = round2(l.qty * costRate);
-          restockValue += value;
-          return {
-            tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: p.location.id, item_id: l.src.item_id, qty: l.qty,
-            rate: l.src.rate, cost_rate: costRate, value, ref_type: 'credit_note', ref_id: row.id, note: number, created_by: ctx.userId,
-          };
-        });
-        await tx.insertInto('stock_moves').values(moves).execute();
-      }
-
-      const acc = await systemAccounts(tx, ctx);
-      const loc = p.location.id;
-      await postJournal(tx, auditOf(ctx), {
-        date: p.noteDate, voucherType: 'credit_note', voucherId: row.id, number,
-        narration: `Sales return from ${p.party.name} against ${p.invoice.number}: ${body.reason}`,
-        lines: [
-          { accountId: acc.sales_returns, amount: p.gst.subtotal, locationId: loc },
-          { accountId: acc.output_cgst, amount: p.gst.cgst, locationId: loc },
-          { accountId: acc.output_sgst, amount: p.gst.sgst, locationId: loc },
-          { accountId: acc.output_igst, amount: p.gst.igst, locationId: loc },
-          { accountId: acc.round_off, amount: p.gst.roundOff, locationId: loc },
-          { accountId: acc.receivables, amount: -p.gst.total, partyId: p.party.id, locationId: loc },
-          { accountId: acc.inventory, amount: round2(restockValue), locationId: loc },
-          { accountId: acc.cogs, amount: -round2(restockValue), locationId: loc },
-        ],
-      });
-      const saved = await loadNote(tx, ctx, row.id);
-      await writeAudit(tx, auditOf(ctx), 'credit_note', row.id, 'create', null,
-        { number, invoiceId: p.invoice.id, total: p.gst.total, applied, restock: p.restock });
-      return saved;
-    });
-    return reply.status(201).send(note);
+    const r = await ctx.tx((tx) => createOrSubmit(ctx, tx, 'credit_note', body, (t) => createCreditNote(ctx, t, body),
+      (d) => ({ amount: d.total, date: d.noteDate, partyId: d.partyId, locationId: d.locationId, narration: body.reason })));
+    if (r.request) return reply.status(202).send({ approvalRequest: r.request });
+    return reply.status(201).send(r.doc);
   });
 
   app.post<{ Params: { id: string } }>('/credit-notes/:id/cancel', async (req) => {
@@ -272,6 +318,7 @@ export async function creditNoteRoutes(app: FastifyInstance) {
           rate: m.rate, cost_rate: m.cost_rate, value: -m.value, ref_type: 'credit_note_cancel', ref_id: id,
           note: `Cancelled ${current.number}`, created_by: ctx.userId,
         }))).execute();
+        await warehouseUnreturn(tx, ctx, id);
       }
 
       await tx.updateTable('credit_notes').set({ status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason }).where('id', '=', id).execute();
@@ -289,3 +336,7 @@ export async function creditNoteRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/credit-notes/preview', { body: createBody });
+documentRoute('POST', '/credit-notes', { body: createBody });
+documentRoute('POST', '/credit-notes/:id/cancel', { body: cancelBody });

@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/money.dart';
-import '../../../core/validators.dart';
 import '../../../widgets/layout.dart';
 import '../../../widgets/picker_field.dart';
 import '../../../widgets/states.dart';
@@ -14,6 +13,8 @@ import '../models/dpr_models.dart';
 import '../models/labour_models.dart';
 import '../models/material_models.dart';
 import '../models/project_models.dart';
+import '../../../core/app_colors.dart';
+import '../../../widgets/form_support.dart';
 
 /// Minimum size of tap targets on site screens (gloves, sunlight).
 const Size kTapTarget = Size(48, 48);
@@ -85,7 +86,7 @@ class PctBar extends StatelessWidget {
     final value = clampPct(pct);
     final barColor =
         color ??
-        (value >= 100 ? Colors.green.shade700 : theme.colorScheme.primary);
+        (value >= 100 ? context.colors.success : theme.colorScheme.primary);
     final bar = ClipRRect(
       borderRadius: BorderRadius.circular(height),
       child: LinearProgressIndicator(
@@ -133,7 +134,7 @@ class BudgetBar extends StatelessWidget {
     final theme = Theme.of(context);
     final over = budget > 0 ? actual > budget + 0.004 : actual > 0;
     final pct = budget > 0 ? actual / budget * 100 : (actual > 0 ? 100.0 : 0.0);
-    final color = over ? theme.colorScheme.error : Colors.green.shade700;
+    final color = over ? theme.colorScheme.error : context.colors.success;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -174,13 +175,13 @@ class BudgetBar extends StatelessWidget {
   }
 }
 
-Color _amber(BuildContext context) => Colors.orange.shade800;
+Color _amber(BuildContext context) => context.colors.warning;
 
 Widget projectStatusPill(BuildContext context, ProjectStatus status) => Pill(
   status.label,
   color: switch (status) {
-    ProjectStatus.planning => Colors.blueGrey,
-    ProjectStatus.active => Colors.green.shade700,
+    ProjectStatus.planning => context.colors.onNeutralContainer,
+    ProjectStatus.active => context.colors.success,
     ProjectStatus.onHold => _amber(context),
     ProjectStatus.completed => Theme.of(context).colorScheme.primary,
   },
@@ -189,9 +190,9 @@ Widget projectStatusPill(BuildContext context, ProjectStatus status) => Pill(
 Widget indentStatusPill(BuildContext context, IndentStatus status) => Pill(
   status.label,
   color: switch (status) {
-    IndentStatus.draft => Colors.blueGrey,
+    IndentStatus.draft => context.colors.onNeutralContainer,
     IndentStatus.submitted => _amber(context),
-    IndentStatus.approved => Colors.green.shade700,
+    IndentStatus.approved => context.colors.success,
     IndentStatus.rejected => Theme.of(context).colorScheme.error,
     IndentStatus.closed => Theme.of(context).colorScheme.primary,
   },
@@ -201,15 +202,15 @@ Widget issueStatusPill(BuildContext context, IssueStatus status) => Pill(
   status.label,
   color: status == IssueStatus.cancelled
       ? Theme.of(context).colorScheme.error
-      : Colors.green.shade700,
+      : context.colors.success,
 );
 
 Widget dprStatusPill(BuildContext context, DprStatus status) => Pill(
   status.label,
   color: switch (status) {
-    DprStatus.draft => Colors.blueGrey,
+    DprStatus.draft => context.colors.onNeutralContainer,
     DprStatus.submitted => _amber(context),
-    DprStatus.approved => Colors.green.shade700,
+    DprStatus.approved => context.colors.success,
     DprStatus.rejected => Theme.of(context).colorScheme.error,
   },
 );
@@ -217,9 +218,9 @@ Widget dprStatusPill(BuildContext context, DprStatus status) => Pill(
 Widget wageStatusPill(BuildContext context, WageSheetStatus status) => Pill(
   status.label,
   color: switch (status) {
-    WageSheetStatus.draft => Colors.blueGrey,
+    WageSheetStatus.draft => context.colors.onNeutralContainer,
     WageSheetStatus.approved => _amber(context),
-    WageSheetStatus.paid => Colors.green.shade700,
+    WageSheetStatus.paid => context.colors.success,
     WageSheetStatus.cancelled => Theme.of(context).colorScheme.error,
   },
 );
@@ -452,7 +453,7 @@ class CountStepper extends StatelessWidget {
   void _set(double next) => onChanged(next.clamp(min, max).toDouble());
 
   Future<void> _type(BuildContext context) async {
-    final typed = await showDialog<double>(
+    final typed = await showFormDialog<double>(
       context: context,
       builder: (_) =>
           _NumberDialog(title: label ?? 'Value', initial: value, unit: unit),
@@ -511,7 +512,7 @@ Future<T?> showFormSheet<T>(
   required Widget Function(BuildContext context) builder,
   double maxWidth = 560,
 }) {
-  return showDialog<T>(
+  return showFormDialog<T>(
     context: context,
     builder: (context) {
       final header = AppBar(
@@ -712,10 +713,10 @@ void showSuccess(BuildContext context, String message) {
     ..showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.green.shade800,
+        backgroundColor: context.colors.success,
         content: Row(
           children: [
-            const Icon(Icons.check_circle, color: Colors.white),
+            const Icon(Icons.check_circle_outline, color: Colors.white),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -744,7 +745,7 @@ Future<bool> confirm(
   bool destructive = false,
 }) async {
   final scheme = Theme.of(context).colorScheme;
-  final ok = await showDialog<bool>(
+  final ok = await showFormDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
@@ -873,7 +874,7 @@ class _NumberDialogState extends State<_NumberDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: () => Navigator.of(context).pop(),
+        onPressed: () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       FilledButton(onPressed: _submit, child: const Text('OK')),
@@ -889,7 +890,7 @@ Future<String?> showReasonDialog(
   required String message,
   required String confirmLabel,
   String cancelLabel = 'Cancel',
-}) => showDialog<String>(
+}) => showFormDialog<String>(
   context: context,
   builder: (_) => _ReasonDialog(
     title: title,
@@ -927,7 +928,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
   }
 
   void _submit() {
-    if (_formKey.currentState!.validate()) {
+    if (validateAndReveal(_formKey)) {
       Navigator.of(context).pop(_reason.text.trim());
     }
   }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
 import { toCsv } from '../lib/csv.ts';
+import { customFieldDefs, customText, type CustomEntity } from '../lib/custom-fields.ts';
 import { isValidDate, todayIst } from '../lib/dates.ts';
 import { notFound } from '../lib/errors.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
@@ -14,29 +15,36 @@ const query = z.object({ from: dateField.optional(), to: dateField.optional() })
 type Table = [string[], unknown[][]];
 interface Range { from?: string; to?: string }
 
+/** Adds one column per active custom field, headed with its label. */
+async function withCustom(tx: Tx, ctx: RequestContext, entity: CustomEntity, table: Table, customs: Record<string, string | number | boolean>[]): Promise<Table> {
+  const defs = await customFieldDefs(tx, ctx.companyId, entity);
+  if (!defs.length) return table;
+  return [[...table[0], ...defs.map((d) => d.label)], table[1].map((row, i) => [...row, ...defs.map((d) => customText(customs[i]?.[d.key]))])];
+}
+
 /** Each dataset builds a header and rows; scoped users only get rows of their locations. */
 const DATASETS: Record<string, (tx: Tx, ctx: RequestContext, r: Range) => Promise<Table>> = {
   async parties(tx, ctx) {
     const rows = await tx.selectFrom('parties as p').leftJoin('tds_sections as s', 's.id', 'p.tds_section_id').selectAll('p').select('s.code as section')
       .where('p.company_id', '=', ctx.companyId).orderBy('p.name').execute();
-    return [['type', 'name', 'gstin', 'pan', 'state_code', 'phone', 'email', 'address', 'pincode', 'credit_limit', 'credit_days', 'udyam_no', 'msme_category', 'tds_section'],
-      rows.map((r) => [r.type, r.name, r.gstin, r.pan, r.state_code, r.phone, r.email, r.address, r.pincode, r.credit_limit, r.credit_days, r.udyam_no, r.msme_category, r.section])];
+    return withCustom(tx, ctx, 'party', [['type', 'name', 'gstin', 'pan', 'state_code', 'phone', 'email', 'address', 'pincode', 'credit_limit', 'credit_days', 'udyam_no', 'msme_category', 'tds_section'],
+      rows.map((r) => [r.type, r.name, r.gstin, r.pan, r.state_code, r.phone, r.email, r.address, r.pincode, r.credit_limit, r.credit_days, r.udyam_no, r.msme_category, r.section])], rows.map((r) => r.custom));
   },
   async items(tx, ctx) {
     const rows = await tx.selectFrom('items').selectAll().where('company_id', '=', ctx.companyId).orderBy('name').execute();
-    return [['name', 'sku', 'hsn_code', 'unit', 'gst_rate', 'sale_price', 'purchase_price', 'track_stock', 'is_active'],
-      rows.map((r) => [r.name, r.sku, r.hsn_code, r.unit, r.gst_rate, r.sale_price, r.purchase_price, r.track_stock, r.is_active])];
+    return withCustom(tx, ctx, 'item', [['name', 'sku', 'hsn_code', 'unit', 'gst_rate', 'sale_price', 'purchase_price', 'track_stock', 'is_active'],
+      rows.map((r) => [r.name, r.sku, r.hsn_code, r.unit, r.gst_rate, r.sale_price, r.purchase_price, r.track_stock, r.is_active])], rows.map((r) => r.custom));
   },
   async invoices(tx, ctx, r) {
     let q = tx.selectFrom('invoices as i').innerJoin('parties as p', 'p.id', 'i.party_id').select(['i.number', 'i.invoice_date', 'p.name', 'p.gstin', 'i.place_of_supply', 'i.supply_type', 'i.status',
-      'i.subtotal', 'i.cgst', 'i.sgst', 'i.igst', 'i.round_off', 'i.total', 'i.amount_paid', 'i.due_date']).where('i.company_id', '=', ctx.companyId);
+      'i.subtotal', 'i.cgst', 'i.sgst', 'i.igst', 'i.round_off', 'i.total', 'i.amount_paid', 'i.due_date', 'i.custom']).where('i.company_id', '=', ctx.companyId);
     const scope = scopedLocationIds(ctx);
     if (scope) q = q.where('i.location_id', 'in', scope);
     if (r.from) q = q.where('i.invoice_date', '>=', r.from);
     if (r.to) q = q.where('i.invoice_date', '<=', r.to);
     const rows = await q.orderBy('i.invoice_date').orderBy('i.number').execute();
-    return [['number', 'date', 'party', 'gstin', 'place_of_supply', 'supply_type', 'status', 'taxable', 'cgst', 'sgst', 'igst', 'round_off', 'total', 'amount_paid', 'due_date'],
-      rows.map((x) => [x.number, x.invoice_date, x.name, x.gstin, x.place_of_supply, x.supply_type, x.status, x.subtotal, x.cgst, x.sgst, x.igst, x.round_off, x.total, x.amount_paid, x.due_date])];
+    return withCustom(tx, ctx, 'invoice', [['number', 'date', 'party', 'gstin', 'place_of_supply', 'supply_type', 'status', 'taxable', 'cgst', 'sgst', 'igst', 'round_off', 'total', 'amount_paid', 'due_date'],
+      rows.map((x) => [x.number, x.invoice_date, x.name, x.gstin, x.place_of_supply, x.supply_type, x.status, x.subtotal, x.cgst, x.sgst, x.igst, x.round_off, x.total, x.amount_paid, x.due_date])], rows.map((x) => x.custom));
   },
   async 'invoice-lines'(tx, ctx, r) {
     let q = tx.selectFrom('invoice_lines as l').innerJoin('invoices as i', 'i.id', 'l.invoice_id').select(['i.number', 'i.invoice_date', 'l.line_no', 'l.description', 'l.hsn_code', 'l.qty', 'l.unit', 'l.rate',
@@ -51,14 +59,14 @@ const DATASETS: Record<string, (tx: Tx, ctx: RequestContext, r: Range) => Promis
   },
   async purchases(tx, ctx, r) {
     let q = tx.selectFrom('purchases as v').innerJoin('parties as p', 'p.id', 'v.party_id').select(['v.number', 'v.bill_date', 'v.supplier_invoice_no', 'v.supplier_invoice_date', 'p.name', 'p.gstin',
-      'v.status', 'v.subtotal', 'v.cgst', 'v.sgst', 'v.igst', 'v.round_off', 'v.total', 'v.tds_amount', 'v.net_payable', 'v.reverse_charge', 'v.amount_paid', 'v.due_date']).where('v.company_id', '=', ctx.companyId);
+      'v.status', 'v.subtotal', 'v.cgst', 'v.sgst', 'v.igst', 'v.round_off', 'v.total', 'v.tds_amount', 'v.net_payable', 'v.reverse_charge', 'v.amount_paid', 'v.due_date', 'v.custom']).where('v.company_id', '=', ctx.companyId);
     const scope = scopedLocationIds(ctx);
     if (scope) q = q.where('v.location_id', 'in', scope);
     if (r.from) q = q.where('v.bill_date', '>=', r.from);
     if (r.to) q = q.where('v.bill_date', '<=', r.to);
     const rows = await q.orderBy('v.bill_date').orderBy('v.number').execute();
-    return [['number', 'date', 'supplier_invoice_no', 'supplier_invoice_date', 'party', 'gstin', 'status', 'taxable', 'cgst', 'sgst', 'igst', 'round_off', 'total', 'tds_amount', 'net_payable', 'reverse_charge', 'amount_paid', 'due_date'],
-      rows.map((x) => [x.number, x.bill_date, x.supplier_invoice_no, x.supplier_invoice_date, x.name, x.gstin, x.status, x.subtotal, x.cgst, x.sgst, x.igst, x.round_off, x.total, x.tds_amount, x.net_payable, x.reverse_charge, x.amount_paid, x.due_date])];
+    return withCustom(tx, ctx, 'purchase', [['number', 'date', 'supplier_invoice_no', 'supplier_invoice_date', 'party', 'gstin', 'status', 'taxable', 'cgst', 'sgst', 'igst', 'round_off', 'total', 'tds_amount', 'net_payable', 'reverse_charge', 'amount_paid', 'due_date'],
+      rows.map((x) => [x.number, x.bill_date, x.supplier_invoice_no, x.supplier_invoice_date, x.name, x.gstin, x.status, x.subtotal, x.cgst, x.sgst, x.igst, x.round_off, x.total, x.tds_amount, x.net_payable, x.reverse_charge, x.amount_paid, x.due_date])], rows.map((x) => x.custom));
   },
   async 'purchase-lines'(tx, ctx, r) {
     let q = tx.selectFrom('purchase_lines as l').innerJoin('purchases as v', 'v.id', 'l.purchase_id').select(['v.number', 'v.bill_date', 'l.line_no', 'l.description', 'l.hsn_code', 'l.qty', 'l.unit', 'l.rate',

@@ -6,6 +6,7 @@ import '../../widgets/states.dart';
 import '../../widgets/layout.dart';
 import 're_models.dart';
 import 're_repository.dart';
+import '../../core/app_colors.dart';
 
 export '../construction/common/c_widgets.dart'
     show
@@ -32,7 +33,7 @@ Widget demandStatusPills(Demand d) => Wrap(
   runSpacing: 4,
   children: [
     if (d.isCancelled)
-      Pill('Cancelled', color: Colors.red.shade700)
+      Pill('Cancelled', color: AppColors.light.danger)
     else
       Pill(d.paymentLabel, color: d.paymentColor()),
   ],

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { Selectable } from 'kysely';
+import { sql, type Selectable } from 'kysely';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
 import { issue, lockItems, locationQty, positions } from '../accounting/costing.ts';
@@ -15,6 +15,7 @@ import { scopedLocationIds } from '../lib/scope.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { getLocation } from './locations.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 export function moveJson(ctx: RequestContext, m: Selectable<StockMoveTable>) {
   return {
@@ -24,15 +25,31 @@ export function moveJson(ctx: RequestContext, m: Selectable<StockMoveTable>) {
   };
 }
 
-/** Throws INSUFFICIENT_STOCK unless `qty` of the item is available at the location. */
+/** Quantity of an item at a location held by active sales-order reservations. */
+export async function reservedQty(tx: Parameters<typeof locationQty>[0], companyId: string, locationId: string, itemId: string): Promise<number> {
+  const row = await tx.selectFrom('stock_reservations')
+    .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('qty'), sql<number>`0`).as('qty'))
+    .where('company_id', '=', companyId).where('location_id', '=', locationId).where('item_id', '=', itemId)
+    .where('status', '=', 'active').executeTakeFirstOrThrow();
+  return Number(row.qty);
+}
+
+/**
+ * Throws INSUFFICIENT_STOCK unless `qty` of the item is available at the location. Available means on hand
+ * minus active reservations, so a plain invoice or transfer cannot take stock held for a sales order.
+ * A dispatch consumes its own reservation before it posts, so it passes this check.
+ */
 export async function requireStock(
   tx: Parameters<typeof locationQty>[0], ctx: RequestContext,
   location: { id: string; name: string }, item: { id: string; name: string; unit: string }, qty: number,
 ) {
-  const available = await locationQty(tx, ctx.companyId, location.id, item.id);
+  const onHand = await locationQty(tx, ctx.companyId, location.id, item.id);
+  const reserved = await reservedQty(tx, ctx.companyId, location.id, item.id);
+  const available = Math.round((onHand - reserved) * 1000) / 1000;
   if (available + 0.0005 < qty) {
-    throw conflict(`Only ${available} ${item.unit} of ${item.name} in stock at ${location.name}.`, 'INSUFFICIENT_STOCK',
-      { itemId: item.id, available, required: qty });
+    const held = reserved > 0 ? ` (${reserved} reserved for sales orders)` : '';
+    throw conflict(`Only ${available} ${item.unit} of ${item.name} available at ${location.name}${held}.`, 'INSUFFICIENT_STOCK',
+      { itemId: item.id, available, required: qty, onHand, reserved });
   }
 }
 
@@ -73,10 +90,17 @@ export async function stockRoutes(app: FastifyInstance) {
       }
       const { total } = await tx.selectFrom(grouped.as('b')).select((eb) => eb.fn.countAll<number>().as('total')).executeTakeFirstOrThrow();
       const rows = await grouped.orderBy('i.name').orderBy('l.name').limit(q.limit).offset(q.offset).execute();
+      const held = rows.length ? await tx.selectFrom('stock_reservations')
+        .select((eb) => ['item_id', 'location_id', eb.fn.sum<number>('qty').as('qty')])
+        .where('company_id', '=', ctx.companyId).where('status', '=', 'active')
+        .where('item_id', 'in', [...new Set(rows.map((r) => r.item_id))]).groupBy(['item_id', 'location_id']).execute() : [];
+      const reservedOf = (itemId: string, locId: string) => Number(held.find((h) => h.item_id === itemId && h.location_id === locId)?.qty ?? 0);
       return {
         data: rows.map((r) => ({
           itemId: r.item_id, itemName: r.item_name, sku: r.sku, unit: r.unit, locationId: r.location_id,
           locationName: r.location_name, qty: Number(r.qty), reorderLevel: r.reorder_level,
+          reservedQty: reservedOf(r.item_id, r.location_id),
+          availableQty: Math.round((Number(r.qty) - reservedOf(r.item_id, r.location_id)) * 1000) / 1000,
           ...(showValue ? { value: Number(r.value) } : {}),
         })),
         total,
@@ -148,3 +172,5 @@ export async function stockRoutes(app: FastifyInstance) {
     return reply.status(201).send(moveJson(ctx, move));
   });
 }
+
+documentRoute('POST', '/stock/adjustments', { body: adjustBody });

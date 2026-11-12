@@ -80,7 +80,7 @@ class _BookingFormScreenState extends ConsumerState<BookingFormScreen>
 
   Future<void> _save() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() => _saving = true);
     try {
       final booking = await ref
@@ -233,7 +233,7 @@ class _BookingFormScreenState extends ConsumerState<BookingFormScreen>
                           ref,
                           type: PartyType.customer,
                         );
-                        if (p != null) setState(() => _customer = p);
+                        if (p != null && mounted) setState(() => _customer = p);
                       },
                     ),
                     const SizedBox(height: 16),

@@ -67,7 +67,7 @@ class _IssueFormScreenState extends ConsumerState<IssueFormScreen>
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     if (_lines.isEmpty) {
       markSaved();
       showInfoSnackBar(context, 'Add at least one material item.');

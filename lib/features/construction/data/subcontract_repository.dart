@@ -106,8 +106,20 @@ class SubcontractRepository {
   );
 
   /// `null` values clear optional fields, so the body is sent as is.
-  Future<WorkOrder> updateWorkOrder(String id, Json body) async =>
-      WorkOrder.fromJson(await _api.patchJson('/work-orders/$id', body: body));
+  Future<WorkOrder> updateWorkOrder(
+    String id,
+    Json body, {
+    DateTime? expectedUpdatedAt,
+  }) async => WorkOrder.fromJson(
+    await _api.patchJson(
+      '/work-orders/$id',
+      body: {
+        ...body,
+        if (expectedUpdatedAt != null)
+          'expectedUpdatedAt': expectedUpdatedAt.toUtc().toIso8601String(),
+      },
+    ),
+  );
 
   Future<WorkOrder> _workOrderAction(
     String id,
@@ -215,8 +227,20 @@ class SubcontractRepository {
   Future<RaBill> createRaBill(Json body) async =>
       RaBill.fromJson(await _api.postJson('/ra-bills', body: body));
 
-  Future<RaBill> updateRaBill(String id, Json body) async =>
-      RaBill.fromJson(await _api.patchJson('/ra-bills/$id', body: body));
+  Future<RaBill> updateRaBill(
+    String id,
+    Json body, {
+    DateTime? expectedUpdatedAt,
+  }) async => RaBill.fromJson(
+    await _api.patchJson(
+      '/ra-bills/$id',
+      body: {
+        ...body,
+        if (expectedUpdatedAt != null)
+          'expectedUpdatedAt': expectedUpdatedAt.toUtc().toIso8601String(),
+      },
+    ),
+  );
 
   Future<RaBill> _raAction(
     String id,

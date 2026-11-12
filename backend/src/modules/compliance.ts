@@ -16,6 +16,7 @@ import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { itcAgeing } from './gst-returns.ts';
 import { tdsMonths } from './tds.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const CATEGORIES = ['licence', 'registration', 'insurance', 'certificate', 'agreement', 'other'] as const;
@@ -80,7 +81,7 @@ async function loadDoc(tx: Tx, ctx: RequestContext, id: string) {
 interface Alert { kind: string; severity: 'info' | 'warn' | 'overdue'; title: string; detail: string; dueDate: string | null; link: string }
 const sev = (due: string, today: string): Alert['severity'] => (due < today ? 'overdue' : daysBetween(today, due) <= 7 ? 'warn' : 'info');
 
-async function buildAlerts(tx: Tx, ctx: RequestContext, days: number): Promise<Alert[]> {
+export async function buildAlerts(tx: Tx, ctx: RequestContext, days: number): Promise<Alert[]> {
   const today = todayIst();
   const horizon = addDays(today, days);
   const alerts: Alert[] = [];
@@ -335,3 +336,6 @@ export async function complianceRoutes(app: FastifyInstance) {
     return ctx.tx((tx) => buildHealth(tx, ctx));
   });
 }
+
+documentRoute('POST', '/compliance-docs', { body: createBody });
+documentRoute('PATCH', '/compliance-docs/:id', { body: patchBody });

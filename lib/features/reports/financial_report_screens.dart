@@ -5,11 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../core/money.dart';
 import '../../widgets/layout.dart';
 import '../accounting/accounting_models.dart' show accountTypeLabel;
+import '../controls/cost_centre_widgets.dart' show CostCentreFilter;
+import '../locations/location_filter.dart';
 import 'report_exports.dart';
 import 'report_models.dart';
 import 'report_period.dart';
 import 'report_widgets.dart';
 import 'reports_repository.dart';
+import '../../core/app_colors.dart';
 
 /// `/financials/trial-balance`.
 class TrialBalanceScreen extends ConsumerStatefulWidget {
@@ -115,10 +118,17 @@ class ProfitLossScreen extends ConsumerStatefulWidget {
 
 class _ProfitLossState extends ConsumerState<ProfitLossScreen> {
   DateRange _range = DateRange.fyToDate();
+  String? _locationId;
+  String? _costCentreId;
 
   @override
   Widget build(BuildContext context) {
-    final key = (from: _range.apiFrom, to: _range.apiTo, locationId: null);
+    final key = (
+      from: _range.apiFrom,
+      to: _range.apiTo,
+      locationId: _locationId,
+      costCentreId: _costCentreId,
+    );
     final value = ref.watch(profitLossProvider(key));
     return ReportPage(
       title: 'Profit & loss',
@@ -131,6 +141,14 @@ class _ProfitLossState extends ConsumerState<ProfitLossScreen> {
           value: _range,
           onChanged: (r) => setState(() => _range = r),
         ),
+        LocationFilter(
+          value: _locationId,
+          onChanged: (v) => setState(() => _locationId = v),
+        ),
+        CostCentreFilter(
+          value: _costCentreId,
+          onChanged: (v) => setState(() => _costCentreId = v),
+        ),
       ],
       body: ReportBody<ProfitLoss>(
         value: value,
@@ -141,7 +159,7 @@ class _ProfitLossState extends ConsumerState<ProfitLossScreen> {
           final loss = pl.netProfit < 0;
           final resultColor = loss
               ? Theme.of(context).colorScheme.error
-              : Colors.green.shade700;
+              : context.colors.success;
           return [
             StatRow(
               children: [

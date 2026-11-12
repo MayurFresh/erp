@@ -13,6 +13,7 @@ import 'report_period.dart';
 import 'report_widgets.dart';
 import 'reports_hub_screen.dart' show LocationFilter, locationName;
 import 'reports_repository.dart';
+import '../../core/app_colors.dart';
 
 /// `/reports/stock-valuation` (needs `items.view_cost` as well).
 class StockValuationScreen extends ConsumerStatefulWidget {
@@ -241,9 +242,9 @@ class AgeingSummary extends StatelessWidget {
   final AgeingBuckets totals;
 
   static List<Color> colors(ColorScheme scheme) => [
-    Colors.green.shade600,
-    Colors.amber.shade700,
-    Colors.orange.shade700,
+    AppColors.light.success,
+    AppColors.light.warning,
+    AppColors.light.warning,
     Colors.deepOrange.shade700,
     scheme.error,
   ];

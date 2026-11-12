@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'widgets/busy.dart';
 
+import 'core/business_profile.dart';
+import 'core/dirty_registry.dart';
 import 'features/admin_routes.dart';
 import 'features/audit/audit_screen.dart';
 import 'features/construction_routes.dart';
@@ -33,9 +36,27 @@ import 'features/purchases/purchase_create_screen.dart';
 import 'features/purchases/purchase_detail_screen.dart';
 import 'features/purchases/purchases_screen.dart';
 import 'features/compliance/compliance_routes.dart';
+import 'features/pos/pos_routes.dart';
+import 'features/clinic/clinic_routes.dart';
+import 'features/job_cards/job_card_routes.dart';
+import 'features/memberships/memberships_routes.dart';
+import 'features/funds/funds_routes.dart';
+import 'features/education/education_routes.dart';
+import 'features/hotel/hotel_routes.dart';
+import 'features/legal/legal_routes.dart';
+import 'features/channels/channels_routes.dart';
 import 'features/realestate/realestate_routes.dart';
+import 'features/hr/hr_routes.dart';
+import 'features/manufacturing/manufacturing_routes.dart';
+import 'features/warehouse/warehouse_routes.dart';
+import 'features/restaurant/restaurant_routes.dart';
 import 'features/tax/tax_routes.dart';
 import 'features/gst_filing/gst_filing_routes.dart';
+import 'features/platform/platform_routes.dart';
+import 'features/platform/super_routes.dart';
+import 'features/controls/controls_routes.dart';
+import 'features/purchase_orders/purchasing_routes.dart';
+import 'features/sales_orders/sales_orders_routes.dart';
 import 'features/fixed_assets/fixed_asset_routes.dart';
 import 'features/income_tax/income_tax_routes.dart';
 import 'features/shell/app_shell.dart';
@@ -56,7 +77,7 @@ final _shellKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 /// Where to send the user for [uri] given the session, or `null` to stay.
 String? sessionRedirect(AsyncValue<SessionState> session, Uri uri) {
   final path = uri.path;
-  final isAuthPage = path == '/login' || path == '/signup';
+  final isAuthPage = _authPages.contains(path);
   final from = uri.queryParameters['from'];
   final s = session.value;
 
@@ -72,7 +93,12 @@ String? sessionRedirect(AsyncValue<SessionState> session, Uri uri) {
         : _withFrom('/login', uri);
   }
 
-  final home = homePath(s.permissions);
+  // A company that requires 2FA keeps the user on the security page until they enrol.
+  if (s.user?.mustEnrol2fa ?? false) {
+    return path == '/account/security' ? null : '/account/security';
+  }
+  final profile = BusinessProfile.of(s.company);
+  final home = homePath(s.permissions, profile: profile);
   if (isAuthPage || path == '/splash' || path == '/') {
     final target = from == null ? null : Uri.tryParse(from);
     if (target != null && _allowed(s, target.path)) return from;
@@ -82,11 +108,21 @@ String? sessionRedirect(AsyncValue<SessionState> session, Uri uri) {
   return null;
 }
 
+const _authPages = {
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/reset-password',
+  '/sso/callback',
+  '/sso/done',
+};
+
 bool _allowed(SessionState s, String path) {
-  if (path == '/' || path == '/login' || path == '/signup') return false;
+  if (path == '/' || _authPages.contains(path)) return false;
   if (path == '/splash') return false;
   final permission = requiredPermission(path);
-  return permission == null || s.can(permission);
+  if (permission != null && !s.can(permission)) return false;
+  return moduleAllows(path, BusinessProfile.of(s.company));
 }
 
 String _withFrom(String target, Uri uri) {
@@ -129,6 +165,22 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: _rootKey,
     initialLocation: '/',
     refreshListenable: refresh,
+    onEnter: (context, current, next, router) async {
+      final registry = DirtyRegistry.instance;
+      if (!registry.isDirty ||
+          next.uri.path == current.uri.path ||
+          next.uri.path == '/login' ||
+          next.uri.path == '/signup') {
+        return const Allow();
+      }
+      final ctx = _rootKey.currentContext;
+      if (ctx == null || !ctx.mounted) return const Allow();
+      if (await confirmDiscard(ctx)) {
+        registry.clear();
+        return const Allow();
+      }
+      return const Block.stop();
+    },
     redirect: (context, state) =>
         sessionRedirect(ref.read(sessionProvider), state.uri),
     errorBuilder: (context, state) => Scaffold(
@@ -147,6 +199,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
       GoRoute(path: '/signup', builder: (_, _) => const SignupScreen()),
+      ...platformOpenRoutes(),
       // Sections inside the shell. A feature pack adds its routes here
       // (e.g. `...constructionRoutes()`) and its menu entries in
       // `navGroups` (nav.dart); see `sectionPage` / `queryKey`.
@@ -327,11 +380,29 @@ final routerProvider = Provider<GoRouter>((ref) {
           ...adminRoutes(),
           ...constructionRoutes(),
           ...realEstateRoutes(),
+          ...channelsRoutes(),
+          ...hrRoutes(),
+          ...restaurantRoutes(),
+          ...manufacturingRoutes(),
+          ...warehouseRoutes(),
+          ...clinicRoutes(),
+          ...membershipRoutes(),
+          ...jobCardRoutes(),
+          ...fundsRoutes(),
+          ...educationRoutes(),
+          ...hotelRoutes(),
+          ...legalRoutes(),
+          ...posRoutes(),
           ...complianceRoutes(),
           ...taxRoutes(),
           ...incomeTaxRoutes(),
           ...fixedAssetRoutes(),
           ...gstFilingRoutes(),
+          ...platformRoutes(),
+          ...superAdminRoutes(),
+          ...controlsRoutes(),
+          ...salesOrderRoutes(),
+          ...purchasingRoutes(),
           GoRoute(
             path: '/audit',
             pageBuilder: (_, state) => sectionPage(state, const AuditScreen()),

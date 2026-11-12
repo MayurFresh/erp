@@ -8,6 +8,7 @@ import { moneyField, percentField } from '../lib/numbers.ts';
 import { calcTds } from '../lib/tds.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const bool = z.enum(['true', 'false']).transform((v) => v === 'true');
@@ -155,3 +156,9 @@ export async function taxMasterRoutes(app: FastifyInstance) {
     return ctx.tx((tx) => calcTds(tx, ctx.companyId, b));
   });
 }
+
+documentRoute('POST', '/gst-rates', { body: gstCreate });
+documentRoute('PATCH', '/gst-rates/:id', { body: gstPatch });
+documentRoute('POST', '/tds-sections', { body: tdsCreate });
+documentRoute('PATCH', '/tds-sections/:id', { body: tdsPatch });
+documentRoute('POST', '/tds/preview', { body: previewBody });

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
 import '../../core/money.dart';
 import '../../core/permissions.dart';
@@ -73,7 +74,7 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
               FilledButton.icon(
                 onPressed: () => context.go('/invoices/new'),
                 icon: const Icon(Icons.add),
-                label: const Text('New invoice'),
+                label: Text(context.w('New invoice')),
               ),
           ],
         ),
@@ -108,7 +109,7 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 320),
               child: SearchField(
-                hintText: 'Search number or party',
+                hintText: context.w('Search number or party'),
                 onChanged: (q) {
                   _query = q;
                   _paged.refresh();

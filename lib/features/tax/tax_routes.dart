@@ -28,8 +28,8 @@ const List<NavEntry> taxNavEntries = [
   NavEntry(
     path: '/tds-sections',
     label: 'TDS sections',
-    icon: Icons.receipt_long_outlined,
-    selectedIcon: Icons.receipt_long,
+    icon: Icons.rule_folder_outlined,
+    selectedIcon: Icons.rule_folder,
     permission: TaxPerm.tdsView,
     createPermission: TaxPerm.tdsManage,
   ),

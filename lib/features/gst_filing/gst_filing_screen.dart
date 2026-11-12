@@ -15,6 +15,8 @@ import '../auth/session.dart';
 import '../compliance/compliance_widgets.dart';
 import '../compliance/tax_perms.dart';
 import '../filings/filing_widgets.dart';
+import '../platform/gsp_screens.dart'
+    show Gstr1UploadButton, GspSubmissionsCard;
 import 'gst_filing_models.dart';
 import '../filings/filing_models.dart' show contractFy;
 import 'gst_filing_repository.dart';
@@ -178,6 +180,10 @@ class _Gstr1TabState extends ConsumerState<_Gstr1Tab> {
             label: 'Export GSTN JSON',
             icon: Icons.ios_share,
           ),
+          if (widget.manage) ...[
+            const SizedBox(height: 8),
+            Gstr1UploadButton(period: widget.period),
+          ],
           if (_sha != null) ...[
             const SizedBox(height: 12),
             const Text('SHA-256 of the exported text'),
@@ -190,6 +196,7 @@ class _Gstr1TabState extends ConsumerState<_Gstr1Tab> {
         ],
       ),
     ),
+    GspSubmissionsCard(period: widget.period),
     SectionCard(
       title: 'On the GST portal',
       child: Column(

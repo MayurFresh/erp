@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api_exception.dart';
+import '../core/dirty_registry.dart';
+import 'states.dart';
+
 bool _blocking = false;
 
 /// Runs [task] behind a modal spinner so nothing else can be tapped until
@@ -57,7 +61,7 @@ Future<bool> confirmDiscard(BuildContext context) async {
 /// Asks "Discard changes?" before the route is popped (back button, swipe,
 /// close) while [dirty] is true. Wrap a form's body with it; set [dirty]
 /// when any field changes and false after a successful save.
-class UnsavedChangesGuard extends StatelessWidget {
+class UnsavedChangesGuard extends StatefulWidget {
   const UnsavedChangesGuard({
     super.key,
     required this.dirty,
@@ -73,17 +77,34 @@ class UnsavedChangesGuard extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: !dirty,
-    onPopInvokedWithResult: (didPop, _) async {
-      if (didPop) return;
-      final navigator = Navigator.of(context);
-      if (stillDirty?.call() == false || await confirmDiscard(context)) {
-        navigator.pop();
-      }
-    },
-    child: child,
-  );
+  State<UnsavedChangesGuard> createState() => _UnsavedChangesGuardState();
+}
+
+class _UnsavedChangesGuardState extends State<UnsavedChangesGuard> {
+  @override
+  void dispose() {
+    DirtyRegistry.instance.remove(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The router reads this before sidebar, `context.go` and browser back.
+    DirtyRegistry.instance.set(this, widget.dirty);
+    return PopScope(
+      canPop: !widget.dirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        if (widget.stillDirty?.call() == false ||
+            await confirmDiscard(context)) {
+          DirtyRegistry.instance.remove(this);
+          navigator.pop();
+        }
+      },
+      child: widget.child,
+    );
+  }
 }
 
 /// Tracks "dirty" for a form: wrap the [Form] with [track] (uses
@@ -111,4 +132,22 @@ mixin DirtyTracking<T extends StatefulWidget> on State<T> {
   /// Wraps [child] so leaving while [dirty] asks for confirmation.
   Widget track(Widget child) =>
       UnsavedChangesGuard(dirty: dirty, stillDirty: () => dirty, child: child);
+}
+
+/// Central handling of `202 { approvalRequest }`: when [error] is an
+/// [ApprovalPendingException], marks the form saved via [onSaved], shows
+/// "Sent for approval (APR/…)" and closes the form to [listPath] as after a
+/// save. Returns `false` (and does nothing) for any other error.
+bool handleApprovalPending(
+  BuildContext context,
+  Object error, {
+  required String listPath,
+  VoidCallback? onSaved,
+}) {
+  final pending = apiError(error);
+  if (pending is! ApprovalPendingException) return false;
+  onSaved?.call();
+  showInfoSnackBar(context, pending.message);
+  context.go(listPath);
+  return true;
 }

@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api_client.dart';
 import '../../core/json.dart';
 import '../../core/providers.dart';
 import '../auth/session.dart';
+import '../controls/custom_fields_section.dart' show customPatch;
 import 'item_model.dart';
 
 final itemsRepositoryProvider = Provider<ItemsRepository>(
@@ -42,6 +45,7 @@ class ItemsRepository {
 
   Future<Item> create(ItemInput input, {required bool includeCost}) async {
     final body = withoutNulls(input.toJson(includeCost: includeCost));
+    if (input.custom.isNotEmpty) body['custom'] = input.custom;
     return Item.fromJson(await _api.postJson('/items', body: body));
   }
 
@@ -56,9 +60,20 @@ class ItemsRepository {
     ).toJson(includeCost: includeCost, includeActive: true);
     final after = input.toJson(includeCost: includeCost, includeActive: true);
     final body = changedFields(before, after);
+    if (jsonEncode(original.custom) != jsonEncode(input.custom)) {
+      body['custom'] = customPatch(original.custom, input.custom);
+    }
     if (body.isEmpty) return original;
+    final stamp = original.updatedAt;
     return Item.fromJson(
-      await _api.patchJson('/items/${original.id}', body: body),
+      await _api.patchJson(
+        '/items/${original.id}',
+        body: {
+          ...body,
+          if (stamp != null)
+            'expectedUpdatedAt': stamp.toUtc().toIso8601String(),
+        },
+      ),
     );
   }
 }

@@ -12,6 +12,8 @@ import '../documents/document_models.dart';
 import '../documents/document_widgets.dart';
 import 'payment_model.dart';
 import 'payments_repository.dart';
+import '../reports/pdf_actions.dart';
+import 'payment_pdf.dart';
 
 /// A receipt or payment with its allocations.
 class PaymentDetailScreen extends ConsumerWidget {
@@ -72,6 +74,17 @@ class PaymentDetailScreen extends ConsumerWidget {
                 ],
               ),
               actions: [
+                ...pdfDocActions(
+                  context,
+                  ref,
+                  fileName: paymentFileName(p),
+                  build: (x) => buildPaymentPdf(
+                    p,
+                    x.company,
+                    brand: x.brand,
+                    theme: x.theme,
+                  ),
+                ),
                 if (p.status == DocStatus.posted &&
                     perms.can(Perm.paymentsCancel))
                   DocAction(

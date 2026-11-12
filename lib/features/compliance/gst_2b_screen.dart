@@ -31,7 +31,7 @@ class _Gst2bScreenState extends ConsumerState<Gst2bScreen> {
     try {
       final file = await pickTextFile(const ['json', 'csv']);
       if (file == null) return;
-      setState(() => _busy = true);
+      if (mounted) setState(() => _busy = true);
       final isCsv = file.name.toLowerCase().endsWith('.csv');
       final result = await ref
           .read(complianceRepositoryProvider)

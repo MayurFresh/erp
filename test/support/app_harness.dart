@@ -6,6 +6,8 @@ import 'package:progen_erp/app.dart';
 import 'package:progen_erp/core/api_client.dart';
 import 'package:progen_erp/core/providers.dart';
 import 'package:progen_erp/core/token_store.dart';
+import 'package:progen_erp/features/platform/notifications_screen.dart'
+    show bellPollIntervalProvider;
 import 'package:progen_erp/router.dart';
 
 import 'fake_backend.dart';
@@ -56,23 +58,25 @@ Future<AppHarness> bootApp(
   Set<String>? permissions,
   bool restore = true,
   bool v11 = true,
+  FakeBackend? backend,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
-  final backend = FakeBackend(permissions: permissions, v11: v11);
+  final fake = backend ?? FakeBackend(permissions: permissions, v11: v11);
   final store = InMemoryTokenStore();
   if (restore) await store.writeRefreshToken('refresh-1');
   final api = ApiClient(
     baseUrl: 'http://fake/api/v1',
     tokenStore: store,
-    httpClientAdapter: backend,
+    httpClientAdapter: fake,
   );
   await tester.pumpWidget(
     ProviderScope(
       retry: (_, _) => null,
       overrides: [
+        bellPollIntervalProvider.overrideWithValue(null),
         tokenStoreProvider.overrideWithValue(store),
         apiClientProvider.overrideWithValue(api),
       ],
@@ -83,5 +87,5 @@ Future<AppHarness> bootApp(
   final container = ProviderScope.containerOf(
     tester.element(find.byType(ProgenApp)),
   );
-  return AppHarness(tester, container, backend);
+  return AppHarness(tester, container, fake);
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../widgets/form_support.dart';
 import '../../widgets/layout.dart';
@@ -37,7 +38,7 @@ class _MyAccountScreenState extends ConsumerState<MyAccountScreen>
 
   Future<void> _submit() async {
     setState(() => serverErrors = const {});
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     if (_password.text == _current.text) {
       setState(
         () => serverErrors = {
@@ -77,7 +78,7 @@ class _MyAccountScreenState extends ConsumerState<MyAccountScreen>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
-        maxWidth: 640,
+        maxWidth: 900,
         children: [
           Text('My account', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 16),
@@ -96,6 +97,21 @@ class _MyAccountScreenState extends ConsumerState<MyAccountScreen>
               ),
             ),
           SectionCard(
+            child: ListTile(
+              key: const Key('account.security'),
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.shield_outlined),
+              title: const Text('Security'),
+              subtitle: Text(
+                (user?.mustEnrol2fa ?? false)
+                    ? 'Your company requires two-factor sign-in. Set it up now.'
+                    : 'Two-factor sign-in, devices and notifications',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/account/security'),
+            ),
+          ),
+          SectionCard(
             title: 'Change password',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -112,8 +128,8 @@ class _MyAccountScreenState extends ConsumerState<MyAccountScreen>
                           : 'Hide password',
                       icon: Icon(
                         _obscureCurrent
-                            ? Icons.visibility
-                            : Icons.visibility_off,
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
                       ),
                       onPressed: () =>
                           setState(() => _obscureCurrent = !_obscureCurrent),

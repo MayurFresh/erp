@@ -14,6 +14,7 @@ import { notes, parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { buildSetoff, gstPrefileCheck, postSetoffJournal, previousFy, turnoverOf } from './gst-filing.ts';
 import { tdsPrefileCheck } from './tds.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const RETURN_TYPES = ['gstr1', 'iff', 'gstr3b', 'pmt06', 'gstr9', 'gstr9c', 'tds_140', 'itr'] as const;
 type ReturnType = (typeof RETURN_TYPES)[number];
@@ -153,3 +154,5 @@ async function buildCalendar(tx: Tx, ctx: RequestContext, fy: string) {
   rows.sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.returnType.localeCompare(b.returnType));
   return { fy, rows };
 }
+
+documentRoute('POST', '/filings', { body: createBody });

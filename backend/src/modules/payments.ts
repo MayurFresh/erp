@@ -1,3 +1,4 @@
+import { emitEvent } from '../lib/webhooks.ts';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
@@ -7,12 +8,14 @@ import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
 import { financialYear, fyStart, isValidDate, todayIst } from '../lib/dates.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
+import { documentRoute } from '../lib/openapi.ts';
 import { optionalText } from '../lib/india.ts';
 import { moneyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { nextNumber } from '../lib/series.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { createOrSubmit, registerApprovalDoc } from './approvals.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -117,6 +120,96 @@ async function loadPayment(tx: Tx, ctx: RequestContext, id: string) {
   };
 }
 
+type CreateBody = z.infer<typeof createBody>;
+
+/** Creates a receipt or payment (shared by the route and a final approval). */
+export async function createPayment(ctx: RequestContext, tx: Tx, body: CreateBody, opts: { customerRefund?: boolean } = {}) {
+  const party = await tx.selectFrom('parties').select(['id', 'name', 'type'])
+    .where('id', '=', body.partyId).where('company_id', '=', ctx.companyId).executeTakeFirst();
+  if (!party) throw badRequest('Party not found.', { partyId: 'Not found' });
+  if (body.kind === 'receipt' && party.type === 'vendor') throw badRequest('Receipts are from customers.', { partyId: 'Not a customer' });
+  if (body.kind === 'payment' && party.type === 'customer' && !opts.customerRefund) throw badRequest('Payments are to vendors.', { partyId: 'Not a vendor' });
+
+  const account = await tx.selectFrom('accounts').select(['id', 'name', 'subtype', 'is_active'])
+    .where('id', '=', body.accountId).where('company_id', '=', ctx.companyId).executeTakeFirst();
+  if (!account || !account.is_active || !['cash', 'bank'].includes(account.subtype)) {
+    throw badRequest('Choose an active cash or bank account.', { accountId: 'Not a cash or bank account' });
+  }
+  const tdsAmount = body.tdsAmount ?? 0;
+  if (tdsAmount > 0 && body.kind !== 'receipt') throw badRequest('TDS applies to receipts only.', { tdsAmount: 'Receipts only' });
+  const settles = round2(body.amount + tdsAmount);
+  const date = body.date ?? todayIst();
+  if (date > todayIst()) throw badRequest('Date cannot be in the future.', { date: 'In the future' });
+
+  // Decide allocations: as given, or oldest documents first.
+  const open = await openDocs(tx, ctx, body.kind, party.id, true);
+  let allocations: { docId: string; amount: number; docType: PayDocType }[];
+  if (body.allocations) {
+    const seen = new Set<string>();
+    allocations = body.allocations.map((a, i) => {
+      const doc = open.find((d) => d.id === a.docId);
+      if (!doc) throw badRequest(`Allocation ${i + 1}: document is not open for this party.`, { [`allocations.${i}.docId`]: 'Not open' });
+      if (seen.has(a.docId)) throw badRequest('Each document can be allocated once.', { [`allocations.${i}.docId`]: 'Duplicate' });
+      seen.add(a.docId);
+      if (a.amount > doc.amountDue + 0.001) {
+        throw badRequest(`Only ₹${doc.amountDue} is due on ${doc.number}.`, { [`allocations.${i}.amount`]: `At most ${doc.amountDue}` });
+      }
+      return { ...a, docType: doc.docType };
+    });
+    const sum = round2(allocations.reduce((s, a) => s + a.amount, 0));
+    if (sum > settles + 0.001) throw badRequest('Allocations exceed the amount.', { allocations: 'More than the amount' });
+  } else {
+    let left = settles;
+    allocations = [];
+    for (const d of open) {
+      if (left <= 0) break;
+      const take = round2(Math.min(left, d.amountDue));
+      allocations.push({ docId: d.id, amount: take, docType: d.docType });
+      left = round2(left - take);
+    }
+  }
+
+  const number = await nextNumber(tx, ctx, body.kind, financialYear(date));
+  const row = await tx.insertInto('payments').values({
+    tenant_id: ctx.tenantId, company_id: ctx.companyId, kind: body.kind, number, payment_date: date, party_id: party.id,
+    account_id: account.id, mode: body.mode, reference: body.reference ?? null, amount: body.amount, tds_amount: tdsAmount,
+    notes: body.notes ?? null, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
+  }).returning('id').executeTakeFirstOrThrow();
+
+  if (allocations.length) {
+    await tx.insertInto('payment_allocations').values(allocations.map((a) => ({
+      tenant_id: ctx.tenantId, payment_id: row.id, doc_type: a.docType, doc_id: a.docId, amount: a.amount,
+    }))).execute();
+    for (const a of allocations) await bumpPaid(tx, a.docType, a.docId, a.amount);
+  }
+
+  const acc = await systemAccounts(tx, ctx);
+  // A refund to a customer (for example an advance on a cancelled stay) reverses the receivable it created.
+  const control = body.kind === 'receipt' || opts.customerRefund ? acc.receivables : acc.payables;
+  const sign = body.kind === 'receipt' ? 1 : -1;
+  await postJournal(tx, auditOf(ctx), {
+    date, voucherType: body.kind, voucherId: row.id, number,
+    narration: `${body.kind === 'receipt' ? 'Received from' : 'Paid to'} ${party.name} by ${body.mode}${body.reference ? ` (${body.reference})` : ''}`,
+    lines: [
+      { accountId: account.id, amount: sign * body.amount },
+      { accountId: acc.tds_receivable, amount: tdsAmount },
+      { accountId: control, amount: -sign * settles, partyId: party.id },
+    ],
+  });
+  const saved = await loadPayment(tx, ctx, row.id);
+  await writeAudit(tx, auditOf(ctx), 'payment', row.id, 'create', null, { number, kind: body.kind, amount: body.amount, partyId: party.id, allocations });
+  if (body.kind === 'receipt') await emitEvent(tx, ctx, 'payment.received', { id: row.id, number, amount: body.amount, partyId: party.id });
+  return saved;
+}
+
+registerApprovalDoc('payment', {
+  permission: 'payments.create',
+  create: async (ctx, tx, payload) => {
+    const d = await createPayment(ctx, tx, parse(createBody, payload));
+    return { id: d.id, number: d.number };
+  },
+});
+
 export async function paymentRoutes(app: FastifyInstance) {
   app.get('/payments', async (req) => {
     const ctx = req.ctx;
@@ -154,83 +247,13 @@ export async function paymentRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('payments.create');
     const body = parse(createBody, req.body);
-    const payment = await ctx.tx(async (tx) => {
-      const party = await tx.selectFrom('parties').select(['id', 'name', 'type'])
-        .where('id', '=', body.partyId).where('company_id', '=', ctx.companyId).executeTakeFirst();
-      if (!party) throw badRequest('Party not found.', { partyId: 'Not found' });
-      if (body.kind === 'receipt' && party.type === 'vendor') throw badRequest('Receipts are from customers.', { partyId: 'Not a customer' });
-      if (body.kind === 'payment' && party.type === 'customer') throw badRequest('Payments are to vendors.', { partyId: 'Not a vendor' });
-
-      const account = await tx.selectFrom('accounts').select(['id', 'name', 'subtype', 'is_active'])
-        .where('id', '=', body.accountId).where('company_id', '=', ctx.companyId).executeTakeFirst();
-      if (!account || !account.is_active || !['cash', 'bank'].includes(account.subtype)) {
-        throw badRequest('Choose an active cash or bank account.', { accountId: 'Not a cash or bank account' });
-      }
-      const tdsAmount = body.tdsAmount ?? 0;
-      if (tdsAmount > 0 && body.kind !== 'receipt') throw badRequest('TDS applies to receipts only.', { tdsAmount: 'Receipts only' });
-      const settles = round2(body.amount + tdsAmount);
-      const date = body.date ?? todayIst();
-      if (date > todayIst()) throw badRequest('Date cannot be in the future.', { date: 'In the future' });
-
-      // Decide allocations: as given, or oldest documents first.
-      const open = await openDocs(tx, ctx, body.kind, party.id, true);
-      let allocations: { docId: string; amount: number; docType: PayDocType }[];
-      if (body.allocations) {
-        const seen = new Set<string>();
-        allocations = body.allocations.map((a, i) => {
-          const doc = open.find((d) => d.id === a.docId);
-          if (!doc) throw badRequest(`Allocation ${i + 1}: document is not open for this party.`, { [`allocations.${i}.docId`]: 'Not open' });
-          if (seen.has(a.docId)) throw badRequest('Each document can be allocated once.', { [`allocations.${i}.docId`]: 'Duplicate' });
-          seen.add(a.docId);
-          if (a.amount > doc.amountDue + 0.001) {
-            throw badRequest(`Only ₹${doc.amountDue} is due on ${doc.number}.`, { [`allocations.${i}.amount`]: `At most ${doc.amountDue}` });
-          }
-          return { ...a, docType: doc.docType };
-        });
-        const sum = round2(allocations.reduce((s, a) => s + a.amount, 0));
-        if (sum > settles + 0.001) throw badRequest('Allocations exceed the amount.', { allocations: 'More than the amount' });
-      } else {
-        let left = settles;
-        allocations = [];
-        for (const d of open) {
-          if (left <= 0) break;
-          const take = round2(Math.min(left, d.amountDue));
-          allocations.push({ docId: d.id, amount: take, docType: d.docType });
-          left = round2(left - take);
-        }
-      }
-
-      const number = await nextNumber(tx, ctx, body.kind, financialYear(date));
-      const row = await tx.insertInto('payments').values({
-        tenant_id: ctx.tenantId, company_id: ctx.companyId, kind: body.kind, number, payment_date: date, party_id: party.id,
-        account_id: account.id, mode: body.mode, reference: body.reference ?? null, amount: body.amount, tds_amount: tdsAmount,
-        notes: body.notes ?? null, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
-      }).returning('id').executeTakeFirstOrThrow();
-
-      if (allocations.length) {
-        await tx.insertInto('payment_allocations').values(allocations.map((a) => ({
-          tenant_id: ctx.tenantId, payment_id: row.id, doc_type: a.docType, doc_id: a.docId, amount: a.amount,
-        }))).execute();
-        for (const a of allocations) await bumpPaid(tx, a.docType, a.docId, a.amount);
-      }
-
-      const acc = await systemAccounts(tx, ctx);
-      const control = body.kind === 'receipt' ? acc.receivables : acc.payables;
-      const sign = body.kind === 'receipt' ? 1 : -1;
-      await postJournal(tx, auditOf(ctx), {
-        date, voucherType: body.kind, voucherId: row.id, number,
-        narration: `${body.kind === 'receipt' ? 'Received from' : 'Paid to'} ${party.name} by ${body.mode}${body.reference ? ` (${body.reference})` : ''}`,
-        lines: [
-          { accountId: account.id, amount: sign * body.amount },
-          { accountId: acc.tds_receivable, amount: tdsAmount },
-          { accountId: control, amount: -sign * settles, partyId: party.id },
-        ],
-      });
-      const saved = await loadPayment(tx, ctx, row.id);
-      await writeAudit(tx, auditOf(ctx), 'payment', row.id, 'create', null, { number, kind: body.kind, amount: body.amount, partyId: party.id, allocations });
-      return saved;
-    });
-    return reply.status(201).send(payment);
+    const info = (d: Awaited<ReturnType<typeof createPayment>>) => ({
+      amount: d.amount, date: d.date, partyId: d.partyId, locationId: null, narration: body.notes ?? null });
+    const r = body.kind === 'payment'
+      ? await ctx.tx((tx) => createOrSubmit(ctx, tx, 'payment', body, (t) => createPayment(ctx, t, body), info))
+      : { doc: await ctx.tx((tx) => createPayment(ctx, tx, body)), request: undefined };
+    if (r.request) return reply.status(202).send({ approvalRequest: r.request });
+    return reply.status(201).send(r.doc);
   });
 
   app.post<{ Params: { id: string } }>('/payments/:id/cancel', async (req) => {
@@ -284,3 +307,6 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/payments', { summary: 'Record a receipt or payment', body: createBody });
+documentRoute('POST', '/payments/:id/cancel', { summary: 'Cancel a payment', body: cancelBody });

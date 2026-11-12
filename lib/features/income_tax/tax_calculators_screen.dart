@@ -56,7 +56,10 @@ Widget _money(TextEditingController c, String label, {bool required = false}) =>
       controller: c,
       keyboardType: decimalKeyboard,
       inputFormatters: [moneyInput()],
-      decoration: InputDecoration(labelText: label, prefixText: '₹ '),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixText: '$moneySymbol ',
+      ),
       validator: (v) =>
           validateMoney(v, isRequired: required, label: label, min: 0),
     );
@@ -116,7 +119,7 @@ class _RegimeTabState extends ConsumerState<RegimeTab> {
   }
 
   Future<void> _calc() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     final deductions = <String, double>{
       if (_num(_s80c) != null) 's80c': _num(_s80c)!,
       if (_num(_s80d) != null) 's80d': _num(_s80d)!,
@@ -296,7 +299,7 @@ class _PresumptiveTabState extends ConsumerState<PresumptiveTab> {
   }
 
   Future<void> _calc() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     try {
       final r = await ref.read(incomeTaxRepositoryProvider).presumptive({
         'taxYear': _taxYear,
@@ -416,7 +419,7 @@ class _AdvanceTaxTabState extends ConsumerState<AdvanceTaxTab> {
   }
 
   Future<void> _calc() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     try {
       final r = await ref
           .read(incomeTaxRepositoryProvider)

@@ -330,3 +330,48 @@ describe('administration', () => {
     expect((await sup('POST', `/transfers/${back.id}/receive`)).status).toBe(403);
   });
 });
+
+describe('reverse charge and fixed discounts on invoices', () => {
+  it('collects no GST under reverse charge and flags GSTR-1', async () => {
+    const { api, ho } = await business();
+    const item = (await api('POST', '/items', { name: 'Advisory', hsnCode: '9983', unit: 'nos', gstRate: 18, salePrice: 1000, trackStock: false })).body;
+    const plain = (await api('POST', '/parties', { type: 'customer', name: 'Plain Buyer', stateCode: '24' })).body;
+    const reg = (await api('POST', '/parties', { type: 'customer', name: 'Reg Buyer', stateCode: '24', gstin: '24AAAAA0000A1Z5' })).body;
+    const body = { locationId: ho.id, lines: [{ itemId: item.id, qty: 2 }], reverseCharge: true };
+    expect((await api('POST', '/invoices', { ...body, partyId: plain.id })).status).toBe(400);
+    const res = await api('POST', '/invoices', { ...body, partyId: reg.id });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body).toMatchObject({ reverseCharge: true, rcmTax: 360, subtotal: 2000, taxTotal: 0, total: 2000 });
+    const normal = (await api('POST', '/invoices', { locationId: ho.id, partyId: reg.id, lines: [{ itemId: item.id, qty: 1 }] })).body;
+    expect(normal).toMatchObject({ reverseCharge: false, rcmTax: 0, total: 1180 });
+    const period = res.body.invoiceDate.slice(0, 7);
+    const g1 = (await api('GET', `/gst/gstr1?period=${period}`)).body;
+    const rows = g1.b2b as { number: string; reverseCharge: boolean }[];
+    expect(rows.find((r) => r.number === res.body.number)?.reverseCharge).toBe(true);
+    expect(rows.find((r) => r.number === normal.number)?.reverseCharge).toBe(false);
+    const gstn = (await api('GET', `/gst/gstr1?period=${period}&format=gstn`)).body;
+    const flags = gstn.b2b.flatMap((c: { inv: { inum: string; rchrg: string }[] }) => c.inv.map((i) => `${i.inum}:${i.rchrg}`));
+    expect(flags).toContain(`${res.body.number}:Y`);
+    expect(flags).toContain(`${normal.number}:N`);
+    // A credit note on a reverse-charge invoice carries no tax.
+    const line = (await api('GET', `/invoices/${res.body.id}`)).body.lines[0];
+    const cn = await api('POST', '/credit-notes', { invoiceId: res.body.id, reason: 'Rebate', lines: [{ invoiceLineId: line.id, qty: 1 }] });
+    expect(cn.body).toMatchObject({ subtotal: 1000, taxTotal: 0, total: 1000 });
+  });
+
+  it('reverses a fixed line discount exactly across partial credit notes', async () => {
+    const { api, ho } = await business();
+    const item = (await api('POST', '/items', { name: 'Widget', hsnCode: '8479', unit: 'nos', gstRate: 18, salePrice: 100, trackStock: false })).body;
+    const cust = (await api('POST', '/parties', { type: 'customer', name: 'Disc Buyer', stateCode: '24' })).body;
+    // 3 x 100 less a fixed 10.00 = 290.00 taxable.
+    const inv = (await api('POST', '/invoices', { locationId: ho.id, partyId: cust.id, lines: [{ itemId: item.id, qty: 3, discountAmount: 10 }] })).body;
+    expect(inv.subtotal).toBe(290);
+    const line = (await api('GET', `/invoices/${inv.id}`)).body.lines[0];
+    const note = async (qty: number) => (await api('POST', '/credit-notes', { invoiceId: inv.id, reason: 'Return', lines: [{ invoiceLineId: line.id, qty }] })).body;
+    const a = await note(1); // discount 3.33
+    const b = await note(1); // discount 3.33
+    const c = await note(1); // remainder 3.34
+    expect([a.subtotal, b.subtotal, c.subtotal]).toEqual([96.67, 96.67, 96.66]);
+    expect(Math.round((a.subtotal + b.subtotal + c.subtotal) * 100)).toBe(29000);
+  });
+});

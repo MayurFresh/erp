@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { assertFresh } from '../lib/stale.ts';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
 import { postJournal, reverseVoucher } from '../accounting/journal.ts';
@@ -17,6 +18,7 @@ import {
   advanceFigures, computeRaBill, defaultTdsPct, latestCumQtys, lineAmount, projectLocationId, requireProjectVisible,
   round2, user, visibleProjectIds,
 } from './subcontract-common.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const pct = (max: number) => z.coerce.number().min(0).max(max).refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, 'At most 2 decimals');
@@ -47,6 +49,7 @@ const createBody = z.object({
   cessPct: fields.cessPct.optional(), activate: z.boolean().optional(), lines: fields.lines,
 });
 const patchBody = z.object({
+  expectedUpdatedAt: z.string().max(40).optional(),
   contractorPartyId: fields.contractorPartyId.optional(), date: fields.date.optional(), title: fields.title.optional(),
   scope: optionalText(2000), retentionPct: fields.retentionPct.optional(), advanceRecoveryPct: fields.advanceRecoveryPct.optional(),
   tdsPct: fields.tdsPct.optional(), gstPct: fields.gstPct.optional(), itcEligible: fields.itcEligible.optional(),
@@ -94,7 +97,7 @@ export async function loadWorkOrders(tx: Tx, ids: string[], withLines: boolean) 
     const cum = withLines ? await latestCumQtys(tx, id) : new Map<string, number>();
     const mine = billed.filter((b) => b.work_order_id === id);
     out.push({
-      id: w.id, number: w.number, projectId: w.project_id, projectName: w.project_name,
+      id: w.id, updatedAt: w.updated_at, number: w.number, projectId: w.project_id, projectName: w.project_name,
       contractorPartyId: w.contractor_party_id, contractorName: w.contractor_name, date: w.order_date, title: w.title,
       scope: w.scope, status: w.status, retentionPct: w.retention_pct, advanceRecoveryPct: w.advance_recovery_pct,
       tdsPct: w.tds_pct, gstPct: w.gst_pct, itcEligible: w.itc_eligible, cessPct: w.cess_pct, totalValue: w.total_value,
@@ -248,6 +251,7 @@ export async function workOrderRoutes(app: FastifyInstance) {
     const body = parse(patchBody, req.body);
     return ctx.tx(async (tx) => {
       const wo = await getWorkOrder(tx, ctx, id, true);
+      assertFresh(wo.updated_at, body.expectedUpdatedAt, 'work order');
       if (wo.status === 'closed' || wo.status === 'cancelled') throw conflict('A closed or cancelled work order cannot be changed.');
       const structural = body.lines !== undefined || body.retentionPct !== undefined || body.advanceRecoveryPct !== undefined ||
         body.tdsPct !== undefined || body.gstPct !== undefined || body.itcEligible !== undefined || body.cessPct !== undefined ||
@@ -477,3 +481,10 @@ export async function workOrderRoutes(app: FastifyInstance) {
 
 // computeRaBill is re-exported for tests and the RA bill module.
 export { computeRaBill };
+
+documentRoute('POST', '/work-orders', { body: createBody });
+documentRoute('PATCH', '/work-orders/:id', { body: patchBody });
+documentRoute('POST', '/work-orders/:id/cancel', { body: reason });
+documentRoute('POST', '/work-orders/:id/advances', { body: advanceBody });
+documentRoute('POST', '/contractor-advances/:id/cancel', { body: reason });
+documentRoute('POST', '/work-orders/:id/retention-releases', { body: releaseBody });

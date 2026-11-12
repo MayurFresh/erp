@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../core/json.dart';
+import '../../core/app_colors.dart';
 
 // ------------------------------------------------------------------- units
 
@@ -25,11 +26,11 @@ enum UnitStatus {
   );
 
   Color get color => switch (this) {
-    UnitStatus.available => Colors.green.shade700,
-    UnitStatus.hold => Colors.amber.shade800,
-    UnitStatus.booked => Colors.blue.shade700,
-    UnitStatus.agreement => Colors.deepPurple.shade600,
-    UnitStatus.possession => Colors.blueGrey.shade600,
+    UnitStatus.available => AppColors.light.success,
+    UnitStatus.hold => AppColors.light.warning,
+    UnitStatus.booked => AppColors.light.info,
+    UnitStatus.agreement => AppColors.light.info,
+    UnitStatus.possession => AppColors.light.onNeutralContainer,
   };
 
   /// Only these can be booked.
@@ -55,6 +56,7 @@ class Unit {
     this.bookingId,
     this.notes,
     this.createdAt,
+    this.updatedAt,
   });
 
   factory Unit.fromJson(Json json) => Unit(
@@ -72,6 +74,7 @@ class Unit {
     bookingId: asStringOrNull(json['bookingId']),
     notes: asStringOrNull(json['notes']),
     createdAt: asDateTimeOrNull(json['createdAt']),
+    updatedAt: asDateTimeOrNull(json['updatedAt']),
   );
 
   final String id;
@@ -94,6 +97,7 @@ class Unit {
   final String? bookingId;
   final String? notes;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   /// Body for create and bulk create (without `projectId`).
   Json toInputJson() => {
@@ -229,10 +233,10 @@ enum BookingStatus {
   );
 
   Color get color => switch (this) {
-    BookingStatus.booked => Colors.blue.shade700,
-    BookingStatus.agreement => Colors.deepPurple.shade600,
-    BookingStatus.possession => Colors.green.shade700,
-    BookingStatus.cancelled => Colors.red.shade700,
+    BookingStatus.booked => AppColors.light.info,
+    BookingStatus.agreement => AppColors.light.info,
+    BookingStatus.possession => AppColors.light.success,
+    BookingStatus.cancelled => AppColors.light.danger,
   };
 }
 
@@ -514,9 +518,9 @@ class Demand {
   };
 
   Color paymentColor() => switch (paymentStatus) {
-    'paid' => Colors.green.shade700,
-    'partial' => Colors.orange.shade800,
-    _ => Colors.red.shade700,
+    'paid' => AppColors.light.success,
+    'partial' => AppColors.light.warning,
+    _ => AppColors.light.danger,
   };
 }
 

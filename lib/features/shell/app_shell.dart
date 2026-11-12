@@ -1,9 +1,13 @@
+import '../platform/notifications_screen.dart' show NotificationBell;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/business_profile.dart';
 
+import '../../core/theme.dart';
+import '../../widgets/brand.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/auth_models.dart';
@@ -27,10 +31,41 @@ class AppShell extends ConsumerWidget {
     return '/${segments.sublist(0, segments.length - 1).join('/')}';
   }
 
+  /// Path segments whose plain capitalised form reads wrong.
+  static const _crumbNames = {
+    'ipd': 'In-patients',
+    'boms': 'Bills of materials',
+    'jobwork': 'Job work',
+    'pos': 'POS',
+    'hr': 'HR',
+    'gst': 'GST',
+    'tds': 'TDS',
+    'itc-ageing': 'ITC ageing',
+    'gst-returns': 'GST returns',
+    'gst-rates': 'GST rates',
+    'tds-sections': 'TDS sections',
+    'itr-pack': 'ITR pack',
+    'sku-mapping': 'SKU mapping',
+  };
+
+  /// Label for the last path segment in the breadcrumb.
+  static String crumbFor(String segment) {
+    if (segment == 'new') return 'New';
+    if (segment == 'edit') return 'Edit';
+    final named = _crumbNames[segment];
+    if (named != null) return named;
+    final looksLikeId = RegExp(r'\d').hasMatch(segment) || segment.length >= 20;
+    if (looksLikeId) return 'Details';
+    final text = segment.replaceAll(RegExp(r'[-_]'), ' ');
+    return text[0].toUpperCase() + text.substring(1);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider).value ?? SessionState.signedOut;
-    final groups = visibleNavGroups(session.permissions);
+    final profile = ref.watch(businessProfileProvider);
+    final groups = visibleNavGroups(session.permissions, profile: profile);
+    final body = TermsScope(profile: profile, child: child);
     final entries = [for (final group in groups) ...group.entries];
     final selected = navIndexFor(entries, location);
     final wide = MediaQuery.sizeOf(context).width >= kWideLayout;
@@ -45,58 +80,148 @@ class AppShell extends ConsumerWidget {
       groups: groups,
       selectedIndex: selected,
       onSelected: open,
-      company: session.company,
+      session: session,
       embedded: wide,
     );
 
-    final appBar = AppBar(
-      leading: parent == null
-          ? null
-          : BackButton(
-              onPressed: () =>
-                  context.canPop() ? context.pop() : context.go(parent),
-            ),
-      title: Text(
-        wide || selected == null ? 'Progen ERP' : entries[selected].label,
-      ),
-      actions: [
-        if (session.companies.length > 1)
-          _CompanySwitcher(session: session, wide: wide)
-        else if (wide && session.company != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Center(child: Text(session.company!.name)),
-          ),
-        if (session.user != null)
-          _UserMenu(user: session.user!, session: session),
-        const SizedBox(width: 8),
-      ],
-    );
+    final back = parent == null
+        ? null
+        : BackButton(
+            onPressed: () =>
+                context.canPop() ? context.pop() : context.go(parent),
+          );
+    final actions = [
+      if (!wide && session.companies.length > 1)
+        _CompanySwitcher(session: session, compact: true),
+      if (session.user != null && session.company != null)
+        const NotificationBell(),
+      if (session.user != null)
+        _UserMenu(user: session.user!, session: session),
+      const SizedBox(width: Space.sm),
+    ];
 
     if (wide) {
+      final theme = Theme.of(context);
+      final segments = Uri.parse(location).pathSegments;
       return Scaffold(
-        appBar: appBar,
         body: Row(
           children: [
             SizedBox(width: _sidebarWidth, child: menu),
-            const VerticalDivider(width: 1),
-            Expanded(child: child),
+            Expanded(
+              child: Column(
+                children: [
+                  Container(
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      border: Border(
+                        bottom: BorderSide(color: theme.dividerColor),
+                      ),
+                    ),
+                    padding: const EdgeInsets.only(left: Space.sm),
+                    child: Row(
+                      children: [
+                        ?back,
+                        Expanded(
+                          child: segments.length >= 2 && selected != null
+                              ? _Breadcrumb(
+                                  section: entries[selected],
+                                  segments: segments,
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        ...actions,
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Theme(data: AppTheme.dense(theme), child: body),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       );
     }
-    return Scaffold(appBar: appBar, drawer: menu, body: child);
+    return Scaffold(
+      appBar: AppBar(
+        leading: back,
+        title: Text(
+          selected == null ? 'Progen' : entries[selected].label,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: actions,
+      ),
+      drawer: menu,
+      body: selected == null
+          ? body
+          : ShellTitle(title: entries[selected].label, child: body),
+    );
   }
 }
 
-const double _sidebarWidth = 256;
+class _Breadcrumb extends StatelessWidget {
+  const _Breadcrumb({required this.section, required this.segments});
+
+  final NavEntry section;
+  final List<String> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Row(
+      children: [
+        Flexible(
+          child: InkWell(
+            borderRadius: Radii.smallAll,
+            onTap: () => context.go(section.path),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.xs,
+                vertical: Space.xs,
+              ),
+              child: Text(
+                section.label,
+                overflow: TextOverflow.ellipsis,
+                style: muted,
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Space.xs),
+          child: Icon(
+            Icons.chevron_right,
+            size: 16,
+            color: theme.colorScheme.outline,
+          ),
+        ),
+        Flexible(
+          child: Text(
+            AppShell.crumbFor(segments.last),
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+const double _sidebarWidth = 240;
 
 class _NavMenu extends StatelessWidget {
   const _NavMenu({
     required this.groups,
     required this.selectedIndex,
     required this.onSelected,
-    required this.company,
+    required this.session,
     required this.embedded,
   });
 
@@ -105,59 +230,86 @@ class _NavMenu extends StatelessWidget {
   /// Index among all destinations (groups flattened).
   final int? selectedIndex;
   final ValueChanged<int> onSelected;
-  final Membership? company;
+  final SessionState session;
   final bool embedded;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final headingStyle = theme.textTheme.labelMedium?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 0.6,
+    final colors = context.colors;
+    final headingStyle = theme.textTheme.labelSmall?.copyWith(
+      color: colors.onSidebarMuted,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.9,
     );
     // A destination's Row doesn't flex its label, so cap labels at the row
-    // width (drawer − 80 padding) minus its leading gap, icon and gap
+    // width (drawer - 80 padding) minus its leading gap, icon and gap
     // (16 + 24 + 12) to ellipsize long names instead of overflowing.
     final drawerWidth = embedded
         ? _sidebarWidth
         : math.min(360.0, MediaQuery.sizeOf(context).width);
     final labelMaxWidth = math.max(48.0, drawerWidth - 132);
+    final company = session.company;
     // NavigationDrawer scrolls its children, so a tall menu stays usable.
     return NavigationDrawer(
       selectedIndex: selectedIndex,
       onDestinationSelected: onSelected,
-      backgroundColor: embedded ? theme.colorScheme.surface : null,
+      backgroundColor: colors.sidebar,
       elevation: embedded ? 0 : null,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!embedded)
-                Text('Progen ERP', style: theme.textTheme.titleLarge),
-              if (company != null)
-                Text(
-                  company!.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
+          padding: const EdgeInsets.fromLTRB(
+            Space.lg + 4,
+            Space.lg,
+            Space.lg,
+            Space.sm,
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Wordmark(
+              size: 26,
+              color: colors.onSidebar,
+              markBackground: Colors.white,
+              markForeground: theme.colorScheme.primary,
+            ),
           ),
         ),
-        for (final (index, group) in groups.indexed) ...[
-          if (index > 0)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 28),
-              child: Divider(height: 16),
-            ),
+        if (session.companies.length > 1)
           Padding(
-            padding: const EdgeInsets.fromLTRB(28, 8, 16, 6),
-            child: Text(group.label.toUpperCase(), style: headingStyle),
+            padding: const EdgeInsets.fromLTRB(
+              Space.lg,
+              Space.xs,
+              Space.lg,
+              Space.xs,
+            ),
+            child: _CompanySwitcher(session: session, compact: false),
+          )
+        else if (company != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Space.lg + 4,
+              Space.xs,
+              Space.lg,
+              Space.xs,
+            ),
+            child: Text(
+              company.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSidebarMuted,
+              ),
+            ),
+          ),
+        for (final (index, group) in groups.indexed) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              Space.lg + 4,
+              index == 0 ? Space.md : Space.lg,
+              Space.lg,
+              Space.xs,
+            ),
+            child: Text(group.label, style: headingStyle),
           ),
           for (final entry in group.entries)
             NavigationDrawerDestination(
@@ -173,21 +325,24 @@ class _NavMenu extends StatelessWidget {
               ),
             ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: Space.md),
       ],
     );
   }
 }
 
 class _CompanySwitcher extends ConsumerWidget {
-  const _CompanySwitcher({required this.session, required this.wide});
+  const _CompanySwitcher({required this.session, required this.compact});
 
   final SessionState session;
-  final bool wide;
+
+  /// Icon only (phone app bar) versus a full-width company field (sidebar).
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final active = session.company;
+    final theme = Theme.of(context);
     return PopupMenuButton<String>(
       tooltip: 'Switch company',
       onSelected: (id) async {
@@ -207,26 +362,38 @@ class _CompanySwitcher extends ConsumerWidget {
             child: Text(company.name),
           ),
       ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.business_outlined),
-            if (wide) ...[
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: Text(
-                  active?.name ?? 'Company',
-                  overflow: TextOverflow.ellipsis,
-                ),
+      child: compact
+          ? const Padding(
+              padding: EdgeInsets.all(Space.sm),
+              child: Icon(Icons.business_outlined),
+            )
+          : Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: Space.md),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                borderRadius: Radii.mediumAll,
               ),
-            ],
-            const Icon(Icons.arrow_drop_down),
-          ],
-        ),
-      ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      active?.name ?? 'Company',
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: context.colors.onSidebar,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.unfold_more,
+                    size: 18,
+                    color: context.colors.onSidebarMuted,
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -242,7 +409,22 @@ class _UserMenu extends ConsumerWidget {
     final roles = session.company?.roles.map((r) => r.name).join(', ') ?? '';
     return PopupMenuButton<String>(
       tooltip: 'Account',
-      icon: CircleAvatar(radius: 16, child: Text(user.initials)),
+      icon: Container(
+        width: 32,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: Radii.mediumAll,
+        ),
+        child: Text(
+          user.initials,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
       onSelected: (value) {
         if (value == 'account') context.go('/account');
         if (value == 'logout') ref.read(sessionProvider.notifier).logout();
@@ -271,7 +453,7 @@ class _UserMenu extends ConsumerWidget {
           value: 'logout',
           child: ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.logout),
+            leading: Icon(Icons.logout_outlined),
             title: Text('Sign out'),
           ),
         ),

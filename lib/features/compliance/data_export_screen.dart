@@ -41,6 +41,25 @@ class _DataExportScreenState extends ConsumerState<DataExportScreen> {
     }
   }
 
+  Future<void> _tally() async {
+    if (_from == null || _to == null) {
+      showInfoSnackBar(context, 'Pick both dates first (up to 366 days).');
+      return;
+    }
+    setState(() => _busy = 'tally');
+    try {
+      final xml = await ref
+          .read(complianceRepositoryProvider)
+          .exportTally(apiDate(_from!), apiDate(_to!));
+      if (!mounted) return;
+      await shareText(context, xml, 'Tally XML');
+    } catch (e) {
+      if (mounted) showErrorSnackBar(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -75,6 +94,23 @@ class _DataExportScreenState extends ConsumerState<DataExportScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
           children: [
+            Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                key: const Key('export-tally'),
+                title: const Text('Tally Prime (XML)'),
+                subtitle: const Text(
+                  'Journal vouchers for the dates above. Create matching ledgers in Tally first.',
+                ),
+                trailing: _busy == 'tally'
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.copy_all_outlined),
+                onTap: _busy == null ? _tally : null,
+              ),
+            ),
             for (final (key, title, text) in exportDatasets)
               Card(
                 margin: const EdgeInsets.only(bottom: 8),

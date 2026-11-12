@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api_exception.dart';
+import '../../core/money.dart';
 import '../../core/permissions.dart';
 import '../../core/providers.dart';
+import '../../core/business_profile.dart';
 import 'auth_models.dart';
 import 'auth_repository.dart';
 
@@ -25,7 +27,12 @@ class SessionState {
       me?.company(activeCompanyId) ??
       (companies.isEmpty ? null : companies.first);
 
-  PermissionSet get permissions => company?.permissions ?? PermissionSet.none;
+  bool get isPlatformAdmin => me?.isPlatformAdmin ?? false;
+
+  PermissionSet get permissions {
+    final own = company?.permissions ?? PermissionSet.none;
+    return isPlatformAdmin ? own.plus(Perm.platformAdmin) : own;
+  }
 
   bool can(String permission) => permissions.can(permission);
 
@@ -78,6 +85,7 @@ class SessionController extends AsyncNotifier<SessionState> {
           me.company(api.companyId) ??
           (me.companies.isEmpty ? null : me.companies.first);
       await api.setCompany(company?.id);
+      _applyMoney(company);
       return SessionState(me: me, activeCompanyId: company?.id);
     } catch (_) {
       await api.clearSession();
@@ -90,12 +98,47 @@ class SessionController extends AsyncNotifier<SessionState> {
     state = AsyncData(await _loadMe());
   }
 
+  /// Password step; a non-null result is the 2FA challenge to complete with
+  /// [completeMfa]. Otherwise the user is signed in.
+  Future<MfaChallenge?> signIn(String email, String password) async {
+    final outcome = await _auth.signIn(email, password);
+    if (outcome is MfaChallenge) return outcome;
+    state = AsyncData(await _loadMe());
+    return null;
+  }
+
+  Future<void> completeMfa(
+    String mfaToken, {
+    String? code,
+    String? recoveryCode,
+  }) async {
+    await _auth.completeMfa(mfaToken, code: code, recoveryCode: recoveryCode);
+    state = AsyncData(await _loadMe());
+  }
+
+  Future<void> redeemSso(String ticket) async {
+    await _auth.redeemSso(ticket);
+    state = AsyncData(await _loadMe());
+  }
+
   Future<void> signup(SignupRequest request) async {
     await _auth.signup(request);
     state = AsyncData(await _loadMe());
   }
 
+  /// Currency and digit grouping follow the company.
+  void _applyMoney(Company? company) {
+    final country = countryByCode(company?.country ?? 'IN');
+    final currency = company?.currency ?? 'INR';
+    // Keep Indian grouping for rupees whatever the country list says.
+    configureMoney(
+      currency: currency,
+      locale: currency == 'INR' ? 'en_IN' : country.locale,
+    );
+  }
+
   Future<void> logout() async {
+    configureMoney();
     await _auth.logout();
     state = const AsyncData(SessionState.signedOut);
   }
@@ -104,6 +147,7 @@ class SessionController extends AsyncNotifier<SessionState> {
     final current = state.value;
     if (current?.me?.company(companyId) == null) return;
     await ref.read(apiClientProvider).setCompany(companyId);
+    _applyMoney(current?.me?.company(companyId));
     state = AsyncData(
       SessionState(me: current!.me, activeCompanyId: companyId),
     );

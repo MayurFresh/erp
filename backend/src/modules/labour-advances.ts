@@ -13,6 +13,7 @@ import { scopedLocationIds } from '../lib/scope.ts';
 import { nextNumber } from '../lib/series.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -142,3 +143,6 @@ export async function labourAdvanceRoutes(app: FastifyInstance) {
     });
   });
 }
+
+documentRoute('POST', '/labour-advances', { body: createBody });
+documentRoute('POST', '/labour-advances/:id/cancel', { body: cancelBody });

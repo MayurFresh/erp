@@ -16,6 +16,7 @@ import '../reports/report_widgets.dart'
 import 'it_models.dart';
 import 'it_repository.dart';
 import 'it_widgets.dart';
+import '../../core/app_colors.dart';
 
 const tdsFileSteps = <String>[
   'Pay the challan.',
@@ -151,7 +152,7 @@ class _TdsFileScreenState extends ConsumerState<TdsFileScreen> {
               Row(
                 children: [
                   const Expanded(child: ReportSectionTitle('3. Download')),
-                  Pill('BETA', color: Colors.orange.shade800),
+                  Pill('BETA', color: context.colors.warning),
                 ],
               ),
               const Text(

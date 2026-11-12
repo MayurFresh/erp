@@ -45,7 +45,14 @@ class LocationsRepository {
     final changes = changedFields(original.toInputJson(), body);
     if (changes.isEmpty) return original;
     return Location.fromJson(
-      await _api.patchJson('/locations/${original.id}', body: changes),
+      await _api.patchJson(
+        '/locations/${original.id}',
+        body: {
+          ...changes,
+          if (original.updatedAt != null)
+            'expectedUpdatedAt': original.updatedAt!.toUtc().toIso8601String(),
+        },
+      ),
     );
   }
 }

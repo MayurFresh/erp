@@ -15,6 +15,7 @@ import '../reports/report_widgets.dart'
 import 'it_models.dart';
 import 'it_repository.dart';
 import 'it_widgets.dart';
+import '../../core/app_colors.dart';
 
 /// `/itr-pack`: the numbers and steps to file ITR-3 or ITR-4 yourself.
 class ItrPackScreen extends ConsumerStatefulWidget {
@@ -194,9 +195,9 @@ class _PackBody extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                  Icons.warning_amber,
+                  Icons.warning_amber_outlined,
                   size: 18,
-                  color: Colors.orange.shade800,
+                  color: context.colors.warning,
                 ),
                 const SizedBox(width: 6),
                 Expanded(child: Text(w)),

@@ -10,10 +10,14 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../core/amount_in_words.dart';
 import '../../core/india_states.dart';
 import '../../core/money.dart';
+import '../../core/pdf_brand.dart';
+import '../../core/pdf_kit.dart';
 import '../../core/whatsapp.dart';
 import '../company/company_model.dart';
 import '../parties/party_model.dart';
 import 'invoice_model.dart';
+
+export '../../core/pdf_kit.dart' show pdfLatin1;
 
 /// `INV/26-27/00001` → `INV-26-27-00001.pdf`.
 String invoiceFileName(Invoice invoice) =>
@@ -41,38 +45,28 @@ Uri whatsAppShareUri(String text) =>
     Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}');
 
 /// Builds the tax invoice. [party] adds the buyer's address and state when
-/// available. The default theme uses the built-in PDF fonts, which only
-/// cover Latin-1, so text is transliterated (`₹` → `Rs.`); pass a [theme]
-/// with a Unicode font to print other scripts as-is.
+/// available. [brand] adds the logo and brand colour (see `loadPdfBrand`);
+/// without it the company name and details come from [company]. The default
+/// theme uses the built-in PDF fonts, which only cover Latin-1, so text is
+/// transliterated (`₹` becomes `Rs.`); pass a [theme] with a Unicode font to
+/// print other scripts as-is.
 Future<Uint8List> buildInvoicePdf(
   Invoice invoice,
   Company company, {
   Party? party,
   pw.ThemeData? theme,
+  PdfBrand? brand,
 }) {
-  final doc = pw.Document(
+  final kit = PdfKit(brand: brand ?? pdfBrandFor(company), theme: theme);
+  final doc = kit.document(
     title: 'Tax invoice ${invoice.number ?? ''}',
-    author: company.name,
-    creator: 'Progen ERP',
+    subject: invoice.partyName,
   );
-  final builder = _InvoicePdf(
-    invoice,
-    company,
-    party,
-    clean: theme == null ? pdfLatin1 : (s) => s,
-  );
+  final builder = _InvoicePdf(kit, invoice, company, party);
   doc.addPage(
     pw.MultiPage(
-      pageTheme: pw.PageTheme(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(28),
-        theme:
-            theme ??
-            pw.ThemeData.withFont(
-              base: pw.Font.helvetica(),
-              bold: pw.Font.helveticaBold(),
-            ),
-        buildBackground: invoice.isCancelled
+      pageTheme: kit.pageTheme(
+        background: invoice.isCancelled
             ? (context) => pw.Watermark.text(
                 'CANCELLED',
                 style: pw.TextStyle(
@@ -83,16 +77,14 @@ Future<Uint8List> buildInvoicePdf(
               )
             : null,
       ),
-      footer: (context) => pw.Container(
-        alignment: pw.Alignment.centerRight,
-        margin: const pw.EdgeInsets.only(top: 8),
-        child: pw.Text(
-          builder.clean(
-            '${invoice.number ?? ''} · Page ${context.pageNumber} of '
-            '${context.pagesCount}',
-          ),
-          style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
-        ),
+      header: (context) => context.pageNumber == 1
+          ? pw.SizedBox()
+          : kit.compactHeader('Tax invoice ${invoice.number ?? ''}'),
+      footer: (context) => kit.footer(
+        context,
+        left:
+            '${invoice.number ?? ''}  |  ${company.name}  |  '
+            'Computer-generated invoice',
       ),
       build: builder.build,
     ),
@@ -100,59 +92,15 @@ Future<Uint8List> buildInvoicePdf(
   return doc.save();
 }
 
-/// Maps common Unicode punctuation to Latin-1 and drops what the built-in
-/// fonts cannot draw.
-String pdfLatin1(String text) {
-  const replacements = {
-    '₹': 'Rs.',
-    '—': '-',
-    '–': '-',
-    '‘': "'",
-    '’': "'",
-    '“': '"',
-    '”': '"',
-    '…': '...',
-    '•': '-',
-    '·': '-',
-    '×': 'x',
-    '−': '-',
-  };
-  final out = StringBuffer();
-  for (final rune in text.runes) {
-    final char = String.fromCharCode(rune);
-    final mapped = replacements[char];
-    if (mapped != null) {
-      out.write(mapped);
-    } else if (rune <= 0xff) {
-      out.write(char);
-    } else {
-      out.write('?');
-    }
-  }
-  return out.toString();
-}
-
 class _InvoicePdf {
-  _InvoicePdf(this.invoice, this.company, this.party, {required this.clean});
+  _InvoicePdf(this.kit, this.invoice, this.company, this.party);
 
+  final PdfKit kit;
   final Invoice invoice;
   final Company company;
   final Party? party;
-  final String Function(String) clean;
 
-  static const _border = PdfColors.grey600;
-  static const _shade = PdfColor.fromInt(0xFFEFF1F8);
-  static const _small = pw.TextStyle(fontSize: 8);
-  static final _smallBold = pw.TextStyle(
-    fontSize: 8,
-    fontWeight: pw.FontWeight.bold,
-  );
-  static final _label = pw.TextStyle(fontSize: 8, color: PdfColors.grey700);
-
-  pw.Widget _text(String value, {pw.TextStyle? style, pw.TextAlign? align}) =>
-      pw.Text(clean(value), style: style ?? _small, textAlign: align);
-
-  bool _has(String? value) => value != null && value.trim().isNotEmpty;
+  bool _has(String? value) => kit.has(value);
 
   String _place(String? code) {
     if (code == null || code.isEmpty) return '';
@@ -163,7 +111,11 @@ class _InvoicePdf {
   List<pw.Widget> build(pw.Context context) {
     final lines = invoice.lines ?? const <InvoiceLine>[];
     return [
-      _header(),
+      kit.header(
+        title: 'TAX INVOICE',
+        subtitle: 'Original for recipient',
+        badge: invoice.isCancelled ? 'CANCELLED' : null,
+      ),
       pw.SizedBox(height: 10),
       if (invoice.hasActiveIrn) ...[_einvoiceBlock(), pw.SizedBox(height: 10)],
       _parties(),
@@ -173,15 +125,24 @@ class _InvoicePdf {
       pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Expanded(flex: 3, child: _taxBreakup(lines)),
+          pw.Expanded(
+            flex: 3,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                kit.wordsStrip(amountInWords(invoice.total)),
+                pw.SizedBox(height: 8),
+                _bankBlock(),
+              ],
+            ),
+          ),
           pw.SizedBox(width: 12),
           pw.Expanded(flex: 2, child: _totals()),
         ],
       ),
-      pw.SizedBox(height: 8),
-      _amountInWords(),
+      if (lines.isNotEmpty) ...[pw.SizedBox(height: 12), _taxSummary(lines)],
       pw.SizedBox(height: 12),
-      _footerBlock(),
+      _closing(),
     ];
   }
 
@@ -196,291 +157,198 @@ class _InvoicePdf {
     final e = invoice.einvoice!;
     final bill = invoice.ewaybill;
     final showBill = bill != null && bill.isActive;
-    pw.Widget row(String label, String value) => pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 2),
-      child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.SizedBox(width: 56, child: _text(label, style: _label)),
-          pw.Expanded(child: _text(value, style: _smallBold)),
-        ],
-      ),
-    );
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(6),
-      decoration: pw.BoxDecoration(border: pw.Border.all(color: _border)),
-      child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Expanded(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                row('IRN', e.irn),
-                row('Ack No', e.ackNo),
-                row('Ack Date', _stamp(e.ackDate)),
-                if (showBill) ...[
-                  row('E-way bill', bill.ewbNo),
-                  row('Valid until', _stamp(bill.validUntil)),
-                ],
-                if (e.sandbox)
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.only(top: 4),
-                    child: _text(
-                      'SANDBOX — not valid for GST',
-                      style: pw.TextStyle(
-                        fontSize: 10,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.red800,
+    return kit.box(
+      title: 'E-invoice',
+      children: [
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Expanded(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  kit.kv('IRN', e.irn, keyWidth: 56),
+                  kit.kv('Ack no.', e.ackNo, keyWidth: 56),
+                  kit.kv('Ack date', _stamp(e.ackDate), keyWidth: 56),
+                  if (showBill) ...[
+                    kit.kv('E-way bill', bill.ewbNo, keyWidth: 56),
+                    kit.kv(
+                      'Valid until',
+                      _stamp(bill.validUntil),
+                      keyWidth: 56,
+                    ),
+                  ],
+                  if (e.sandbox)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.only(top: 4),
+                      child: kit.text(
+                        'SANDBOX: not valid for GST',
+                        size: 10,
+                        bold: true,
+                        color: kDanger,
                       ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-          if (e.signedQrCode.isNotEmpty) ...[
-            pw.SizedBox(width: 10),
-            pw.BarcodeWidget(
-              barcode: pw.Barcode.qrCode(),
-              data: e.signedQrCode,
-              width: 80,
-              height: 80,
-              drawText: false,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _header() {
-    final contact = [
-      if (_has(company.phone)) 'Phone: ${company.phone}',
-      if (_has(company.email)) 'Email: ${company.email}',
-      if (_has(company.website)) company.website!,
-    ].join('   ');
-    final ids = [
-      if (_has(company.gstin)) 'GSTIN: ${company.gstin}',
-      if (_has(company.pan)) 'PAN: ${company.pan}',
-      'State: ${_place(company.stateCode)}',
-    ].join('   ');
-    return pw.Row(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Expanded(
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              _text(
-                company.name,
-                style: pw.TextStyle(
-                  fontSize: 16,
-                  fontWeight: pw.FontWeight.bold,
-                ),
+                ],
               ),
-              if (_has(company.legalName) && company.legalName != company.name)
-                _text(
-                  company.legalName!,
-                  style: const pw.TextStyle(fontSize: 9),
-                ),
-              if (_has(company.address)) _text(company.address!),
-              _text(ids),
-              if (contact.isNotEmpty) _text(contact),
+            ),
+            if (e.signedQrCode.isNotEmpty) ...[
+              pw.SizedBox(width: 10),
+              pw.BarcodeWidget(
+                barcode: pw.Barcode.qrCode(),
+                data: e.signedQrCode,
+                width: 80,
+                height: 80,
+                drawText: false,
+              ),
             ],
-          ),
-        ),
-        pw.SizedBox(width: 12),
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
-          children: [
-            _text(
-              'TAX INVOICE',
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-            ),
-            _text('Original for recipient', style: _label),
-            if (invoice.isCancelled)
-              _text(
-                'CANCELLED',
-                style: pw.TextStyle(
-                  fontSize: 10,
-                  color: PdfColors.red800,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
           ],
         ),
       ],
     );
   }
 
-  pw.Widget _keyValue(String key, String value) => pw.Padding(
-    padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-    child: pw.Row(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.SizedBox(width: 78, child: _text(key, style: _label)),
-        pw.Expanded(child: _text(value, style: _smallBold)),
-      ],
-    ),
-  );
-
-  pw.Widget _box(pw.Widget child) => pw.Container(
-    padding: const pw.EdgeInsets.all(8),
-    decoration: pw.BoxDecoration(border: pw.Border.all(color: _border)),
-    child: child,
-  );
+  pw.Widget _partyBlock(String title, List<pw.Widget> children) =>
+      kit.box(title: title, children: children);
 
   pw.Widget _parties() {
     final p = party;
     final address = p?.address;
     final state = p?.stateCode ?? invoice.placeOfSupply;
+    final seller = company;
+    final buyer = [
+      kit.text(invoice.partyName, size: 10, bold: true),
+      pw.SizedBox(height: 2),
+      if (_has(address)) kit.text(address!, height: 1.5),
+      if (_has(p?.pincode)) kit.text('PIN ${p!.pincode}'),
+      if (_has(invoice.partyGstin))
+        kit.text('GSTIN: ${invoice.partyGstin}')
+      else
+        kit.muted('Unregistered (no GSTIN)'),
+      kit.text('State: ${_place(state)}'),
+      if (_has(p?.phone)) kit.text('Phone: ${p!.phone}'),
+    ];
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Expanded(
-          child: _box(
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                _text('Bill to', style: _label),
-                _text(
-                  invoice.partyName,
-                  style: pw.TextStyle(
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                if (_has(address)) _text(address!),
-                if (_has(invoice.partyGstin))
-                  _text('GSTIN: ${invoice.partyGstin}')
-                else
-                  _text('Unregistered (no GSTIN)'),
-                _text('State: ${_place(state)}'),
-                if (_has(p?.phone)) _text('Phone: ${p!.phone}'),
-              ],
-            ),
-          ),
+          flex: 10,
+          child: _partyBlock('Seller', [
+            kit.text(seller.name, size: 10, bold: true),
+            pw.SizedBox(height: 2),
+            if (_has(seller.address)) kit.text(seller.address!, height: 1.5),
+            if (_has(seller.gstin)) kit.text('GSTIN: ${seller.gstin}'),
+            kit.text('State: ${_place(seller.stateCode)}'),
+            if (_has(invoice.locationName))
+              kit.muted('Dispatch from: ${invoice.locationName}'),
+          ]),
         ),
-        pw.SizedBox(width: 10),
+        pw.SizedBox(width: 8),
+        pw.Expanded(flex: 10, child: _partyBlock('Bill to', buyer)),
+        pw.SizedBox(width: 8),
         pw.Expanded(
-          child: _box(
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                _keyValue('Invoice no.', invoice.number ?? '-'),
-                _keyValue('Invoice date', formatDate(invoice.invoiceDate)),
-                if (invoice.dueDate != null)
-                  _keyValue('Due date', formatDate(invoice.dueDate)),
-                _keyValue('Place of supply', _place(invoice.placeOfSupply)),
-                _keyValue(
-                  'Supply type',
-                  invoice.isInterState
-                      ? 'Inter-state (IGST)'
-                      : 'Intra-state (CGST + SGST)',
-                ),
-                if (_has(invoice.locationName))
-                  _keyValue('Dispatch from', invoice.locationName),
-              ],
+          flex: 10,
+          child: _partyBlock('Ship to', [
+            kit.text(invoice.partyName, size: 10, bold: true),
+            pw.SizedBox(height: 2),
+            if (_has(address))
+              kit.text(address!, height: 1.5)
+            else
+              kit.muted('Same as billing address'),
+            kit.text('Place of supply: ${_place(invoice.placeOfSupply)}'),
+          ]),
+        ),
+        pw.SizedBox(width: 8),
+        pw.Expanded(
+          flex: 14,
+          child: _partyBlock('Invoice details', [
+            kit.kv('Invoice no.', invoice.number ?? '-', keyWidth: 52),
+            kit.kv('Date', formatDate(invoice.invoiceDate), keyWidth: 52),
+            if (invoice.dueDate != null)
+              kit.kv('Due date', formatDate(invoice.dueDate), keyWidth: 52),
+            kit.kv(
+              'Supply',
+              invoice.isInterState
+                  ? 'Inter-state (IGST)'
+                  : 'Intra-state (CGST + SGST)',
+              keyWidth: 52,
             ),
-          ),
+          ]),
         ),
       ],
     );
   }
-
-  pw.Widget _cell(
-    String value, {
-    bool bold = false,
-    bool right = false,
-    bool header = false,
-  }) => pw.Padding(
-    padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-    child: _text(
-      value,
-      style: bold || header ? _smallBold : _small,
-      align: right ? pw.TextAlign.right : pw.TextAlign.left,
-    ),
-  );
 
   pw.Widget _lineTable(List<InvoiceLine> lines) {
-    const headers = [
-      '#',
-      'Description',
-      'HSN/SAC',
-      'Qty',
-      'Rate',
-      'Disc%',
-      'Taxable',
-      'GST%',
-      'Tax',
-      'Total',
-    ];
-    const rightAligned = {3, 4, 5, 6, 7, 8, 9};
-    return pw.Table(
-      border: pw.TableBorder.all(color: _border, width: 0.5),
-      columnWidths: const {
-        0: pw.FixedColumnWidth(18),
-        1: pw.FlexColumnWidth(),
-        2: pw.FixedColumnWidth(42),
-        3: pw.FixedColumnWidth(48),
-        4: pw.FixedColumnWidth(50),
-        5: pw.FixedColumnWidth(32),
-        6: pw.FixedColumnWidth(58),
-        7: pw.FixedColumnWidth(32),
-        8: pw.FixedColumnWidth(50),
-        9: pw.FixedColumnWidth(60),
-      },
-      children: [
-        pw.TableRow(
-          repeat: true,
-          decoration: const pw.BoxDecoration(color: _shade),
-          children: [
-            for (final (i, h) in headers.indexed)
-              _cell(h, header: true, right: rightAligned.contains(i)),
-          ],
-        ),
-        for (final (i, line) in lines.indexed)
-          pw.TableRow(
-            children: [
-              _cell('${i + 1}'),
-              _cell(line.description),
-              _cell(line.hsnCode ?? ''),
-              _cell('${formatQty(line.qty)} ${line.unit}', right: true),
-              _cell(formatAmount(line.rate), right: true),
-              _cell(
-                line.discountPct == 0 ? '-' : formatPlain(line.discountPct),
-                right: true,
-              ),
-              _cell(formatAmount(line.taxableValue), right: true),
-              _cell(formatPlain(line.gstRate), right: true),
-              _cell(formatAmount(line.taxTotal), right: true),
-              _cell(formatAmount(line.lineTotal), right: true),
-            ],
-          ),
+    return kit.table(
+      fontSize: 7.5,
+      columns: const [
+        PdfCol('#', width: 22),
+        PdfCol('Description', flex: 1),
+        PdfCol('HSN/SAC', width: 42),
+        PdfCol('Qty', width: 44, right: true),
+        PdfCol('Rate', width: 48, right: true),
+        PdfCol('Disc%', width: 34, right: true),
+        PdfCol('Taxable', width: 52, right: true),
+        PdfCol('GST%', width: 32, right: true),
+        PdfCol('Tax', width: 46, right: true),
+        PdfCol('Total', width: 56, right: true),
       ],
+      rows: [
+        for (final (i, line) in lines.indexed)
+          [
+            '${i + 1}',
+            line.description,
+            line.hsnCode ?? '',
+            '${formatQty(line.qty)} ${line.unit}',
+            formatAmount(line.rate),
+            line.discountPct == 0 ? '-' : formatPlain(line.discountPct),
+            formatAmount(line.taxableValue),
+            formatPlain(line.gstRate),
+            formatAmount(line.taxTotal),
+            formatAmount(line.lineTotal),
+          ],
+      ],
+      totals: lines.isEmpty
+          ? null
+          : [
+              '',
+              'Total',
+              '',
+              '',
+              '',
+              '',
+              formatAmount(invoice.subtotal),
+              '',
+              formatAmount(invoice.taxTotal),
+              formatAmount(lines.fold<double>(0, (a, l) => a + l.lineTotal)),
+            ],
     );
   }
 
-  pw.Widget _taxBreakup(List<InvoiceLine> lines) {
+  /// Tax summary grouped by HSN/SAC and rate.
+  pw.Widget _taxSummary(List<InvoiceLine> lines) {
     final inter = invoice.isInterState;
-    final byRate = <double, List<double>>{};
+    final groups = <String, List<double>>{};
+    final keys = <String, (String, double)>{};
     for (final line in lines) {
-      final row = byRate.putIfAbsent(line.gstRate, () => [0, 0, 0, 0]);
+      final hsn = (line.hsnCode ?? '').trim();
+      final key = '$hsn|${line.gstRate}';
+      keys[key] = (hsn, line.gstRate);
+      final row = groups.putIfAbsent(key, () => [0, 0, 0, 0]);
       row[0] += line.taxableValue;
       row[1] += line.cgst;
       row[2] += line.sgst;
       row[3] += line.igst;
     }
-    final rates = byRate.keys.toList()..sort();
-    final headers = [
-      'GST rate',
-      'Taxable',
-      if (inter) 'IGST' else ...['CGST', 'SGST'],
-      'Total tax',
-    ];
-    List<String> values(String label, List<double> r) => [
-      label,
+    final order = groups.keys.toList()
+      ..sort((a, b) {
+        final c = keys[a]!.$1.compareTo(keys[b]!.$1);
+        return c != 0 ? c : keys[a]!.$2.compareTo(keys[b]!.$2);
+      });
+    List<String> values(String hsn, String rate, List<double> r) => [
+      hsn,
       formatAmount(r[0]),
+      rate,
       if (inter)
         formatAmount(r[3])
       else ...[
@@ -489,99 +357,74 @@ class _InvoicePdf {
       ],
       formatAmount(r[1] + r[2] + r[3]),
     ];
+    final sum = [0.0, 0.0, 0.0, 0.0];
+    for (final r in groups.values) {
+      for (var i = 0; i < 4; i++) {
+        sum[i] += r[i];
+      }
+    }
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        _text('Tax breakup', style: _smallBold),
-        pw.SizedBox(height: 3),
-        pw.Table(
-          border: pw.TableBorder.all(color: _border, width: 0.5),
-          children: [
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: _shade),
-              children: [
-                for (final (i, h) in headers.indexed)
-                  _cell(h, header: true, right: i > 0),
-              ],
-            ),
-            for (final rate in rates)
-              pw.TableRow(
-                children: [
-                  for (final (i, v) in values(
-                    inter
-                        ? 'IGST ${formatPlain(rate)}%'
-                        : '${formatPlain(rate / 2)}% + ${formatPlain(rate / 2)}%',
-                    byRate[rate]!,
-                  ).indexed)
-                    _cell(v, right: i > 0),
-                ],
-              ),
-            pw.TableRow(
-              children: [
-                for (final (i, v) in values('Total', [
-                  invoice.subtotal,
-                  invoice.cgst,
-                  invoice.sgst,
-                  invoice.igst,
-                ]).indexed)
-                  _cell(v, bold: true, right: i > 0),
-              ],
-            ),
+        kit.sectionTitle('HSN / SAC and tax summary'),
+        kit.table(
+          fontSize: 7.5,
+          columns: [
+            const PdfCol('HSN/SAC', flex: 2),
+            const PdfCol('Taxable value', flex: 2, right: true),
+            const PdfCol('Rate', flex: 1, right: true),
+            if (inter)
+              const PdfCol('IGST', flex: 2, right: true)
+            else ...const [
+              PdfCol('CGST', flex: 2, right: true),
+              PdfCol('SGST', flex: 2, right: true),
+            ],
+            const PdfCol('Total tax', flex: 2, right: true),
           ],
+          rows: [
+            for (final k in order)
+              values(
+                keys[k]!.$1.isEmpty ? '-' : keys[k]!.$1,
+                '${formatPlain(keys[k]!.$2)}%',
+                groups[k]!,
+              ),
+          ],
+          totals: values('Total', '', sum),
         ),
       ],
-    );
-  }
-
-  pw.Widget _totalRow(String label, double amount, {bool strong = false}) {
-    final style = strong
-        ? pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)
-        : _small;
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 2),
-      child: pw.Row(
-        children: [
-          pw.Expanded(child: _text(label, style: style)),
-          _text(formatAmount(amount), style: style, align: pw.TextAlign.right),
-        ],
-      ),
     );
   }
 
   pw.Widget _totals() {
     final inter = invoice.isInterState;
-    return _box(
-      pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          _totalRow('Taxable value', invoice.subtotal),
-          if (!inter || invoice.cgst != 0) _totalRow('CGST', invoice.cgst),
-          if (!inter || invoice.sgst != 0) _totalRow('SGST', invoice.sgst),
-          if (inter || invoice.igst != 0) _totalRow('IGST', invoice.igst),
-          _totalRow('Round off', invoice.roundOff),
-          pw.Divider(color: _border, thickness: 0.5),
-          _totalRow('Grand total (₹)', invoice.total, strong: true),
-          if (invoice.amountPaid != null && !invoice.isCancelled) ...[
-            pw.SizedBox(height: 4),
-            _totalRow('Amount paid', invoice.amountPaid!),
-            _totalRow('Amount due', invoice.amountDue ?? 0, strong: true),
-          ],
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _amountInWords() => _box(
-    pw.Row(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _text('Amount in words: ', style: _label),
-        pw.Expanded(
-          child: _text(amountInWords(invoice.total), style: _smallBold),
+    return kit.totalsBox([
+      kit.totalRow('Taxable value', formatAmount(invoice.subtotal)),
+      if (!inter || invoice.cgst != 0)
+        kit.totalRow('CGST', formatAmount(invoice.cgst)),
+      if (!inter || invoice.sgst != 0)
+        kit.totalRow('SGST', formatAmount(invoice.sgst)),
+      if (inter || invoice.igst != 0)
+        kit.totalRow('IGST', formatAmount(invoice.igst)),
+      if (invoice.roundOff != 0)
+        kit.totalRow('Round off', formatAmount(invoice.roundOff)),
+      pw.Divider(color: kLine, thickness: 0.6, height: 8),
+      kit.totalRow('Grand total', formatMoney(invoice.total), strong: true),
+      if (invoice.reverseCharge) ...[
+        pw.SizedBox(height: 4),
+        kit.totalRow('Tax payable on reverse charge: Yes', formatAmount(invoice.rcmTax)),
+      ],
+      if (invoice.amountPaid != null && !invoice.isCancelled) ...[
+        pw.SizedBox(height: 4),
+        kit.totalRow('Amount paid', formatAmount(invoice.amountPaid!)),
+        kit.totalRow(
+          'Amount due',
+          formatMoney(invoice.amountDue ?? 0),
+          strong: true,
+          color: (invoice.amountDue ?? 0) > 0 ? kDanger : kGood,
         ),
       ],
-    ),
-  );
+    ]);
+  }
 
   /// UPI payment link for the QR code; null when the company has no UPI ID
   /// or nothing is left to pay.
@@ -597,7 +440,7 @@ class _InvoicePdf {
     );
   }
 
-  pw.Widget _footerBlock() {
+  pw.Widget _bankBlock() {
     final c = company;
     final bank = [
       if (_has(c.bankName)) ('Bank', c.bankName!),
@@ -605,89 +448,77 @@ class _InvoicePdf {
       if (_has(c.bankIfsc)) ('IFSC', c.bankIfsc!),
       if (_has(c.upiId)) ('UPI ID', c.upiId!),
     ];
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+    final upi = _upiLink;
+    if (bank.isEmpty && upi == null) return pw.SizedBox();
+    return kit.box(
+      title: 'Bank details',
       children: [
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Expanded(
               child: pw.Column(
+                children: [
+                  for (final (k, v) in bank) kit.kv(k, v, keyWidth: 46),
+                ],
+              ),
+            ),
+            if (upi != null) ...[
+              pw.SizedBox(width: 8),
+              pw.Column(
+                children: [
+                  pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: upi,
+                    width: 70,
+                    height: 70,
+                    drawText: false,
+                  ),
+                  pw.SizedBox(height: 2),
+                  kit.muted('Scan to pay by UPI', size: 7),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _closing() {
+    final c = company;
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            pw.Expanded(
+              child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  if (bank.isNotEmpty) ...[
-                    _text('Bank details', style: _smallBold),
-                    for (final (k, v) in bank) _keyValue(k, v),
-                    pw.SizedBox(height: 8),
-                  ],
                   if (_has(c.invoiceTerms)) ...[
-                    _text('Terms & conditions', style: _smallBold),
-                    _text(c.invoiceTerms!),
+                    kit.sectionTitle('Terms and conditions'),
+                    kit.text(c.invoiceTerms!, size: 8, height: 1.5),
                     pw.SizedBox(height: 8),
                   ],
                   if (_has(invoice.notes)) ...[
-                    _text('Notes', style: _smallBold),
-                    _text(invoice.notes!),
+                    kit.sectionTitle('Notes'),
+                    kit.text(invoice.notes!, size: 8, height: 1.5),
                   ],
                 ],
               ),
             ),
             pw.SizedBox(width: 16),
-            if (_upiLink != null) ...[
-              pw.Column(
-                children: [
-                  pw.BarcodeWidget(
-                    barcode: pw.Barcode.qrCode(),
-                    data: _upiLink!,
-                    width: 80,
-                    height: 80,
-                    drawText: false,
-                  ),
-                  pw.SizedBox(height: 2),
-                  _text('Scan to pay by UPI', style: _small),
-                ],
-              ),
-              pw.SizedBox(width: 12),
-            ],
-            pw.Container(
-              width: 180,
-              height: 80,
-              padding: const pw.EdgeInsets.all(6),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: _border, width: 0.5),
-              ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  _text(
-                    'For ${c.name}',
-                    style: _smallBold,
-                    align: pw.TextAlign.right,
-                  ),
-                  _text('Authorised Signatory', style: _small),
-                ],
-              ),
-            ),
+            kit.signature(),
           ],
         ),
         if (_has(c.invoiceFooter)) ...[
           pw.SizedBox(height: 10),
           pw.Center(
-            child: _text(
-              c.invoiceFooter!,
-              style: _label,
-              align: pw.TextAlign.center,
-            ),
+            child: kit.muted(c.invoiceFooter!, align: pw.TextAlign.center),
           ),
         ],
-        pw.SizedBox(height: 6),
-        pw.Center(
-          child: _text(
-            'This is a computer-generated invoice.',
-            style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600),
-          ),
-        ),
       ],
     );
   }

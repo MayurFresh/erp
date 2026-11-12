@@ -11,6 +11,7 @@ import '../construction/common/c_widgets.dart' show bigButton;
 import 'tax_models.dart';
 import 'tax_repository.dart';
 import '../../widgets/busy.dart';
+import '../../core/app_colors.dart';
 
 final _allGstRatesProvider = FutureProvider.autoDispose<List<GstRate>>((ref) {
   ref.watch(activeCompanyIdProvider);
@@ -38,7 +39,7 @@ class GstRatesScreen extends ConsumerWidget {
               FilledButton.icon(
                 style: bigButton,
                 onPressed: () async {
-                  final saved = await showDialog<bool>(
+                  final saved = await showFormDialog<bool>(
                     context: context,
                     builder: (_) => const _GstRateDialog(),
                   );
@@ -109,8 +110,8 @@ class _GstRateList extends ConsumerWidget {
   Widget _badges(GstRate r) => Wrap(
     spacing: 6,
     children: [
-      if (r.isLegacy) const Pill('legacy', color: Colors.orange),
-      if (r.isSystem) const Pill('system', color: Colors.blueGrey),
+      if (r.isLegacy) Pill('legacy', color: AppColors.light.warning),
+      if (r.isSystem) Pill('system', color: AppColors.light.onNeutralContainer),
     ],
   );
 
@@ -233,11 +234,13 @@ class _GstRateDialogState extends ConsumerState<_GstRateDialog>
       firstDate: DateTime(2017),
       lastDate: DateTime(2100),
     );
-    if (picked != null) setState(() => from ? _from = picked : _to = picked);
+    if (picked != null && mounted) {
+      setState(() => from ? _from = picked : _to = picked);
+    }
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!validateAndReveal(_form)) return;
     setState(() => _saving = true);
     try {
       await ref.read(taxRepositoryProvider).createGstRate({
@@ -324,7 +327,7 @@ class _GstRateDialogState extends ConsumerState<_GstRateDialog>
     ),
     actions: [
       TextButton(
-        onPressed: _saving ? null : () => Navigator.of(context).pop(),
+        onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
         child: const Text('Cancel'),
       ),
       BusyButton(busy: _saving, onPressed: _save, label: 'Add'),

@@ -1,3 +1,4 @@
+import '../controls/cost_centre_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -39,6 +40,7 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
   final _amount = TextEditingController();
   String? _locationId;
   String? _accountId;
+  String? _costCentreId;
   String? _paidFromId;
   double _gstRate = 0;
   Party? _vendor;
@@ -59,23 +61,26 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
   Future<void> _pickVendor() async {
     final vendor = await pickParty(context, ref, type: PartyType.vendor);
     if (vendor == null) return;
-    setState(() {
-      _vendor = vendor;
-      if (!_tdsTouched) _tdsSectionId = vendor.tdsSectionId;
-    });
+    if (mounted) {
+      setState(() {
+        _vendor = vendor;
+        if (!_tdsTouched) _tdsSectionId = vendor.tdsSectionId;
+      });
+    }
   }
 
   Future<void> _pickDate() async {
     final picked = await pickDocDate(context, _date);
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null && mounted) setState(() => _date = picked);
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       serverErrors = const {};
       _error = null;
     });
-    if (!_formKey.currentState!.validate()) return;
+    if (!validateAndReveal(_formKey)) return;
     setState(() => _saving = true);
     try {
       final expense = await ref
@@ -93,6 +98,7 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
               tdsSectionId: _vendor == null ? null : _tdsSectionId,
               reverseCharge: _vendor != null && _reverseCharge,
               paidFromAccountId: _paidFromId!,
+              costCentreId: _costCentreId,
             ),
           );
       ref.bump(const [DataKind.expenses, DataKind.accounts]);
@@ -102,6 +108,14 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
       context.go('/expenses/${expense.id}');
     } catch (e) {
       if (!mounted) return;
+      if (handleApprovalPending(
+        context,
+        e,
+        listPath: '/expenses',
+        onSaved: markSaved,
+      )) {
+        return;
+      }
       setState(() => _error = e);
       showSubmitError(e);
     } finally {
@@ -188,6 +202,15 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
       key: _formKey,
       onChanged: markDirty,
       child: FormPage(
+        bottomBar: FormActionBar(
+          children: [
+            OutlinedButton(
+              onPressed: _saving ? null : () => leave('/expenses'),
+              child: const Text('Cancel'),
+            ),
+            BusyButton(busy: _saving, onPressed: _save, label: 'Save expense'),
+          ],
+        ),
         children: [
           Text('New expense', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 16),
@@ -251,9 +274,9 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
                   children: [
                     TextFormField(
                       controller: _amount,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Amount before GST',
-                        prefixText: '₹ ',
+                        prefixText: '$moneySymbol ',
                       ),
                       keyboardType: decimalKeyboard,
                       inputFormatters: [decimalInput()],
@@ -277,6 +300,12 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
                       onChanged: (v) => setState(() => _gstRate = v ?? 0),
                     ),
                   ],
+                ),
+                const SizedBox(height: 16),
+                CostCentreField(
+                  value: _costCentreId,
+                  errorText: serverError('costCentreId'),
+                  onChanged: (v) => setState(() => _costCentreId = v),
                 ),
                 const SizedBox(height: 16),
                 PickerField(
@@ -372,22 +401,6 @@ class _ExpenseCreateScreenState extends ConsumerState<ExpenseCreateScreen>
             ApiErrorBox(error: _error!, subject: 'the expense'),
             const SizedBox(height: 16),
           ],
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _saving ? null : () => leave('/expenses'),
-                child: const Text('Cancel'),
-              ),
-              BusyButton(
-                busy: _saving,
-                onPressed: _save,
-                label: 'Save expense',
-              ),
-            ],
-          ),
         ],
       ),
     );

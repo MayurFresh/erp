@@ -1,8 +1,11 @@
+import '../controls/cost_centre_widgets.dart';
+import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/india_states.dart';
+import '../../core/business_profile.dart';
 import '../../core/money.dart';
 import '../../core/permissions.dart';
 import '../../core/providers.dart';
@@ -162,15 +165,18 @@ class PurchaseDetailScreen extends ConsumerWidget {
                     runSpacing: 12,
                     children: [
                       LabeledValue('Party', bill.partyName),
-                      LabeledValue('GSTIN', bill.partyGstin ?? ''),
-                      LabeledValue(
-                        'Place of supply',
-                        stateLabel(bill.placeOfSupply),
-                      ),
-                      LabeledValue(
-                        'Input tax',
-                        bill.isInterState ? 'IGST' : 'CGST + SGST',
-                      ),
+                      if (ref.watch(businessProfileProvider).isIndia)
+                        LabeledValue('GSTIN', bill.partyGstin ?? ''),
+                      if (ref.watch(businessProfileProvider).isIndia) ...[
+                        LabeledValue(
+                          'Place of supply',
+                          stateLabel(bill.placeOfSupply),
+                        ),
+                        LabeledValue(
+                          'Input tax',
+                          bill.isInterState ? 'IGST' : 'CGST + SGST',
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -199,6 +205,8 @@ class PurchaseDetailScreen extends ConsumerWidget {
                 interState: bill.isInterState,
               ),
             ),
+            CostCentreCard(costCentreId: bill.costCentreId),
+            CustomValuesCard(entity: 'purchase', custom: bill.custom),
             if (bill.notes != null && bill.notes!.isNotEmpty)
               SectionCard(title: 'Notes', child: Text(bill.notes!)),
           ],

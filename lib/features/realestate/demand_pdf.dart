@@ -5,8 +5,9 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../core/amount_in_words.dart';
 import '../../core/money.dart';
+import '../../core/pdf_brand.dart';
+import '../../core/pdf_kit.dart';
 import '../company/company_model.dart';
-import '../invoices/invoice_pdf.dart' show pdfLatin1;
 import '../parties/party_model.dart';
 import 're_models.dart';
 
@@ -21,40 +22,18 @@ Future<Uint8List> buildDemandPdf(
   Party? party,
   Booking? booking,
   pw.ThemeData? theme,
+  PdfBrand? brand,
 }) {
-  final clean = theme == null ? pdfLatin1 : (String s) => s;
-  final doc = pw.Document(
+  final kit = PdfKit(brand: brand ?? pdfBrandFor(company), theme: theme);
+  final doc = kit.document(
     title: 'Demand ${demand.number}',
-    author: company.name,
-    creator: 'Progen ERP',
+    subject: demand.partyName,
   );
-  const grey = PdfColors.grey700;
-  pw.Widget text(String s, {pw.TextStyle? style}) =>
-      pw.Text(clean(s), style: style);
-  final bold = pw.TextStyle(fontWeight: pw.FontWeight.bold);
-  pw.Widget row(String label, String value, {bool strong = false}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 2),
-        child: pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            text(label, style: strong ? bold : null),
-            text(value, style: strong ? bold : null),
-          ],
-        ),
-      );
+  final hasBank = kit.has(company.bankName) || kit.has(company.bankAccountNo);
   doc.addPage(
     pw.MultiPage(
-      pageTheme: pw.PageTheme(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        theme:
-            theme ??
-            pw.ThemeData.withFont(
-              base: pw.Font.helvetica(),
-              bold: pw.Font.helveticaBold(),
-            ),
-        buildBackground: demand.isCancelled
+      pageTheme: kit.pageTheme(
+        background: demand.isCancelled
             ? (context) => pw.Watermark.text(
                 'CANCELLED',
                 style: pw.TextStyle(
@@ -65,94 +44,119 @@ Future<Uint8List> buildDemandPdf(
               )
             : null,
       ),
+      header: (context) => context.pageNumber == 1
+          ? pw.SizedBox()
+          : kit.compactHeader('Demand ${demand.number}'),
+      footer: (context) =>
+          kit.footer(context, left: '${demand.number}  |  ${company.name}'),
       build: (context) => [
-        text(
-          company.legalName ?? company.name,
-          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
-        ),
-        if ((company.address ?? '').isNotEmpty)
-          text(company.address!, style: const pw.TextStyle(color: grey)),
-        if ((company.gstin ?? '').isNotEmpty)
-          text(
-            'GSTIN ${company.gstin}',
-            style: const pw.TextStyle(color: grey),
-          ),
-        pw.Divider(),
-        pw.Center(
-          child: text(
-            'DEMAND LETTER',
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
+        kit.header(
+          title: 'DEMAND LETTER',
+          badge: demand.isCancelled ? 'CANCELLED' : null,
         ),
         pw.SizedBox(height: 12),
-        row('Demand no.', demand.number),
-        row('Date', formatDate(demand.date)),
-        row('Due date', formatDate(demand.dueDate)),
-        row('Booking', demand.bookingNumber),
-        row('Unit', demand.unitCode),
-        pw.SizedBox(height: 12),
-        text('To', style: const pw.TextStyle(color: grey)),
-        text(demand.partyName, style: bold),
-        if ((party?.address ?? '').isNotEmpty) text(party!.address!),
-        if ((party?.gstin ?? '').isNotEmpty) text('GSTIN ${party!.gstin}'),
-        pw.SizedBox(height: 16),
-        text(
+        kit.twoUp(
+          kit.box(
+            title: 'To',
+            children: [
+              kit.text(demand.partyName, size: 10, bold: true),
+              if (kit.has(party?.address)) kit.text(party!.address!),
+              if (kit.has(party?.gstin)) kit.text('GSTIN: ${party!.gstin}'),
+            ],
+          ),
+          kit.box(
+            title: 'Demand details',
+            children: [
+              kit.kv('Demand no.', demand.number),
+              kit.kv('Date', formatDate(demand.date)),
+              kit.kv('Due date', formatDate(demand.dueDate)),
+              kit.kv('Booking', demand.bookingNumber),
+              kit.kv('Unit', demand.unitCode),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 14),
+        kit.text(
           'Dear ${demand.partyName}, as per the payment plan of your '
           'booking${booking == null ? '' : ' in ${booking.projectName}'}, '
           'the following stages are now due.',
+          size: 9.5,
+          height: 1.5,
         ),
-        pw.SizedBox(height: 12),
-        pw.TableHelper.fromTextArray(
-          headers: [clean('Stage'), clean('%'), clean('Amount')],
-          data: [
-            for (final s in demand.stages)
-              [clean(s.name), formatPlain(s.pct), formatMoney(s.amount)],
+        pw.SizedBox(height: 10),
+        kit.table(
+          columns: const [
+            PdfCol('Stage', flex: 1),
+            PdfCol('%', width: 60, right: true),
+            PdfCol('Amount', width: 110, right: true),
           ],
-          headerStyle: bold,
-          cellAlignments: {
-            0: pw.Alignment.centerLeft,
-            1: pw.Alignment.centerRight,
-            2: pw.Alignment.centerRight,
-          },
-          headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+          rows: [
+            for (final s in demand.stages)
+              [s.name, formatPlain(s.pct), formatMoney(s.amount)],
+          ],
         ),
-        pw.SizedBox(height: 8),
-        pw.Align(
-          alignment: pw.Alignment.centerRight,
-          child: pw.SizedBox(
-            width: 240,
-            child: pw.Column(
-              children: [
-                row('Amount', formatMoney(demand.amount)),
-                if (demand.cgst > 0) row('CGST', formatMoney(demand.cgst)),
-                if (demand.sgst > 0) row('SGST', formatMoney(demand.sgst)),
-                pw.Divider(),
-                row('Total due', formatMoney(demand.total), strong: true),
-                if (demand.amountPaid > 0)
-                  row('Received', formatMoney(demand.amountPaid)),
-                if (demand.amountPaid > 0)
-                  row('Balance', formatMoney(demand.amountDue), strong: true),
-              ],
+        pw.SizedBox(height: 10),
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Expanded(
+              flex: 3,
+              child: kit.wordsStrip(amountInWords(demand.total)),
             ),
-          ),
+            pw.SizedBox(width: 12),
+            pw.Expanded(
+              flex: 2,
+              child: kit.totalsBox([
+                kit.totalRow('Amount', formatMoney(demand.amount)),
+                if (demand.cgst > 0)
+                  kit.totalRow('CGST', formatMoney(demand.cgst)),
+                if (demand.sgst > 0)
+                  kit.totalRow('SGST', formatMoney(demand.sgst)),
+                pw.Divider(color: kLine, thickness: 0.6, height: 8),
+                kit.totalRow(
+                  'Total due',
+                  formatMoney(demand.total),
+                  strong: true,
+                ),
+                if (demand.amountPaid > 0) ...[
+                  kit.totalRow('Received', formatMoney(demand.amountPaid)),
+                  kit.totalRow(
+                    'Balance',
+                    formatMoney(demand.amountDue),
+                    strong: true,
+                    color: kDanger,
+                  ),
+                ],
+              ]),
+            ),
+          ],
         ),
-        pw.SizedBox(height: 8),
-        text(
-          'Amount in words: ${amountInWords(demand.total)}',
-          style: const pw.TextStyle(fontSize: 9),
-        ),
-        pw.SizedBox(height: 16),
-        if ((company.bankName ?? '').isNotEmpty ||
-            (company.bankAccountNo ?? '').isNotEmpty)
-          text(
-            'Pay to: ${company.bankName ?? ''} A/c ${company.bankAccountNo ?? ''}'
-            '${(company.bankIfsc ?? '').isEmpty ? '' : ' IFSC ${company.bankIfsc}'}',
-            style: const pw.TextStyle(fontSize: 9),
-          ),
-        pw.SizedBox(height: 32),
-        pw.Align(
-          alignment: pw.Alignment.centerRight,
-          child: text('For ${company.legalName ?? company.name}', style: bold),
+        pw.SizedBox(height: 14),
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            pw.Expanded(
+              child: hasBank
+                  ? kit.box(
+                      title: 'Pay to',
+                      children: [
+                        if (kit.has(company.bankName))
+                          kit.kv('Bank', company.bankName!, keyWidth: 46),
+                        if (kit.has(company.bankAccountNo))
+                          kit.kv(
+                            'A/c no.',
+                            company.bankAccountNo!,
+                            keyWidth: 46,
+                          ),
+                        if (kit.has(company.bankIfsc))
+                          kit.kv('IFSC', company.bankIfsc!, keyWidth: 46),
+                      ],
+                    )
+                  : pw.SizedBox(),
+            ),
+            pw.SizedBox(width: 16),
+            kit.signature(),
+          ],
         ),
       ],
     ),

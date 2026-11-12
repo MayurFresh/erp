@@ -14,6 +14,7 @@ import { nextNumber } from '../lib/series.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { canFile, type PrefileCheck } from '../lib/prefile.ts';
+import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -429,3 +430,6 @@ export async function tdsRoutes(app: FastifyInstance) {
     return ctx.tx((tx) => tdsDefaults(tx, ctx.companyId, q.fy ?? financialYear(todayIst())));
   });
 }
+
+documentRoute('POST', '/tds/challans', { body: challanBody });
+documentRoute('POST', '/tds/challans/:id/cancel', { body: cancelBody });

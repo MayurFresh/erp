@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
 import '../../core/money.dart';
+import '../../core/pdf_brand.dart';
 import '../../core/pdf_fonts.dart';
+import '../../core/providers.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../auth/session.dart';
@@ -12,6 +14,7 @@ import 'report_export.dart';
 import 'report_models.dart';
 import 'report_pdf.dart';
 import 'report_period.dart';
+import '../../core/app_colors.dart';
 
 /// Digits line up in columns.
 const TextStyle tabularFigures = TextStyle(
@@ -215,10 +218,13 @@ class ExportActions extends ConsumerWidget {
     final e = export;
     if (e == null) return;
     try {
-      final company = ref.read(sessionProvider).value?.company?.name;
+      final company = ref.read(sessionProvider).value?.company;
       final bytes = await buildReportPdf(
         e,
-        companyName: company,
+        companyName: company?.name,
+        brand: company == null
+            ? null
+            : await loadPdfBrand(ref.read(apiClientProvider), company),
         theme: await pdfTheme(),
       );
       if (print) {
@@ -683,12 +689,12 @@ class BalanceCheck extends StatelessWidget {
   Widget build(BuildContext context) {
     final ok = isZeroAmount(difference);
     final scheme = Theme.of(context).colorScheme;
-    final color = ok ? Colors.green.shade700 : scheme.error;
+    final color = ok ? context.colors.success : scheme.error;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          ok ? Icons.check_circle : Icons.error_outline,
+          ok ? Icons.check_circle_outline : Icons.error_outline,
           color: color,
           size: 18,
         ),
