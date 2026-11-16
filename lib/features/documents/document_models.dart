@@ -83,6 +83,7 @@ class Settlement {
     'receipt' => 'Receipt',
     'payment' => 'Payment',
     'credit_note' => 'Credit note',
+    'debit_note' => 'Debit note',
     _ => kind,
   };
 
@@ -91,6 +92,7 @@ class Settlement {
     'receipt' => '/receipts/$id',
     'payment' => '/payments/$id',
     'credit_note' => '/credit-notes/$id',
+    'debit_note' => '/purchase-returns/$id',
     _ => '/',
   };
 }
@@ -129,6 +131,7 @@ class TaxLine {
     this.igst = 0,
     this.lineTotal = 0,
     this.returnedQty = 0,
+    this.returnedTaxable = 0,
   });
 
   factory TaxLine.fromJson(Json json) => TaxLine(
@@ -148,6 +151,7 @@ class TaxLine {
     igst: asDouble(json['igst']),
     lineTotal: asDouble(json['lineTotal']),
     returnedQty: asDouble(json['returnedQty']),
+    returnedTaxable: asDouble(json['returnedTaxable']),
   );
 
   static List<TaxLine>? listOrNull(Object? value) =>
@@ -175,6 +179,9 @@ class TaxLine {
   /// Invoice detail only: quantity already returned on credit notes.
   final double returnedQty;
 
+  /// Purchase bill detail only: taxable value already given back on debit notes.
+  final double returnedTaxable;
+
   double get taxTotal => cgst + sgst + igst;
 
   /// Quantity that can still be returned.
@@ -192,6 +199,7 @@ class DraftLine {
     required this.qty,
     this.rate,
     this.discountPct,
+    this.discountAmount,
     this.description,
   });
 
@@ -199,13 +207,17 @@ class DraftLine {
   final double qty;
   final double? rate;
   final double? discountPct;
+
+  /// Fixed rupee discount before tax; used instead of [discountPct].
+  final double? discountAmount;
   final String? description;
 
   Json toJson() => withoutNulls({
     'itemId': itemId,
     'qty': qty,
     'rate': rate,
-    'discountPct': discountPct,
+    'discountPct': discountAmount == null ? discountPct : null,
+    'discountAmount': discountAmount,
     'description': description,
   });
 }

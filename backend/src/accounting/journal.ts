@@ -4,12 +4,12 @@ import { conflict } from '../lib/errors.ts';
 export interface Who { tenantId: string; companyId: string; userId: string | null }
 
 export type VoucherType =
-  | 'sales' | 'purchase' | 'receipt' | 'payment' | 'credit_note' | 'expense' | 'stock' | 'transfer' | 'journal'
+  | 'sales' | 'purchase' | 'receipt' | 'payment' | 'credit_note' | 'debit_note' | 'expense' | 'stock' | 'transfer' | 'journal'
   | 'issue' | 'wages'
   | 'labour_advance' | 'contractor_advance' | 'ra_bill' | 'retention_release' | 'demand' | 'possession'
   | 'tds_challan' | 'bank_entry'
   | 'gst_payment' | 'gst_setoff' | 'tax_payment' | 'asset_capitalise' | 'depreciation' | 'asset_disposal'
-  | 'intercompany' | 'opening' | 'settlement';
+  | 'intercompany' | 'opening' | 'settlement' | 'closing';
 
 /** A journal line. A signed `amount` is a debit when positive and a credit when negative. */
 export interface JLine {

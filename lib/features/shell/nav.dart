@@ -8,6 +8,20 @@ import '../compliance/compliance_routes.dart';
 import '../pos/pos_routes.dart';
 import '../clinic/clinic_routes.dart';
 import '../job_cards/job_card_routes.dart';
+import '../quotations/quotation_routes.dart';
+import '../crm/crm_routes.dart';
+import '../pricing/pricing_routes.dart';
+import '../purchase_returns/purchase_return_routes.dart';
+import '../receivables/receivables_routes.dart';
+import '../tds_forms/tds_forms_routes.dart';
+import '../stock_tools/stock_tools_routes.dart';
+import '../claims/claims_routes.dart';
+import '../export_currency/export_currency_routes.dart';
+import '../landed_cost/landed_cost_routes.dart';
+import '../rfq/rfq_routes.dart';
+import '../platform_extras/platform_extras_routes.dart';
+import '../helpdesk/helpdesk_routes.dart';
+import '../timesheets/timesheet_routes.dart';
 import '../memberships/memberships_routes.dart';
 import '../funds/funds_routes.dart';
 import '../education/education_routes.dart';
@@ -77,7 +91,9 @@ final List<NavGroup> navGroups = [
     ),
     insightsNavEntry,
   ]),
+  NavGroup('Leads and deals', crmNavEntries),
   NavGroup('Sales', [
+    quotationNavEntry,
     salesOrderNavEntry,
     NavEntry(
       path: '/invoices',
@@ -103,6 +119,11 @@ final List<NavGroup> navGroups = [
       permission: Perm.paymentsView,
       createPermission: Perm.paymentsCreate,
     ),
+    ...receivablesNavEntries,
+    priceListNavEntry,
+    schemeNavEntry,
+    ...exportCurrencyNavEntries,
+    paymentLinksNavEntry,
   ]),
   NavGroup('Fulfilment', fulfilmentNavEntries),
   NavGroup('Purchases', [
@@ -115,6 +136,9 @@ final List<NavGroup> navGroups = [
       permission: Perm.purchasesView,
       createPermission: Perm.purchasesCreate,
     ),
+    purchaseReturnNavEntry,
+    rfqNavEntry,
+    landedCostNavEntry,
     NavEntry(
       path: '/payments',
       label: 'Payments',
@@ -157,10 +181,11 @@ final List<NavGroup> navGroups = [
       createPermission: Perm.transfersCreate,
     ),
     ...stockPlanningNavEntries,
+    ...stockToolNavEntries,
   ]),
   NavGroup('Construction', constructionNavEntries),
   NavGroup('Real estate', realEstateNavEntries),
-  NavGroup('HR and payroll', hrNavEntries),
+  NavGroup('HR and payroll', [...hrNavEntries, ...claimsNavEntries]),
   NavGroup('Restaurant', restaurantNavEntries),
   NavGroup('Manufacturing', manufacturingNavEntries),
   NavGroup('Warehouse', warehouseNavEntries),
@@ -172,11 +197,14 @@ final List<NavGroup> navGroups = [
   NavGroup('Students and fees', educationNavEntries),
   NavGroup('Hotel', hotelNavEntries),
   NavGroup('Legal practice', legalNavEntries),
+  NavGroup('Helpdesk', helpdeskNavEntries),
+  NavGroup('Timesheets', timesheetNavEntries),
   NavGroup('Online channels', channelsNavEntries),
   NavGroup('Counter billing', posNavEntries),
   NavGroup('Compliance', [
     ...complianceNavEntries,
     ...taxNavEntries,
+    ...tdsFormsNavEntries,
     ...gstFilingNavEntries,
   ]),
   NavGroup('Income tax & assets', [
@@ -204,6 +232,8 @@ final List<NavGroup> navGroups = [
   NavGroup('Controls', controlsNavEntries),
   NavGroup('Administration', [
     ...settingsNavEntries,
+    onlinePaymentsNavEntry,
+    smsNavEntry,
     ...platformNavEntries,
     NavEntry(
       path: '/users',
@@ -229,6 +259,8 @@ String? moduleOfEntry(String groupLabel, String path) {
   switch (groupLabel) {
     case 'Sales':
       return 'sales';
+    case 'Leads and deals':
+      return 'crm';
     case 'Fulfilment':
       return 'fulfilment';
     case 'Purchases':
@@ -261,6 +293,10 @@ String? moduleOfEntry(String groupLabel, String path) {
       return 'hotel';
     case 'Legal practice':
       return 'legal';
+    case 'Helpdesk':
+      return 'helpdesk';
+    case 'Timesheets':
+      return 'timesheets';
     case 'Online channels':
       return 'channels';
     case 'Counter billing':
@@ -283,7 +319,13 @@ String? moduleOfEntry(String groupLabel, String path) {
     '/gst/',
     '/filings',
   ];
-  const tds = ['/tds', '/tds-sections'];
+  const tds = [
+    '/tds',
+    '/tds-sections',
+    '/tds-returns',
+    '/tds-certificates',
+    '/tds-map',
+  ];
   const incomeTax = [
     '/tax-payments',
     '/tax-calculators',
@@ -428,10 +470,14 @@ bool moduleAllows(String path, BusinessProfile profile) {
 }
 
 /// Index of the entry that owns [location] in [entries], or `null`.
+/// The longest matching path wins, so `/crm/leads` selects Leads, not `/crm`.
 int? navIndexFor(List<NavEntry> entries, String location) {
+  int? best;
   for (var i = 0; i < entries.length; i++) {
     final path = entries[i].path;
-    if (location == path || location.startsWith('$path/')) return i;
+    if (location == path || location.startsWith('$path/')) {
+      if (best == null || path.length > entries[best].path.length) best = i;
+    }
   }
-  return null;
+  return best;
 }

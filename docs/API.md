@@ -3288,3 +3288,590 @@ Permissions: `education.exams` (enter marks and read results for the classes whe
 | `exam-settings` | Also `coGrades[{grade,label}]` (default A Very good, B Good, C Needs work; 2 to 6 grades). |
 
 Results and report-card data now include `remark` and `coScholastic[{area,grade}]` for each student.
+
+# v1.14 Leads and deals (module `crm`), quotations and contact persons
+
+Migration 044. CRM routes sit under `/crm` and need module `crm` (403 `MODULE_DISABLED` otherwise). Quotations and contact persons are core sales and are always open. Money is never posted from CRM; quotations become a sales order or an invoice through the existing services. Dates are `YYYY-MM-DD`, times are ISO 8601 with offset. Amounts are numbers in rupees with two decimals. Lists return `{data, total}` and take `limit`, `offset`, `q`.
+
+Permissions: `crm.view` (read), `crm.manage` (add and work leads, deals and follow-ups), `crm.all` (see and reassign everyone's records), `crm.settings` (stages, lost reasons, targets, IndiaMART key). Without `crm.all` a user sees leads, deals and follow-ups they own plus leads with no owner; `ownerId` filters other than their own give 403. `quotations.view`, `quotations.manage`.
+
+## Settings, stages and targets
+
+- `GET /crm/settings` (`crm.view`) returns `{defaultOwnerId, lostReasons[], hasIndiamartKey, indiamartLastPullAt, indiamartLastError}`. The key is never returned.
+- `PATCH /crm/settings` (`crm.settings`) body `{defaultOwnerId?, lostReasons?[1..20 strings of 1..60], indiamartKey? (string, or null to remove)}`. The key is sealed like channel credentials.
+- `GET /crm/stages` (`crm.view`) returns `{data: [{id, name, probability, kind (open|won|lost), sort, isActive}]}` in `sort` order. A company with no stages gets the defaults on first read: New 10, Contacted 20, Quotation sent 50, Negotiation 70 (all `open`), Won 100 (`won`), Lost 0 (`lost`).
+- `PUT|PATCH /crm/stages` (`crm.settings`) body `{stages: [{id?, name, probability, kind}]}` replaces the list in the given order. Exactly one `won` and one `lost` stage, at least one `open`. A stage left out that has deals becomes `isActive: false` instead of being deleted. 400 on a broken rule.
+- `GET /crm/targets?month=YYYY-MM` (`crm.view`) returns `{month, rows: [{userId|null, userName, amount}]}`; `userId: null` is the company target.
+- `PUT|PATCH /crm/targets` (`crm.settings`) body `{month: 'YYYY-MM', rows: [{userId|null, amount}]}` upserts; amount 0 removes the row.
+- `GET /crm/owners` (`crm.view`) returns `{data: [{id, name}]}`: active users who hold `crm.manage`.
+
+## Leads
+
+Lead JSON: `{id, name, companyName, phone, email, city, stateCode, requirement, estimatedValue, source, sourceRef, ownerId, ownerName, status, lostReason, partyId, partyName, dealId, firstContactAt, convertedAt, nextFollowUp: {id, kind, subject, dueAt}|null, createdAt, updatedAt}`.
+Sources: `walk_in, phone, website, indiamart, justdial, tradeindia, referral, whatsapp, social, other`. Status: `new, contacted, qualified, converted, lost`.
+
+- `GET /crm/leads?status=&source=&ownerId=&from=&to=` (`crm.view`). Newest first. `status=open` means new, contacted or qualified.
+- `POST /crm/leads` (`crm.manage`) body `{name, companyName?, phone?, email?, city?, stateCode?, requirement?, estimatedValue?, source?, sourceRef?, ownerId?, force?}`. Needs a phone or an email. Owner defaults to the settings default owner, else the caller. 409 `DUPLICATE_LEAD` with `{existing: {id, name, status}}` when an open lead has the same phone (last 10 digits) or email, unless `force: true`. 201 with the lead.
+- `GET /crm/leads/:id` returns the lead plus `activities[]` (newest first) and `matches: [{partyId, name, phone, gstin, balance}]`: customers with the same phone, email or company name.
+- `PATCH /crm/leads/:id` (`crm.manage`) any create field plus `status (new|contacted|qualified)` and `expectedUpdatedAt` (409 `STALE_EDIT`). Converted and lost leads cannot be edited (409 `LEAD_CLOSED`).
+- `POST /crm/leads/:id/convert` (`crm.manage`) body `{partyId? | party?: {name, phone?, email?, gstin?, stateCode?}, deal?: {title, value, stageId?, expectedClose?}}`. Uses `partyId` when given, else creates the customer from `party` (defaults from the lead). Creates a deal unless `deal` is `null`: stage defaults to the first open stage; open follow-ups move to the deal. Lead becomes `converted`. Returns `{lead, partyId, dealId}`. 409 `LEAD_CLOSED`.
+- `POST /crm/leads/:id/lost` (`crm.manage`) body `{reason}`; deletes its open (not done) follow-ups. `POST /crm/leads/:id/reopen` sets it back to `contacted`.
+
+## Deals
+
+Deal JSON: `{id, title, partyId, partyName, contactId, leadId, stageId, stageName, stageKind, value, probability (own value or null), effectiveProbability, weightedValue, expectedClose, ownerId, ownerName, status (open|won|lost), lostReason, wonAt, lostAt, stageChangedAt, daysInStage, notes, nextFollowUp|null, followUpOverdue (bool), partyBalance: {owes, overdue, oldestOverdueDays}|null, quotationCount, createdAt, updatedAt}`. `weightedValue = value x effectiveProbability / 100`; `effectiveProbability` is the deal's own probability, else the stage's.
+
+- `GET /crm/deals?status=&stageId=&ownerId=&partyId=` (`crm.view`). Default `status=open`. Sorted by next follow-up, then value.
+- `GET /crm/pipeline?ownerId=` (`crm.view`) returns `{openCount, openValue, weightedValue, stages: [{stageId, name, probability, count, value, weightedValue}]}` for active open stages in order.
+- `POST /crm/deals` (`crm.manage`) body `{title, partyId? , leadId?, contactId?, stageId?, value, probability?, expectedClose?, ownerId?, notes?}`. Needs a party or a lead. 201.
+- `GET /crm/deals/:id` returns the deal plus `activities[]`, `quotations: [{id, number, kind, status, total, quoteDate}]`, `stageHistory: [{fromStage, toStage, changedAt, changedBy}]`.
+- `PATCH /crm/deals/:id` (`crm.manage`) any create field except `stageId`, plus `expectedUpdatedAt`. 409 `DEAL_CLOSED` on won or lost deals.
+- `POST /crm/deals/:id/stage` body `{stageId}`: open stages only; records history and `stageChangedAt`. Moving to the won or lost stage must use the routes below (400).
+- `POST /crm/deals/:id/won` body `{value?}`; `POST /crm/deals/:id/lost` body `{reason}`; `POST /crm/deals/:id/reopen` (back to the last open stage). Won and lost delete open (not done) follow-ups and record history. Shared rules are in `backend/src/modules/crm-common.ts`.
+
+## Follow-ups (activities)
+
+Activity JSON: `{id, kind (call|meeting|visit|task|note|whatsapp|email), subject, notes, dueAt, doneAt, outcome, durationMin, leadId, dealId, partyId, title (lead, deal or party name), value (deal value or lead estimate), source (lead source)|null, phone, ownerId, ownerName, overdue (bool), createdAt}`.
+
+- `GET /crm/activities?leadId=&dealId=&partyId=&ownerId=&when=overdue|today|upcoming|done` (`crm.view`). Overdue: not done and due before now. Today: not done and due today (IST). Upcoming: due after today.
+- `POST /crm/activities` (`crm.manage`) body `{kind, subject, notes?, dueAt?, doneAt?, outcome?, durationMin?, leadId?|dealId?|partyId?, ownerId?}`. A `note` is saved as done. Logging a done call, meeting, visit, WhatsApp or email on a `new` lead sets it to `contacted` and sets `firstContactAt` once.
+- `PATCH /crm/activities/:id` (`crm.manage`) `{subject?, notes?, dueAt?, ownerId?}` while not done. `DELETE /crm/activities/:id` while not done.
+- `POST /crm/activities/:id/done` (`crm.manage`) body `{outcome, notes?, durationMin?, next?: {kind, subject, dueAt}}`. Marks it done (same first-contact rule) and optionally adds the next follow-up on the same lead or deal. Returns `{done, next|null}`. 409 `ALREADY_DONE`.
+
+## Today and numbers
+
+- `GET /crm/today?ownerId=` (`crm.view`; `ownerId=all` needs `crm.all`; default the caller) returns `{counts: {dueToday, overdue, newLeads}, overdue[], today[], upcoming[] (next 7 days, max 20), month: {month, target, won, openCount, openValue, weightedValue}}`. Lists hold activity JSON plus `partyBalance` as on deals. `newLeads` counts leads created in the last 24 hours with no follow-up done. `won` is the value of deals won this month; `target` is the user's target, or the company target for `all`.
+- `GET /crm/stats?from=&to=&ownerId=` (`crm.view`). Default this month. Returns:
+  - `openCount, openValue, weightedValue` (now), `wonCount, wonValue, lostCount` (closed in range),
+  - `winRate` = won / (won + lost) x 100, null when none closed,
+  - `avgDealSize` = wonValue / wonCount, `avgCycleDays` = mean days from deal created to won,
+  - `target, achievement (= wonValue), gap (= max(target - wonValue, 0)), achievementPct, coverage (= openValue / gap, null when gap is 0)`,
+  - `avgResponseHours` = mean hours from lead created to `firstContactAt`, for leads created in range,
+  - `stageConversion: [{stageId, name, entered, advanced, rate}]`: deals that entered each open stage in range and how many later reached a later stage or won,
+  - `bySource: [{source, leads, converted, rate}]`, `lostReasons: [{reason, count}]`, `byOwner: [{ownerId, name, wonValue, wonCount, openValue}]` (only with `crm.all`).
+- `GET /crm/parties/:id/overview` (`crm.view`) returns `{party: {id, name, phone, email, gstin}, owes, overdue, oldestOverdueDays, creditLimit, creditUsedPct, sales12m, avgDaysToPay (paid invoices in the last 12 months, null if none), lastInvoiceDate, openDeals[], contacts[], timeline[]}`. Timeline items `{at, kind (lead|activity|deal|quotation|invoice|payment|credit_note), title, detail, refId, amount}`, newest first, at most 60.
+
+## IndiaMART enquiries
+
+- `POST /crm/indiamart/pull` (`crm.settings`) fetches enquiries from the IndiaMART Lead Manager pull API with the saved key, from the last pull time (at most 7 days back) to now, and adds each as a lead with source `indiamart` and `sourceRef` = the enquiry's unique query id; repeats are skipped. Returns `{added, skipped, lastPullAt}`. 409 `NO_INDIAMART_KEY`; 429 `TOO_SOON` within 5 minutes of the last pull; 502 `INDIAMART_ERROR` with IndiaMART's message (also saved as `indiamartLastError`).
+- Website forms: an API key holding `crm.manage` can call `POST /crm/leads` with `source: website`.
+
+## Contact persons (core, `parties.view` / `parties.edit`)
+
+- `GET /parties/:id/contacts` returns `{data: [{id, name, designation, phone, email, isPrimary, notes}]}`, primary first.
+- `POST /parties/:id/contacts`, `PATCH /parties/:id/contacts/:contactId`, `DELETE /parties/:id/contacts/:contactId`. Body `{name, designation?, phone?, email?, isPrimary?, notes?}`. Setting `isPrimary` clears it on the others.
+
+## Quotations and proforma invoices (core, `quotations.view` / `quotations.manage`)
+
+Quotation JSON: `{id, kind (quotation|proforma), number, fy, status (draft|sent|accepted|declined|converted|cancelled), expired (bool: valid date passed while draft or sent), locationId, locationName, partyId, partyName, contactId, dealId, quoteDate, validUntil, placeOfSupply, subtotal, taxTotal, total, notes, terms, revisionOf, salesOrderId, invoiceId, sentAt, acceptedAt, declinedAt, declineReason, createdBy {id, name}, createdAt, updatedAt}`; detail adds `lines: [{id, lineNo, itemId, itemName, unit, hsn, description, qty, rate, discountPct, discountAmount, gstRate, taxable, tax, total}]` and `taxSplit {cgst, sgst, igst}`.
+
+- `GET /quotations?status=&kind=&partyId=&dealId=&from=&to=`.
+- `POST /quotations` body `{kind?, locationId, partyId, contactId?, dealId?, quoteDate?, validUntil? (default quote date + 15 days), placeOfSupply?, notes?, terms?, lines: [{itemId, qty, rate?, discountPct?, discountAmount?, description?}] (1..200)}`. Number from series `QTN` (quotation) or `PI` (proforma). Stock and service items are both allowed. Totals use the invoice GST rules. When `dealId` is set and the deal is in an open stage before "Quotation sent" (by sort), the deal moves to the first stage at or after 50% probability.
+- `GET /quotations/:id`. `PATCH /quotations/:id` same body plus `expectedUpdatedAt`, while `draft` or `sent` (409 `QUOTATION_LOCKED`).
+- `POST /quotations/:id/send` marks `sent` and sets `sentAt` (sharing happens in the app). `POST /quotations/:id/accept`, `POST /quotations/:id/decline` `{reason}`, `POST /quotations/:id/cancel`.
+- `POST /quotations/:id/revise` copies it to a new draft with a new number and `revisionOf`; the old one becomes `cancelled`. 201 with the new quotation.
+- `POST /quotations/:id/convert` body `{to: 'sales_order'|'invoice', locationId?}`. Needs `sales_orders.manage` or `invoices.create` too. A sales order takes only stock items (409 `NOT_STOCK_ITEMS` otherwise); a fixed-amount discount goes to the order as the equivalent percent. An invoice always uses the customer's state as place of supply, so a quotation made for another place gets 409 `PLACE_OF_SUPPLY_DIFFERS`. Status becomes `converted` with the new document's id; a linked open deal is marked won at the quotation total. Returns `{quotation, salesOrderId|null, invoiceId|null}`. 409 `QUOTATION_LOCKED` when declined, cancelled or already converted.
+
+# v1.14 Purchase returns and debit notes
+
+## Purchase returns (core, `purchases.view` / `purchases.create` / `purchases.cancel`)
+
+A business returns goods to a vendor, or claims a price reduction, against one posted purchase bill. Each return is a debit note numbered from series `debit_note`, prefix `DN` (for example `DN/26-27/00001`).
+
+Return JSON: `{id, number, fy, status (posted|cancelled), kind (goods|price), reason, returnDate, purchaseId, purchaseNumber, supplierInvoiceNo, partyId, partyName, partyGstin, locationId, locationName, placeOfSupply, supplyType (intra|inter), reverseCharge, subtotal, cgst, sgst, igst, taxTotal, roundOff, total, tdsReversed, appliedAmount, stockValue, createdBy {id, name}, createdAt, cancelledAt, cancelReason}`. Detail adds `lines: [{id, lineNo, purchaseLineId, itemId, itemName, description, hsnCode, qty, unit, gstRate, taxableValue, cgst, sgst, igst, lineTotal, stockValue}]`.
+
+- `GET /purchase-returns?status=&kind=&purchaseId=&partyId=&from=&to=&q=` returns `{data, total}`, newest first.
+- `GET /purchase-returns/:id`.
+- `POST /purchase-returns` body `{purchaseId, returnDate? (default today; not before the bill date, not in the future), reason (3..300), kind, lines: [{purchaseLineId, qty?, amount?}] (1..200)}`.
+  - `kind: goods`: each line gives `qty` (more than zero). Stock of tracked items leaves the bill's location at the bill's cost rate. Taxable value returned is the line's taxable value in proportion to the quantity; the last of the quantity takes the remainder.
+  - `kind: price`: each line gives `amount`, the reduction before GST. Tax is worked out on it at the line's GST rate. No stock moves.
+  - Each purchase line can appear once. Tax uses the bill's supply type (CGST and SGST for intra-state, IGST for inter-state), the line's GST rate, and the bill's reverse-charge flag.
+- `POST /purchase-returns/:id/cancel` body `{reason}` (3..300). Reverses stock, journal and the bill's applied amount; `409 ALREADY_CANCELLED` if done.
+
+Rules and errors:
+- Only a `posted` bill can be returned (`409 BILL_CANCELLED`).
+- A line cannot be returned beyond what was billed minus what posted returns already took: quantity for `goods`, taxable value for both kinds. `409 OVER_RETURN` with `{lineNo, billed, returned, left}`.
+- Goods that are not on hand at the bill's location: `409 INSUFFICIENT_STOCK` (same payload as other stock issues).
+- Books locked on the return date: `409 PERIOD_LOCKED`; on cancel, the same check applies to today's date.
+- A purchase bill that has a posted return cannot be cancelled (`409 HAS_RETURNS`); cancel the return first.
+
+Posting. The journal is the bill's entry reversed in proportion: debit the vendor (payables, with the party) for the total less `tdsReversed`; debit TDS payable for `tdsReversed` (the bill's TDS in proportion to the taxable value returned; the TDS register is not changed); credit inventory for the stock value removed; credit purchase price variance for the part of the returned taxable value that is not stock cost (a `price` return on a stocked item, or a GRN-billed line whose cost differs); credit purchases (non-stock) for service and non-stock items; credit input CGST, SGST or IGST for the tax; credit round-off. A reverse-charge bill is reversed the same way: the input tax is credited and the reverse-charge payable is debited by the same tax, and the vendor is debited the taxable value only. Voucher type `debit_note`.
+
+Effects elsewhere:
+- The bill's `amountPaid` rises by `appliedAmount` = the smaller of the vendor debit and what is still unpaid on the bill, so the bill, the payables ageing and the MSME dues fall. The part above that (bill already paid) stays as a debit balance on the vendor, to be refunded or set against later bills. The bill detail `settlements` list shows it as `{kind: 'debit_note', id, number, date, amount}`.
+- GSTR-3B: posted returns dated in the period reduce ITC. A return on a normal bill reduces `itc.others` (4A(5)) and a return on a reverse-charge bill reduces `itc.rcm` (4A(3)) and `inwardRcm`, each by the returned taxable value and tax. The Rule 37 (180 day) reversal treats the applied amount as settled.
+- Audit rows: entity `purchase_return`, actions `create` and `cancel`.
+
+`GET /purchases/:id` lines now also carry `returnedQty` and `returnedTaxable` (what posted debit notes already took), so a screen can show what is left to return.
+
+Errors common to all routes: `400` validation, `403` missing permission, `404` unknown id or location out of scope.
+
+## Customer credit limit (core)
+
+`parties.creditLimit` is now enforced. A limit of 0 means no limit.
+
+- `POST /invoices` and `POST /sales-orders` accept `allowOverLimit?: boolean`. When the party has `creditLimit > 0` and `owes + thisDocument > creditLimit`, the call fails with `409 CREDIT_LIMIT_EXCEEDED` and `details {creditLimit, owes, thisDocument, over}`; nothing is saved.
+  - `owes` = the party's ledger receivable balance (never below 0) plus the value still to be invoiced on its open sales orders (statuses `draft`, `confirmed`, `picking`, `packed`, `partially_dispatched`; open quantity x rate less discount plus GST).
+  - `thisDocument` = the new document's total. `over = owes + thisDocument - creditLimit`.
+- `allowOverLimit: true` lets the document through only when the user holds `parties.credit_override`; otherwise `403 FORBIDDEN`. An override writes an audit row (entity `party`, action `credit_override`) with the figures.
+- `POST /quotations/:id/convert` (to invoice or sales order) is checked the same way against the quotation total, with the same `allowOverLimit` body flag.
+- Not checked: counter billing (POS), job cards, memberships, hotel, clinic, school, restaurant, warehouse pick invoices, order dispatch invoices and channel orders. They bill through the shared code without the option.
+- New permission `parties.credit_override` ("Bill customers over their credit limit"), granted to Owner and Company Admin.
+
+# v1.14 Statements, payment reminders and recurring invoices
+
+Core features, not modules. No module flag. Migration 046.
+
+## Party statement (extends `GET /parties/:id/statement`)
+
+`GET /parties/:id/statement?from=&to=` (`parties.view` and `payments.view` or `accounts.view`). Default range is the financial year to date. The existing `Ledger` fields are unchanged (`accountId, accountName, from, to, openingBalance, closingBalance, totalDebit, totalCredit, lines`); these are added:
+
+- `lines[]` also carry `type` (same as `voucherType`: `sales`, `receipt`, `credit_note`, `purchase`, `payment`, `journal` ...) and `dueDate` (YYYY-MM-DD for `sales` and `purchase` rows, else null). `debit`, `credit` and `balance` are debit-positive: a positive balance means the party owes the company.
+- `party: {id, name, type, gstin, phone, email, address}`, `doNotRemind` (bool).
+- `openBills[]` as of `to`: posted invoices (customers) and purchase bills (vendors) dated on or before `to` that still have an amount due: `{type (invoice|purchase), id, number, date, dueDate, total, amountDue, daysOverdue (0 when not due), interestDue (number|null)}`. A `both` party gets both kinds.
+- `ageing: {basis (receivable|payable), notDue, d1_30, d31_60, d61_90, d90plus, total}` over the open bills of the party's main side (vendors: bills; customers and `both`: invoices), by days past due at `to`. `payablesAgeing` has the same shape for a `both` party, else null. Same bucket names as `GET /reports/ageing`. Amounts due use the current paid amounts.
+- `overdueInterestPct` (company setting, yearly) and `interestTotal`. `interestDue` of an overdue invoice = `amountDue x pct / 100 x daysOverdue / 365`, rounded to 2 decimals. It is only shown, never posted. Purchase bills never carry interest (null). `interestTotal` is 0 when the setting is 0.
+- `openTotal`: sum of the open bills of the main side. It can differ from `closingBalance` by advances and journal entries that are not matched to a bill.
+
+## Payment reminders (core, `payments.view` to read, `payments.create` to change or run)
+
+Settings `ReminderSettings`: `{enabled (default false), daysBefore (int 1..30 or null for none, default 3), onDueDate (default true), repeatEveryDays (1..90, default 7), maxRepeats (0..12, default 3), channels (subset of email|whatsapp, default both), overdueInterestPct (0..60, default 0), updatedAt}`.
+
+- `GET /reminders/settings`. `PUT` and `PATCH /reminders/settings` (any field). 200 with the settings.
+- `PATCH /parties/:id/reminders` (`parties.edit`) body `{doNotRemind: bool}` returns `{partyId, doNotRemind}`. `GET /reminders/excluded` returns `{data: [{partyId, name, phone, email}]}` of parties with the flag.
+- `POST /reminders/run` runs the same job now for the caller's company and returns `{enabled, parties, invoices, queued, skipped}`. Safe to repeat: nothing is sent twice.
+- `GET /reminders/log?partyId=&limit=&offset=` returns `{data: [{id, partyId, partyName, invoiceId, invoiceNumber, step, stepLabel, stepDate, runDate, channels[], status (queued|skipped), note, delivery (sent|pending|failed|none), amount, createdAt}], total}`, newest first.
+
+Schedule per unpaid invoice (customer invoices only): step `before` on due date minus `daysBefore`, step `due` on the due date, steps `after_1` to `after_N` on due date plus k x `repeatEveryDays` (N = `maxRepeats`). A step counts only when its date is after the invoice date. The daily job (10:00 IST, plus `POST /reminders/run`) takes, for each unpaid invoice, the latest step whose date is today or up to 3 days back and that is not in the log. A step is logged once per invoice (unique `invoiceId` + `step`), so it is never sent twice. One reminder per party per day: all due invoices of the party go in one message built from all its open invoices (count, total, oldest due date), through the `payment_reminder` template and the notification outbox, on the enabled channels that the party has an address for. A party with no address for the enabled channels is logged `skipped` with note "No email or phone". Parties with `doNotRemind` are never picked. Delivery uses the configured drivers (`log` in development).
+
+## Recurring invoices (core, `invoices.view` to read, `invoices.create` to change)
+
+Template JSON: `{id, name, partyId, partyName, locationId, locationName, lines: [{itemId, itemName, qty, rate|null, discountPct, description}], frequency (weekly|monthly|quarterly|half_yearly|yearly), startDate, endDate|null, maxRuns|null, dayOfMonth|null, status (active|paused|ended), nextDate|null, runsDone, autoSend (bool), sendChannels[] (email|whatsapp), notes, lastError|null, lastRunAt|null, createdBy {id, name}, createdAt, updatedAt}`. A null `rate` uses the item's sale price on the day of creation.
+
+- `GET /recurring-invoices?status=&partyId=` returns `{data, total}`.
+- `POST /recurring-invoices` body `{name, partyId, locationId, lines (1..50: {itemId, qty, rate?, discountPct?, description?}), frequency, startDate, endDate?, maxRuns?, dayOfMonth? (1..31, not for weekly), autoSend?, sendChannels?, notes?}`. 201. A start date in the past is allowed: the missed periods are invoiced on the next run (at most 12 per template per run).
+- `GET /recurring-invoices/:id` adds `invoices: [{period, invoiceId, number, invoiceDate, total, amountPaid, status, createdAt}]` newest first and `upcoming: [dates]` (next 3).
+- `PATCH /recurring-invoices/:id` same fields, optional. `frequency`, `startDate` and `dayOfMonth` are locked once an invoice was created (409 `SCHEDULE_LOCKED`). Ended templates cannot be edited (409 `TEMPLATE_ENDED`).
+- `POST /recurring-invoices/:id/pause`; `POST /recurring-invoices/:id/resume` skips the periods missed while paused (next date is the first one on or after today); `POST /recurring-invoices/:id/end` (final).
+- `POST /recurring-invoices/run` (`invoices.create`) runs the job now and returns `{templates, created: [{templateId, name, period, invoiceId, number}], errors: [{templateId, name, message}]}`.
+
+Rules: the period is the scheduled date; an invoice is dated on its period. A unique key on template and period makes re-runs safe. Monthly and longer frequencies use `dayOfMonth` (default: the day of the start date); a day the month lacks falls back to the month's last day (31 gives 28 or 29 in February), computed from the start each time so 31 does not drift to 28. After the last period (past `endDate`, or `maxRuns` reached) the template becomes `ended`. An error on one template (stock, closed books, inactive item) is saved in `lastError`, leaves its date unchanged and does not stop the others. Invoices are created as the template's creator through the normal invoice rules. With `autoSend`, the invoice is queued to the party by email or WhatsApp (template `recurring_invoice`). The daily job runs at 06:00 IST.
+
+Permissions: no new keys. Reminders use `payments.view` / `payments.create`; recurring invoices use `invoices.view` / `invoices.create`.
+
+# v1.15 additions: price lists, customer prices, schemes
+
+Permissions: `pricing.manage` edits lists, customer prices and schemes (Owner and Company Admin get it); `items.view` reads them and calls resolve. Prices are core sales, not a module, so the routes are always open.
+
+## Price lists
+
+- `GET /price-lists?includeInactive=` returns `{data:[{id, name, mode, adjustPct, validFrom, validTo, isActive, notes, itemCount, partyCount}]}`.
+- `POST /price-lists` body `{name, mode: "fixed"|"percent", adjustPct?, validFrom?, validTo?, isActive?, notes?}`. `fixed` lists price only the items listed; any other item falls back to its sale price. `percent` lists price every item as the sale price moved by `adjustPct` (-100 to 1000; -10 is ten percent off), unless the item has its own row.
+- `GET /price-lists/:id` returns the list with `items:[{id, itemId, itemName, sku, minQty, rate}]`. `PATCH /price-lists/:id` changes the header fields. `DELETE /price-lists/:id` (409 `PRICE_LIST_IN_USE` while a party uses it; deactivate instead).
+- `PUT` or `PATCH /price-lists/:id/items` body `{items:[{itemId, minQty?, rate}]}` replaces all rows. `minQty` (default 1) makes a quantity slab: from that quantity the rate applies. One row per item and `minQty`.
+- A party carries `priceListId` (nullable) on `POST /parties`, `PATCH /parties/:id` and in every party response.
+
+## Customer prices
+
+- `GET /customer-prices?partyId=` returns `{data:[{id, partyId, itemId, itemName, sku, minQty, rate, validFrom, validTo}]}`.
+- `PUT` or `PATCH /customer-prices` body `{partyId, items:[{itemId, minQty?, rate, validFrom?, validTo?}]}` replaces that party's rows.
+
+## Schemes
+
+- `GET /price-schemes`, `POST /price-schemes`, `PATCH /price-schemes/:id`, `DELETE /price-schemes/:id`.
+- Body `{name, kind: "free_qty"|"slab_discount", itemId, validFrom?, validTo?, isActive?}` plus, for `free_qty`, `buyQty` and `freeQty` and optional `freeItemId` (default the same item): every `buyQty` bought earns `freeQty` free. For `slab_discount`, `minQty` and `discountPct`: from that quantity the line gets that percent off.
+
+## Resolve
+
+- `GET /prices/resolve?partyId=&itemId=&qty=&date=` (`partyId` optional, `qty` default 1, `date` default today) returns `{itemId, qty, rate, discountPct, source, priceListName, freeQty, freeItemId}`.
+- `POST /prices/resolve` body `{partyId?, date?, lines:[{itemId, qty}]}` returns `{data:[...same shape per line, in order]}`. At most 200 lines.
+- Order: customer price (highest `minQty` not above qty, dates in range), then the party's price list (active, dates in range: an item row slab, else the percent rule), then the item's sale price. `source` is `customer`, `price_list` or `item`; it is `scheme` when the rate came from the item and a scheme gave a discount or free quantity. `discountPct` and `freeQty` come from the best matching scheme (largest discount, largest free quantity). `priceListName` is set when a list set the rate.
+- Invoices, sales orders and quotations: a line that omits `rate` gets the resolved `rate` instead of the item's sale price (document date is the date). The server does not apply scheme discounts or add free lines; the forms read `discountPct` and `freeQty` from resolve and add a separate zero-rate line for free goods. POS stays on the item price.
+
+# Helpdesk, service contracts and timesheets (migration 055)
+
+Modules: `helpdesk` (tickets and service contracts, route prefixes `helpdesk` and `service-contracts`) and `timesheets` (prefix `timesheets`). A company without the module gets 403 `MODULE_DISABLED`. Listed on it_services, consultant, corporate types and general (both); electronics, garage, auto_parts, manufacturer (helpdesk); ca_firm, advocate, architect, freelancer, interior, contractor (timesheets).
+
+Permissions: `helpdesk.view`, `helpdesk.manage` (create, reply, assign, change status), `helpdesk.settings` (hours, SLA, auto-close); `service_contracts.view`, `service_contracts.manage`; `timesheets.log` (own entries), `timesheets.view` (everyone's entries and reports), `timesheets.approve`, `timesheets.bill` (rates, settings, bill unbilled time). Owner and Company Admin get all.
+
+## Helpdesk settings
+
+`HelpdeskSettings`: `{hoursMode (24x7|business, default business), workDays (ints 1..7, Monday = 1, default [1..6]), startTime (HH:MM, 09:00), endTime (18:00), autoCloseDays (0..90, 0 = off, default 7), notifyCustomer (default true), renewalDays (1..120, default 30), sla: {low|medium|high|urgent: {firstResponseHours, resolutionHours}}, updatedAt}`. Default SLA: low 24/120, medium 8/48, high 4/24, urgent 1/8 hours. Business hours are in IST.
+- `GET /helpdesk/settings` (`helpdesk.view`). `PUT` and `PATCH /helpdesk/settings` (`helpdesk.settings`) any field; `sla` may carry some priorities only.
+
+## Tickets
+
+Ticket JSON: `{id, number (TKT/yy-yy/00001), partyId, partyName, contactName, contactPhone, subject, description, channel (phone|email|whatsapp|walk_in|portal), category|null, priority (low|medium|high|urgent), status (new|open|waiting|resolved|closed), itemId, itemName, serialNo, invoiceId, invoiceNumber, contractId, contractNumber, covered (bool: linked to an active contract), assigneeId, assigneeName, firstResponseDue, resolutionDue, firstResponseAt, resolvedAt, closedAt, response {state (met|pending|breached), minutesLeft|null}, resolution {same}, createdBy {id,name}, createdAt, updatedAt}`. `minutesLeft` is wall-clock minutes to the due time (negative when late) while pending.
+- `GET /helpdesk/tickets?status=&priority=&assigneeId=&partyId=&category=&channel=&open=true&breached=true&mine=true&q=&limit=&offset=` returns `{data, total}`, open tickets first by earliest resolution due.
+- `POST /helpdesk/tickets` (`helpdesk.manage`) body `{partyId, subject, description?, channel, category?, priority?, contactName?, contactPhone?, itemId?, serialNo?, invoiceId?, contractId?, assigneeId?}`. 201. If no `contractId` and an active contract of the party covers the serial or item, it is linked. Due times are computed from the settings at creation and again when priority changes. The customer gets a `ticket_update` message (acknowledgement) when `notifyCustomer`.
+- `GET /helpdesk/tickets/:id` adds `messages: [{id, kind (reply|note|customer|system), body, author {id,name}|null, files [{id,name,url}], createdAt}]` oldest first.
+- `PATCH /helpdesk/tickets/:id` (`helpdesk.manage`) any of subject, description, category, priority, assigneeId (null to unassign), itemId, serialNo, invoiceId, contractId, contact fields, `expectedUpdatedAt` (409 `STALE_EDIT`).
+- `POST /helpdesk/tickets/:id/messages` body `{kind (reply|note|customer), body, fileIds? (max 8)}`. `reply` goes to the customer (queued through the notification outbox) and sets `firstResponseAt` the first time; `note` is internal; `customer` logs what the customer said and moves a `waiting` ticket back to `open`. A closed ticket takes no messages (409 `CLOSED`).
+- `POST /helpdesk/tickets/:id/status` body `{status}`. Allowed: new to open|waiting|resolved|closed, open to waiting|resolved|closed, waiting to open|resolved|closed, resolved to open|closed, closed to open (reopen). `resolved` sets `resolvedAt` and tells the customer; reopening clears `resolvedAt`. Moving off `new` by any staff reply or status change also sets `firstResponseAt` when it is empty only for replies, not status changes. Other moves 409 `BAD_TRANSITION`.
+- `POST /helpdesk/run` (`helpdesk.manage`) runs the daily job now: closes tickets resolved more than `autoCloseDays` days ago (system message), and sends renewal reminders. Returns `{closed, reminders}`. The daily job `helpdesk.daily` runs at 07:00 IST.
+- `GET /helpdesk/reports/summary?from=&to=` (`helpdesk.view`; dates on ticket creation, default last 30 days): `{openByAge: [{bucket (0-1d|2-3d|4-7d|8-14d|15d+), count}], breaches: {response, resolution, tickets: [{id, number, subject, partyName, kind, dueAt}]}, avgFirstResponseHours|null, avgResolutionHours|null, byCategory: [{category, total, open, breached}], byAgent: [{assigneeId, name, total, open, resolved, avgResolutionHours|null}]}`. Hours are wall-clock.
+
+## Service contracts
+
+Contract JSON: `{id, number (AMC/yy-yy/00001), partyId, partyName, title, startDate, endDate, value, billing (upfront|periodic), billFrequency (monthly|quarterly|half_yearly|yearly)|null, visitFrequency (none|monthly|quarterly|half_yearly|yearly), serviceItemId, serviceItemName, locationId, status (active|expired|cancelled|renewed), daysLeft, renewalDue (bool: active and within renewalDays of the end), renewedFromId, renewedToId, notes, assets [{id, itemId, itemName, serialNo, description}], billedAmount, createdAt, updatedAt}`. `expired` is shown when the end date has passed on an `active` contract.
+- `GET /service-contracts?status=&partyId=&expiringInDays=&q=` returns `{data, total}`. `POST` (`service_contracts.manage`) body `{partyId, title, startDate, endDate, value, billing, billFrequency? (required for periodic), visitFrequency?, serviceItemId (a service item used for the bills), locationId?, assets? [{itemId?, serialNo?, description?}], notes?}`; end date after start. Creating generates the preventive visits.
+- `GET /service-contracts/:id` adds `visits[]`, `bills [{period, invoiceId, number, amount, date}]`, `links [{refType (ticket|job_card), refId, label}]`.
+- `PATCH /service-contracts/:id` title, notes, endDate, assets, visitFrequency (regenerates only not-yet-done visits), value (only before any bill). Cancelled and renewed contracts are locked (409 `LOCKED`).
+- `POST /service-contracts/:id/bill` body `{upTo?}`: upfront contracts get one invoice for the full value (period `upfront`); periodic contracts get one invoice per period due on or before `upTo` (default today), the value split evenly with the last period taking the rounding. Invoices go through the normal invoice rules (GST of the service item). A period is billed once (unique key), so repeats are safe. Returns `{created: [{period, invoiceId, number, amount}], skipped}`. The invoice is dated on the period date, or today when the period is in the past.
+- `POST /service-contracts/:id/cancel` body `{reason}`; pending visits are dropped.
+- `POST /service-contracts/:id/renew` body `{startDate? (default day after end), endDate? (default same length), value?}`: creates the next contract with the same assets, billing and visit frequency, marks this one `renewed` and links both. 409 `ALREADY_RENEWED`.
+- `POST /service-contracts/:id/links` body `{refType, refId}`; `DELETE /service-contracts/:id/links/:refType/:refId`. A ticket link also sets the ticket's `contractId`.
+- `GET /service-contracts/covering?partyId=&serialNo=&itemId=&on=` returns `{data: [contracts]}` of active contracts that cover the serial or item (or all of the party's active contracts when neither is given).
+- `GET /service-contracts/visits?from=&to=&status=&technicianId=&contractId=` returns `{data: [{id, contractId, contractNumber, partyName, dueDate, status (scheduled|done|skipped), overdue, technicianId, technicianName, doneDate}]}` for the calendar.
+- `PATCH /service-contracts/visits/:visitId` `{dueDate?, technicianId?}`. `POST /service-contracts/visits/:visitId/complete` body `{doneDate? (default today), technicianId?, notes?, partsUsed? [{itemId?, name, qty}], signatureName?, signatureFileId?, photoFileIds? (max 8)}`. `POST /service-contracts/visits/:visitId/skip` body `{reason}`.
+Visit dates: the contract start date plus the visit frequency from the shared recurrence rules, those strictly before the end date (a visit on the start date is not made). Renewal reminders: the daily job notifies the contract's creator for each active contract whose end is within `renewalDays` (once per contract per day-run key).
+
+## Timesheets
+
+Entry JSON: `{id, userId, userName, workDate, partyId, partyName, projectId, projectName, matterId, ticketId, ticketNumber, task, hours, billable, rate, amount, status (draft|submitted|approved|rejected), rejectReason, submittedAt, approvedBy, approvedAt, invoiceId, billedAt}`. `rate` is the rate saved on the entry (resolved when saved; see rates), `amount = hours x rate` for billable entries.
+- Rate resolution at save: the user and customer pair, else the customer's rate (no user), else the user's default, else 0.
+- `GET /timesheets/entries?userId=&from=&to=&partyId=&status=&billed=true|false&limit=&offset=` returns `{data, total}`. Without `timesheets.view` only the caller's entries.
+- `POST /timesheets/entries` (`timesheets.log`) body `{workDate, partyId, hours (0.25..24 in quarter steps), task, billable?, projectId?, matterId?, ticketId?, userId?}`; `userId` other than the caller needs `timesheets.view` plus `timesheets.approve`. A day's total over 24 is rejected. `PATCH /timesheets/entries/:id` and `DELETE` only while `draft` or `rejected`.
+- `GET /timesheets/week?weekStart=&userId=` (weekStart is a Monday) returns `{weekStart, days: [7 dates], rows: [{partyId, partyName, projectId, matterId, ticketId, task, billable, entries: [{id|null, date, hours, status}], total}], dayTotals: [7], total, status}`; `status` is the lowest state among the rows (draft, submitted, approved, rejected, mixed).
+- `PUT /timesheets/week` body `{weekStart, rows: [{partyId, projectId?, matterId?, ticketId?, task, billable, hours: [7 numbers]}]}` replaces the caller's draft and rejected entries of that week (submitted and approved ones stay). Returns the week.
+- `POST /timesheets/submit` body `{weekStart}` or `{ids}`: draft and rejected become `submitted` (409 `NOTHING_TO_SUBMIT`). With `approvalRequired` off in settings, entries go straight to `approved`.
+- `POST /timesheets/approve` body `{ids}` and `POST /timesheets/reject` body `{ids, reason}` (`timesheets.approve`), submitted entries only; nobody approves their own unless they are the only approver (Owner).
+- Rates: `GET /timesheets/rates`, `POST /timesheets/rates` body `{userId?, partyId?, rate}` (at least one of the two; upserts), `DELETE /timesheets/rates/:id` (`timesheets.bill`). Settings: `GET|PUT|PATCH /timesheets/settings` `{serviceItemId|null, approvalRequired (default true), dailyTargetHours (default 8)}`.
+- `GET /timesheets/unbilled?partyId=` (`timesheets.bill`) returns `{data: [{partyId, partyName, hours, amount, entries}]}` of approved, billable, unbilled entries.
+- `POST /timesheets/bill` body `{partyIds? (default all), entryIds?, invoiceDate?, locationId?}` creates one invoice per customer through the normal invoice code with one line per task description group (service item from settings, qty hours, rate the entry rate; entries of one customer at different rates become separate lines), and marks the entries `invoiceId`/`billedAt`. 400 when no service item is set. Returns `{invoices: [{partyId, invoiceId, number, total, entries}], skipped: [{partyId, reason}]}`. Zero-rate customers are skipped with reason "No rate".
+- `GET /timesheets/reports/utilisation?from=&to=&userId=` (`timesheets.view`): `{from, to, targetHours, users: [{userId, name, totalHours, billableHours, utilisationPct, targetHours, billedHours, unbilledAmount}], customers: [{partyId, name, hours, billableHours, amount}], totals}`. Draft entries count; rejected do not. Target is working days (Mon to Sat) in range times the daily target.
+
+# Landed cost and request for quotation (migration 054)
+
+Both are open routes (no module switch). Permissions: landed cost view `purchases.view`, create `purchases.create`, cancel `purchases.cancel`; RFQ view `purchase_orders.view`, everything else `purchase_orders.manage`.
+
+## Landed cost vouchers
+
+A voucher adds charges (freight, customs duty, insurance, clearing, handling) to the cost of goods already received on purchase bills or goods receipts. Bill lines that were billed from a goods receipt are skipped (the receipt carries them); only tracked-stock lines count.
+
+- `POST /landed-costs/preview` and `POST /landed-costs` (201) take:
+  `{ voucherDate?, basis: "value"|"qty"|"weight", notes?, docs: [{ docType: "purchase"|"grn", docId }], weights?: [{ docLineId, weight }], charges: [{ kind: "freight"|"customs_duty"|"insurance"|"clearing"|"handling"|"other", description?, amount, igstAmount?, sourceType?: "direct"|"expense"|"vendor_bill"|"journal", sourceId?, creditAccountId?, partyId? }] }`
+- `amount` is the cost added to stock. `igstAmount` is IGST paid on import: debited to Input IGST, never added to cost. The credit for a charge is `amount + igstAmount`.
+- Credit side: `sourceType expense` moves the cost out of that expense's account (`sourceId` = expense id, amount may not exceed the expense, one voucher per expense); `vendor_bill` credits Purchases (non-stock) (`sourceId` = purchase id); `journal` and `direct` need `creditAccountId`, or `partyId` to credit that vendor's payable. 409 `SOURCE_USED` when an expense or bill is already on a posted voucher.
+- Allocation: the total of `amount` is split over lines by `basis` (value = taxable value, qty, or the manual `weight` per line; weight basis needs a positive weight sum). Rounded to paise; the largest line takes the remainder.
+- On hand: per item and location, the share of the received quantity still in stock is `min(1, stock on hand / quantity received on the voucher)`. That share of each line's allocation raises stock value (a value-only stock move, quantity 0) and the rest is posted to Cost of Goods Sold.
+- Journal (voucher type `stock`): debit Inventory and Cost of Goods Sold by location, debit Input IGST, credit each charge source. Lines sum to zero.
+- Response: `{ id, number, status, voucherDate, basis, chargesTotal, igstTotal, inventoryTotal, cogsTotal, notes, createdAt, createdBy, charges: [...], lines: [{ docType, docId, docLineId, docNumber, docDate, itemId, itemName, locationId, qty, baseValue, weight, onHandPct, allocated, toInventory, toCogs, landedUnitCost }] }`. Preview returns the same with `id`, `number` null.
+- `GET /landed-costs?status&from&to&q` list, `GET /landed-costs/:id`, `POST /landed-costs/:id/cancel { reason }` (full reversal: journal and stock value; 409 `ALREADY_CANCELLED`).
+- `GET /landed-costs/report?from&to&itemId&docId` returns `{ data: [{ voucherId, voucherNumber, voucherDate, docType, docId, docNumber, itemId, itemName, qty, baseValue, allocated, toInventory, toCogs, landedValue, landedUnitCost }], totals }` for posted vouchers.
+
+## Requests for quotation
+
+Statuses: `draft`, `sent`, `quotes_received`, `closed`.
+
+- `POST /rfqs` (201) `{ locationId?, rfqDate?, dueDate?, notes?, indentId?, vendorIds: [uuid], lines?: [{ itemId, qty, description? }] }`. With `indentId` (an approved indent) the lines and location come from the indent (approved quantity, else requested) unless `lines` is given.
+- `GET /rfqs?status&q`, `GET /rfqs/:id`, `PUT|PATCH /rfqs/:id` (draft only, same body), `DELETE /rfqs/:id` (draft only).
+- `POST /rfqs/:id/send` marks every vendor sent (draft -> sent; may be repeated while sent).
+- `PUT /rfqs/:id/quotes` `{ partyId, quotes: [{ lineId, rate, discountPct?, gstRate?, leadDays?, paymentTerms?, validUntil?, notes? }] }` replaces that vendor's quotes (lines omitted are removed). Allowed when sent or quotes received; the first quote moves it to `quotes_received`.
+- `PUT /rfqs/:id/choices` `{ choices: [{ lineId, partyId|null }] }` or `{ mode: "lowest" }`. A chosen vendor must have quoted that line.
+- `POST /rfqs/:id/convert` creates one purchase order per chosen vendor through the normal PO create (rate and discount from the quote; the PO takes GST from the item), stores the PO on each line and closes the RFQ. 409 `NOTHING_CHOSEN`.
+- `POST /rfqs/:id/close` closes without ordering.
+- Detail: `{ id, number, status, rfqDate, dueDate, locationId, locationName, indentId, notes, sentAt, vendors: [{ partyId, partyName, sentAt, total }], lines: [{ id, lineNo, itemId, itemName, qty, unit, chosenPartyId, purchaseOrderId, quotes: [{ partyId, partyName, rate, discountPct, gstRate, leadDays, paymentTerms, validUntil, notes, taxable, total, isLowest, isFastest }] }], purchaseOrders: [{ id, number, partyId }] }`. `total` is `qty x rate x (1 - discount) x (1 + GST)`; `isLowest` and `isFastest` mark the lowest total and shortest lead time among the line's quotes.
+
+# Stock valuation and handling (migration 053)
+
+## Valuation method
+- `GET /stock/valuation-method` (`stock.view`) returns `{ method: "average"|"fifo", effectiveFrom: "YYYY-MM-DD"|null }`. New and existing companies are `average`.
+- `PUT` or `PATCH /stock/valuation-method` (`stock.valuation`) body `{ method, effectiveFrom? }`. `effectiveFrom` defaults to today and cannot be in the past. Issues dated on or after it take cost from the oldest receipt layers first; before it, weighted average. On the effective date the remaining layers are rebased so their total equals the ledger value, so the books do not jump. Weighted-average companies are not touched.
+- Layers are rebuilt from `stock_moves` (positive moves are receipts, negative moves consume the oldest layer). Transfers in count as new receipts, so transferred stock restarts its age in the ageing report.
+
+## Valuation report
+`GET /reports/stock-valuation?locationId&method=average|fifo` (`reports.view` + `items.view_cost`). `method` omitted means the company setting. The response adds `method` (the one used), `setting` (`{method, effectiveFrom}`) and per row `method`. With `method=fifo` on a weighted-average company the value is the FIFO layer value of what is in stock, for comparison; the ledger is unchanged.
+
+## Alternate units
+- `GET /items/:id/units` (`items.view`) returns `{ baseUnit, units: [{id, name, factor}], defaultPurchaseUnit, defaultSaleUnit }`. `factor` is how many base units one of this unit holds (box of 12 has factor 12, kg to g: unit `g` factor 0.001).
+- `PUT` or `PATCH /items/:id/units` (`items.edit`) body `{ units: [{name, factor}], defaultPurchaseUnit?: string|null, defaultSaleUnit?: string|null }` replaces the list. Names are unique per item (case-insensitive) and cannot repeat the base unit. A default must be the base unit or a listed unit.
+- Item JSON adds `defaultPurchaseUnit` and `defaultSaleUnit`.
+- Lines of `POST /invoices`, `/purchases`, `/sales-orders`, `/quotations` (and their edits) accept optional `unit`. The server multiplies `qty` by the factor and divides `rate` by it (rate left out keeps the item's base price), then stores base `qty` and `rate` with `enteredUnit` and `enteredQty`. Unknown unit: 400 on `lines.N.unit`. Line rates are now stored with 4 decimals.
+- Line JSON adds `enteredUnit`, `enteredQty` and `enteredRate` (null when no unit was entered). Printing uses them when present.
+
+## Stock ageing
+`GET /reports/stock-ageing?locationId&asOf` (`reports.view`) returns `{ asOf, buckets: ["0-30","31-60","61-90","91-180","180+"], rows, totals }`. Row: `{ itemId, name, sku, unit, locationId, locationName, qty, buckets: [{qty, value?}], value? }`. Age is days from the receipt layer date (IST) to `asOf`. `value` fields need `items.view_cost`.
+
+## Slow and non-moving
+`GET /reports/stock-movement?mode=non_moving|slow_moving&days=90&coverDays=180&locationId` (`reports.view`).
+- `non_moving`: items in stock with no sale (invoice or POS issue) in the last `days` days.
+- `slow_moving`: items sold in the last `days` days whose stock covers more than `coverDays` days at that selling rate.
+Row: `{ itemId, name, sku, unit, qty, value?, lastSaleDate, daysSinceSale, soldQty, coverDays }`.
+
+## Labels
+No new route. The label sheet uses `GET /items` (name, `salePrice`, `barcode`, `sku`) and `GET /purchases/:id` lines. Layouts are made on the client: A4 sheets of 24, 40 or 65 and a 50 x 25 mm roll. Barcode is the item barcode (EAN-13 when it is 13 digits, else Code 128), falling back to the SKU.
+
+# v1.15 additions: finance reports and controls
+
+Migration 052. Core books, so no module gate. New permissions: `finreports.view` (cash flow, ratios, budget variance), `finreports.manage` (cash-flow mapping, budgets), `cheques.view`, `cheques.manage`. Year-end close uses the existing `books.lock`. Owner and Company Admin get all of them; Accountant gets the `finreports.*` and `cheques.*` ones; Auditor gets the two `.view` ones.
+
+Closing entries (voucher type `closing`) are left out of every dated profit and loss figure (`from` given), and counted in trial balance and balance sheet (`from` null), so a closed year still shows its profit in reports.
+
+## Cash flow statement (indirect method)
+
+`GET /reports/cash-flow?from=&to=&compare=true|false` (default period: this financial year to today; `compare=true` adds the same dates one year earlier). Returns `{from, to, current: S, previous: S|null}`. `S`:
+`{from, to, netProfit, openingCash, closingCash, netChange, computedChange, difference, reconciles, sections:[{key:'operating'|'investing'|'financing', title, total, lines:[{key, label, group:'profit'|'adjustment'|'working_capital'|'other', amount, accounts:[{accountId, code, name, amount}]}]}]}`.
+`computedChange` is the sum of the three section totals; `difference = netChange - computedChange` and `reconciles` is true when it is zero. Cash is every active asset account of subtype cash or bank. Amounts are cash effects (positive brings cash in). Closing entries are ignored.
+Operating lines: `net_profit`, `dep` (depreciation added back), `provisions` (accounts mapped non-cash), `interest_paid_addback`, `interest_received_less`, `asset_gain_loss`, then working capital `receivables`, `inventory`, `other_assets`, `payables`, `other_liabilities`. Investing: `fixed_assets` (purchases less sale proceeds, with gain or loss), `investments`, `interest_received`. Financing: `capital` (equity accounts, drawings, opening balances), `loans`, `interest_paid`.
+
+Classification (company-editable): `GET /cash-flow/mapping` returns `{data:[{accountId, code, name, type, subtype, defaultCategory, category|null, effective}]}` for balance sheet accounts that are not cash. Categories: `operating` (working capital), `investing`, `financing`, `noncash` (provisions: movement is added back). Defaults: fixed assets and assets named like investment, fixed deposit, shares, mutual fund are investing; liabilities named like loan, borrowing, debenture, overdraft are financing; equity is financing; everything else is operating. `PUT|PATCH /cash-flow/mapping/:accountId` body `{category: string|null}` (null clears). Needs `finreports.manage`.
+
+## Ratio analysis
+
+`GET /reports/ratios?from=&to=&compare=true|false` returns `{current: R, previous: R|null}`; `R = {from, to, days, ratios:[{key, label, group, unit:'times'|'percent'|'days', value:number|null, formula, inputs:{name:number}}]}`. Keys: `current_ratio`, `quick_ratio`, `debt_equity`, `gross_margin`, `net_margin`, `roce`, `inventory_turnover`, `inventory_days`, `debtor_days`, `creditor_days`, `interest_coverage`. A ratio with a zero denominator is `null`. Balance figures are as at `to`; turnover and day ratios use the average of opening and closing balances. EBIT is net profit plus interest expense (accounts named like interest, not tax interest).
+
+## Year-end close
+
+`GET /year-end/closes` returns `{data:[{id, fy, closeDate, profit, equityAccountId, equityAccountName, status:'closed'|'reopened', entryId, previousLock, closedAt, reopenedAt}]}`.
+`GET /year-end/preview?fy=2025-26` returns `{fy, from, to, income, expenses, profit, equityAccountId, equityAccountName, willCreateEquityAccount, closed, canClose, blockers:[string], steps:[string]}`. Balance sheet accounts already carry forward, so closing is only: one journal dated the last day of the year that zeroes each income and expense account and puts the profit (or loss) in the equity account (default "Retained Earnings", code 3200, created if missing), then the books lock moves to that date.
+`POST /year-end/close` body `{fy, equityAccountId?}` needs `books.lock`. Blocked when the year has not ended, is already closed, or the books are already locked on or after the year end (409 `YEAR_END_BLOCKED`). Returns the close row.
+`POST /year-end/:id/reopen` reverses the closing journal and puts the lock back to what it was. 409 `YEAR_END_BLOCKED` when the books are locked beyond this year end (the next year is locked) or the close is already reopened.
+
+## Budgets
+
+Budgets are per account, optional cost centre, per month of a financial year `fy` such as `2026-27`; months are `YYYY-MM`.
+`GET /budgets?fy=&costCentreId=` returns `{fy, data:[{accountId, code, name, type, costCentreId, costCentreName, months:{ 'YYYY-MM': amount }, total}]}`.
+`PUT /budgets` body `{fy, rows:[{accountId, costCentreId?, months:{ 'YYYY-MM': amount }}]}` replaces those rows (an empty `months` deletes the row). Needs `finreports.manage`; only income and expense accounts.
+`POST /budgets/copy` body `{fromFy, toFy, upliftPercent?, replace?}` copies a year's budget with a percent uplift (default 0, -50 to 500). If the target year already has rows, 409 unless `replace` is true. Returns `{copied}`.
+`GET /reports/budget-variance?fy=&month=YYYY-MM&costCentreId=` (`month` default the current month, clamped to the year) returns `{fy, month, rows:[{accountId, code, name, type, costCentreId, month:{budget, actual, variance, percentUsed}, ytd:{...}, annualBudget, status:'ok'|'warn'|'over'|'none'}], totals:{month:{expense, income}, ytd:{expense, income}} (each `{budget, actual, variance, percentUsed}`), alerts:[{accountId, name, level:'warn'|'over', percentUsed, scope:'month'|'ytd'}]}`. Actual is debit less credit for expense accounts and credit less debit for income accounts. `variance = actual - budget`. `percentUsed` is null when the budget is zero. `warn` is at 90% or more, `over` above 100%, judged on the worse of month and year to date for expense accounts (income accounts are never over; they only report). Closing entries are excluded.
+
+## Cheques
+
+Cheque books: `GET /cheque-books?accountId=`, `POST /cheque-books` `{accountId, name?, prefix?, fromNo, toNo}` (bank accounts only, at most 500 leaves, ranges of the same account may not overlap, 409 `RANGE_OVERLAP`), `POST /cheque-books/:id/deactivate`. `GET /cheque-books/:id/register` returns `{book, leaves:[{no, status:'unused'|'issued'|'held'|'deposited'|'cleared'|'bounced'|'cancelled', chequeId, chequeDate, payee, amount}]}`.
+Layout per bank account (mm, from the top left of the leaf): `GET /bank-accounts/:accountId/cheque-layout` and `PUT|PATCH` `{widthMm, heightMm, date:{x,y}, payee:{x,y}, words:{x,y,maxWidth}, amount:{x,y}, acPayee:{x,y}, dateGap}`; defaults when none saved (`isDefault: true`).
+Records: `POST /cheques` `{direction:'received'|'issued', bankAccountId, chequeNo, chequeDate, partyId, amount, bookId?, drawnOn?, notes?}`. Status starts `held`. A cheque dated after today is post-dated. `GET /cheques?direction=&status=&from=&to=&partyId=&q=`, `GET /cheques/due-today` (held or deposited, dated today or earlier; `{asOf, data}`), `GET /cheques/:id`.
+Actions (`cheques.manage`): `POST /cheques/:id/deposit {date?}` (received, held to deposited); `POST /cheques/:id/clear {date?}` posts the receipt or payment (mode cheque, reference the cheque number, oldest bills first) unless the cheque is already linked to one; `POST /cheques/:id/bounce {date?, reason, bankCharges?, chargesAccountId?, recoverFromParty?}` cancels the linked receipt or payment, and with `bankCharges` posts bank charges (debit charges account, default "Bank Charges" 6070, credit the bank account) and, for received cheques with `recoverFromParty`, a debit note journal charging the same amount to the customer (voucher type `debit_note`); `POST /cheques/:id/cancel {reason}` voids a held cheque. Dated before today and not future: clear date cannot be in the future (409/400 `Date cannot be in the future`).
+`POST /payments/:id/cheque` `{chequeNo?, bookId?, chequeDate?}` for a posted payment: takes the next unused leaf of the book (or the given number), creates an issued cheque linked to the payment. `GET /cheques/:id/print` returns `{layout, chequeNo, dateText (DDMMYYYY), payee, amount, amountText, acPayee:true}`; the app draws the PDF and writes the amount in words.
+
+# GST compliance updates (migration 050)
+
+Permissions reuse `gst.view`, `gst.manage`, `einvoice.manage`, `reports.view`, `tax.view`. Company gets `aatoBand` (`below_10cr` default | `10cr_plus`) on `GET|PATCH /company`.
+
+## Invoice Management System (IMS)
+
+Rule (GST portal IMS advisory and FAQs): a supplier document with no action is deemed accepted when GSTR-2B is generated; accepted flows to GSTR-3B; rejected goes to "ITC Rejected" and does not flow; pending stays out of 2B and 3B and stays on the dashboard. Actions can be changed until the matching GSTR-3B is filed.
+
+`POST /gst/ims/actions` body `{ids:[uuid] (1..500), action:'accept'|'reject'|'pending'|'none', reason?}` (`gst.manage`). `reason` (3..300 chars) is required for `reject` and `pending`. Returns `{updated:n}`. Ids of other companies are ignored (404 if none match).
+`GET /gst/ims?period=YYYY-MM&bucket=` (`gst.view`) returns `{period, importedAt, summary:{inBooksAccepted:{count,itc}, inBooksRejected:{..}, pending:{..}, notInBooks:{..}, deemedAccepted:n}, rows:[{id, bucket, deemed, imsAction, imsReason, imsActedAt, supplierGstin, supplierName, docType, docNo, docDate, taxable, igst, cgst, sgst, purchaseId, purchaseNumber, matchStatus}]}`. Buckets: `pending` (action pending), `not_in_books` (no linked purchase), `in_books_rejected`, `in_books_accepted` (action accept, or none = deemed). `itc` is igst+cgst+sgst (credit notes negative).
+GSTR-3B (`GET /gst/gstr3b`): ITC "others" drops the tax of posted purchases dated in the period that are linked to a rejected or pending 2B line; `itc.imsExcluded` shows the amount and a warning is added.
+
+## E-invoice reporting window
+
+Rule (einvoice6.gst.gov.in notice): from 1 Apr 2025 businesses with AATO of Rs 10 crore or more must report invoices, credit notes and debit notes within 30 days of the document date or the IRP refuses the IRN. We warn from day 20 (age in days >= 20) and refuse when age is above 30. The portal's own example (1 Apr, last day 30 Apr) is stricter by one day; the portal decides.
+`POST /invoices/:id/einvoice` in sandbox or gsp mode: when `aatoBand` is `10cr_plus` and the invoice is older than 30 days, 409 `EINVOICE_WINDOW_PASSED`. Manual mode only records an IRN the portal already issued, so it is not refused.
+`GET /gst/einvoice/unreported?asOf=` (`gst.view`) returns `{asOf, band, windowDays:30, warnFromDay:20, counts:{ok,warn,blocked}, rows:[{invoiceId, number, date, partyName, gstin, total, ageDays, lastDay, state:'ok'|'warn'|'blocked'|'na'}]}`: posted invoices to customers with a GSTIN and no active IRN, oldest first. `state` is `na` when the band is below 10 crore.
+
+## E-way bill
+
+Rules: the base document must be dated within 180 days of generation (e-way bill API validation, GST advisory, effective 1 Jan 2025); validity is 1 day per 200 km or part (Rule 138(10), Notification 94/2020-CT; over-dimensional cargo 1 day per 20 km is not modelled). Validity ends at 23:59 IST on the last day.
+`POST /invoices/:id/ewaybill`: 409 `EWB_DOCUMENT_TOO_OLD` when the invoice date is more than 180 days before today. Computed `validUntil` uses the 200 km rule.
+`GET /gst/ewaybill-validity?date=YYYY-MM-DD&distanceKm=n` returns `{days, validUntil}`.
+
+## GST rate history
+
+An item's rate on a date is the latest `item_gst_rates` row with `effective_from <= date`; with no rows the item's own rate applies. `POST /invoices` uses the rate for the invoice date. Credit notes keep the rate on the original invoice line (unchanged).
+`GET /items/:id/gst-rates` returns `{data:[{id, rate, effectiveFrom, reason}], currentRate}`. `POST /items/:id/gst-rates` body `{rate, effectiveFrom, reason?}` (`gst.manage`): adds a row; if it is the latest row and not in the future the item's current rate is set to it. 409 if a row exists on that date.
+`GET /gst/slab-review?effectiveFrom=2025-09-22` lists active items at 12% or 28%: `{effectiveFrom, rows:[{itemId, name, hsnCode, currentRate, proposedRate, needsCheck, reviewed}], note}`. Slabs from 22 Sep 2025 (PIB, 56th GST Council): 5% and 18%, 40% for sin and luxury goods. Proposal: 12 to 5, 28 to 18, and 40 with `needsCheck` for HSN 2202, 2402, 2403, 2106, 8703 and 2401; the real rate depends on the notification for each good, so nothing is applied automatically.
+`POST /gst/slab-review/apply` body `{effectiveFrom, items:[{itemId, newRate}]}` (`gst.manage`): per item adds a row for the old rate from 2017-07-01 (if the item has no history) and a row for `newRate` from `effectiveFrom`, then sets the item's rate. `newRate` equal to the current rate records "kept" and changes nothing else. Returns `{applied:n}`.
+Compensation cess: invoices do not compute cess, so nothing changes in invoices. Cess on non-tobacco goods ended with the 22 Sep 2025 rates; tobacco cess continues until the compensation loans are cleared (PIB FAQ); the 1 Feb 2026 date is unconfirmed.
+
+## Section 43B(h)
+
+Rule (Income-tax Act s.43B(h), MSMED Act s.15): an amount payable to a micro or small enterprise beyond the agreed period (at most 45 days; 15 days from acceptance when there is no written agreement) and unpaid on 31 March is allowed as a deduction only in the year it is paid. Medium enterprises are outside the section.
+`GET /reports/msme-43bh?taxYear=2025-26` (`reports.view`) returns `{taxYear, asOf (31 Mar), rows:[{purchaseId, number, billDate, dueDate, partyId, partyName, udyamNo, category, total, paidByYearEnd, outstanding, daysOverdue}], total}`. Bills paid after 31 March still count. Due date is the bill's `msmeDueDate`, else bill date + 15 days.
+`GET /tax/itr-pack` adds the adjustment "MSME dues beyond the time limit (s.43B(h))" (kind `add`) and `section43bh` total.
+
+# Expense claims, salary advances and loans
+
+Module `payroll` (routes `/claims`, `/loans`, `/employees/:id/loans`). Migration 049. Permissions: `payroll.self` (submit and see your own claims, see your own loans), `claims.approve` (approve or reject, never your own), `claims.manage` (categories and limits, claim for another employee, settle, reports, see all claims), `loans.manage` (give, pause, resume, foreclose, see all loans). Owner and Company Admin get all three; HR Manager gets `claims.manage` and `loans.manage`.
+
+Approvals module: not used. A claim has its own approve/reject by a holder of `claims.approve`, because the approvals module creates a document from a stored payload and a claim already is the document.
+
+## Claim categories
+
+`GET /claims/categories` (any of `payroll.self`, `claims.manage`, `claims.approve`; default categories are created on first read) returns `{ data: [{ id, name, expenseAccountId, expenseAccountName, gstItcAllowed, perClaimLimit, monthlyLimit, requiresReceipt, isActive }] }`.
+`POST /claims/categories` and `PATCH /claims/categories/:id` (`claims.manage`): `{ name, expenseAccountId?, gstItcAllowed?, perClaimLimit?, monthlyLimit?, requiresReceipt?, isActive? }`. `expenseAccountId` must be an expense account; when left out a `Claims - <name>` account is created. Limits are per employee: the per-claim limit applies to one category within one claim, the monthly limit to one category across the employee's submitted, approved and paid claims in a calendar month of the line date. Both are checked on submit (400, `details.lines`).
+
+## Claims
+
+Claim: `{ id, number, employeeId, employeeCode, employeeName, purpose, claimDate, status, total, gstTotal, itcTotal, settlement, lines: [{ id, lineNo, categoryId, categoryName, expenseDate, description, amount, vendorGstin, gstAmount, itcEligible, receiptFileId, receiptUrl }], submittedAt, decidedBy, decidedAt, decisionNote, paidAt, payDate, payrollRunId, canApprove }`. Status: `draft`, `submitted`, `approved`, `rejected`, `paid`. `amount` of a line is the bill total including GST; `gstAmount` is the GST part. `itcEligible` is true only when the category allows input credit, the GST is above zero and the vendor GSTIN is valid.
+
+- `GET /claims?status=&employeeId=&mine=true&from=&to=&limit=&offset=` returns `{ data, total }`. Holders of `claims.approve` or `claims.manage` see all; others see their own.
+- `POST /claims` `{ employeeId?, purpose, claimDate?, lines: [{ categoryId, expenseDate, description, amount, vendorGstin?, gstAmount?, receiptFileId? }], submit? }` creates a draft (or submits it with `submit: true`). `employeeId` needs `claims.manage`; otherwise the claim is for the employee linked to the signed-in user (400 if none). 201.
+- `GET /claims/:id`. `PATCH /claims/:id` (same body, owner or `claims.manage`, draft or rejected claims only; a rejected claim returns to draft). `DELETE /claims/:id` (draft only).
+- `POST /claims/:id/submit` checks categories, receipts (categories that require one), future dates, limits.
+- `POST /claims/:id/approve` `{ note?, mode?: 'pay_now' | 'payroll', accountId?, payDate? }` needs `claims.approve`. 403 `SELF_APPROVAL` when the claimant or the submitter is the signed-in user. Posts a journal: debit each category's expense head (net of GST when eligible), debit Input CGST/SGST (vendor state equals the company state) or Input IGST, credit Employee Reimbursements Payable for the total. With `mode` it also settles.
+- `POST /claims/:id/reject` `{ note }` (needs `claims.approve`, same self rule).
+- `POST /claims/:id/settle` (`claims.manage`, approved claims) `{ mode: 'pay_now', accountId, payDate? }` debits Employee Reimbursements Payable and credits the cash or bank account, status `paid`. `{ mode: 'payroll' }` marks it for the next payroll run (see below).
+- `GET /claims/summary?groupBy=employee|category|month&from=&to=&status=` (`claims.manage` or `claims.approve`) returns `{ data: [{ key, label, count, total, gst, itc }], total }`. Counts submitted, approved and paid claims unless `status` is given.
+
+Payroll hook: when a payroll run is created, every approved claim marked `payroll` becomes an `earning` adjustment "Expense reimbursement <number>" with `taxable: false` on that run. When the run is approved, the claim becomes `paid` and a journal moves the cost back out of "Salary - One-time additions" (the claim journal already booked the expense heads). A cancelled run or a deleted adjustment puts the claim back in the queue. A claim settled after the month's run exists waits for the next run.
+
+## Advances and loans
+
+Loan: `{ id, number, employeeId, employeeName, employeeCode, kind: 'advance' | 'loan', purpose, amount, interestRate, instalment, startMonth, tenure, totalInterest, totalPayable, status, disbursedOn, outstanding, outstandingPrincipal, nextDueMonth, caReview, perquisiteNote, foreclosedOn, closedOn }`. Status: `active`, `paused`, `closed`, `foreclosed`. `outstanding` is what is still to be recovered (instalments not yet recovered, interest included); `outstandingPrincipal` excludes future interest. `perquisiteNote` and `caReview: true` are set for a loan above 20,000: "Interest-free or concessional loans above 20,000 may be a taxable perquisite for the employee. Tax treatment not confirmed; mark for CA review." Nothing is deducted for it.
+
+- `GET /loans?employeeId=&status=&kind=` (`loans.manage` or `payroll.view`; others get their own) returns `{ data, total }`.
+- `POST /loans` (`loans.manage`) `{ employeeId, kind, purpose, amount, interestRate?, instalment, startMonth: 'YYYY-MM', disbursedOn?, accountId? }` posts the disbursement (debit Employee Loans and Advances, credit the cash or bank account) and builds the schedule. Interest is on the reducing balance at `interestRate`/12 a month; the last instalment is the remainder. 400 when the instalment does not cover the first month's interest. 201.
+- `GET /loans/:id` adds `schedule: [{ seq, dueMonth, principal, interest, amount, status: 'due'|'in_run'|'recovered'|'waived', runId, recoveredOn }]`.
+- `POST /loans/:id/pause`, `POST /loans/:id/resume` (`loans.manage`). A paused loan is skipped by new runs.
+- `POST /loans/:id/foreclose` `{ accountId, payDate? }` records the employee paying the outstanding principal now (debit cash or bank, credit Employee Loans and Advances); remaining instalments become `waived`. 409 when an instalment is sitting in an open payroll run.
+- `GET /employees/:id/loans` (`loans.manage`, `payroll.view`, or the employee themself) returns `{ employeeId, outstanding, outstandingPrincipal, loans: [loan] }` for active and paused loans, for full and final settlement to recover.
+
+Payroll hook: when a payroll run is created, the earliest due instalment (due month on or before the run month) of each active loan of the employees in the run becomes a `deduction` adjustment "Loan recovery <number>" or "Advance recovery <number>" (not taxable). One instalment a run, so a missed month is recovered later, not doubled. When the run is approved, the instalment becomes `recovered`, a journal debits Other Salary Deductions Payable and credits Employee Loans and Advances (principal) and Interest on Employee Loans (interest), and a fully recovered loan becomes `closed`. A cancelled run or a removed adjustment puts the instalment back to `due`.
+
+# Platform extras: search, scheduled reports, SMS, online payment links
+
+## Global search
+
+`GET /search?q=&limit=` (limit per group, default 5, max 20; `q` at least 2 characters, otherwise `groups` is empty). Groups appear only when the user holds that area's view permission and the company has the module: parties (`parties.view`), items (`items.view`), invoices, purchases, sales orders, quotations, payments (their `.view`), employees (`payroll.view`, module payroll), CRM leads and deals (`crm.view`, module crm; without `crm.all` only the user's own). Prefix matches rank first, then contains. Invoices, purchases and sales orders respect the user's location scope.
+
+Response: `{ q, groups: [{ kind, label, items: [{ id, title, subtitle, route }] }] }`. `kind` is one of `party item invoice purchase sales_order quotation payment employee lead deal`; `route` is a client route such as `/invoices/<id>`.
+
+## Scheduled reports
+
+Permission: `reports.view` to create; the report's own permission also applies (`accounts.view` for profit and loss, `items.view_cost` for stock valuation, `crm.view` for CRM numbers). The creator sees and edits their reports; `company.manage` sees all. The job runs with the creator's access.
+
+Body: `{ name, report, filters?, frequency, weekday?, monthDay?, time, recipientUserIds?, recipientEmails?, isActive? }`
+- `report`: `profit_loss | sales_register | receivables_ageing | stock_valuation | gst_summary | crm_numbers`.
+- `filters`: `{ period?: 'previous_day' | 'previous_week' | 'previous_month' | 'month_to_date' | 'fy_to_date' }` (default by frequency: daily previous_day, weekly previous_week, monthly previous_month). Ageing and stock valuation are as of the run day.
+- `frequency`: `daily | weekly` (needs `weekday` 0 Sunday to 6) `| monthly` (needs `monthDay` 1 to 28). `time` is `HH:MM` in India time. At least one recipient.
+
+Routes: `GET /scheduled-reports`, `POST /scheduled-reports` (201), `GET|PATCH|PUT|DELETE /scheduled-reports/:id`, `POST /scheduled-reports/:id/run` (send now, 200 with the run), `GET /scheduled-reports/:id/runs`, `GET /scheduled-reports/catalogue` (reports with labels).
+Item: `{ id, name, report, filters, frequency, weekday, monthDay, time, recipientUserIds, recipientEmails, isActive, nextRunAt, lastRunAt, createdBy }`. Run: `{ id, trigger: schedule|manual, status: sent|failed, recipients, rowCount, error, ranAt }`.
+The email carries an HTML summary and a CSV attachment, queued through the notification outbox (template `scheduled_report`).
+
+## SMS channel
+
+Provider settings are server env (`SMS_DRIVER` log|msg91|http, `SMS_AUTH_KEY`, `SMS_SENDER_ID`, `SMS_HTTP_URL`, `SMS_HTTP_HEADERS`, `SMS_HTTP_BODY`). Per company, India needs TRAI DLT details: the registered entity id, a header (sender id) and an approved template id per message.
+- `GET /sms/settings` -> `{ driver, enabled, dltEntityId, senderId, templates: [{ template, label, dltTemplateId, text }] }` (`integrations.manage`).
+- `PUT|PATCH /sms/settings` `{ enabled?, dltEntityId?, senderId?, templates?: { <templateId>: { dltTemplateId, text } } }`. Enabling needs the entity id for the msg91 driver.
+- `POST /sms/test` `{ phone }` sends a test line through the driver (log driver only logs).
+- Templates that can use SMS: `payment_reminder`, `payment_link`. Outbox rows have `channel: 'sms'`.
+
+## Online payment links
+
+Settings (`integrations.manage`): `GET /payment-gateways` -> `[{ id, provider, isActive, accountId, credentials: [{key,label,secret,set}], webhookUrl, mode }]`. `PUT|PATCH /payment-gateways/razorpay` `{ keyId, keySecret, webhookSecret, accountId, isActive? }` (secrets sealed, never returned; `accountId` is the bank account receipts go to). `DELETE /payment-gateways/razorpay` removes credentials. Cashfree is not built.
+- `POST /invoices/:id/payment-links` `{ expiresInDays? (1..180, default 7), notify? }` (`payments.create`) creates a Razorpay Payment Link for the amount due. 409 `NO_GATEWAY` when not set up, `NOTHING_DUE` when paid. Returns the link `{ id, invoiceId, invoiceNumber, partyName, amount, status, shortUrl, expiresAt, whatsappUrl, paidAt, paymentId, fee, createdAt }`.
+- `GET /payment-links?status=&invoiceId=` (`payments.view`) list for reconciliation. `GET /payment-links/:id`. `POST /payment-links/:id/cancel`. `POST /payment-links/:id/send` `{ channels: ('email'|'whatsapp'|'sms')[] }` sends to the customer.
+- Public `POST /webhooks/payment-gateways/:gatewayId`: header `X-Razorpay-Signature` is HMAC SHA256 (hex) of the raw body with the webhook secret. Event `payment_link.paid` records one receipt (mode upi, reference = provider payment id) allocated to the invoice, once per provider payment id; the reported fee posts to Bank Charges. Bad signature: 401. `payment_link.expired|cancelled` update the status.
+
+# v1.20 Export invoices, currencies, delivery challans and TCS on sales
+
+Migration 056. Permissions: `challans.view|manage`, `fx.view|manage`, `tcs.view|manage`. Money is rupees unless a field says otherwise. Errors use the common envelope.
+
+## Invoice additions (`POST /invoices`, `POST /invoices/preview`)
+
+Optional fields on the create body:
+
+- `exportInfo`: `{ category, shippingBillNo?, shippingBillDate?, portCode?, country? }`. `category` is `export_igst` (export, IGST paid), `export_lut` (export under LUT, no tax), `sez_igst`, `sez_lut`, or `deemed`.
+  - Export categories set the place of supply to `96` and charge IGST (or none under LUT). SEZ categories always charge IGST (or none under LUT) and need the customer GSTIN. `deemed` is taxed normally and reported as deemed export.
+  - An `*_lut` category is refused (400, field `exportInfo`) unless a LUT covers the invoice date (rule 96A, FORM GST RFD-11).
+- `currency`: `{ code, rate? }`. Line `rate` values are then in that currency; `rate` is rupees per unit and defaults to the latest rate on or before the invoice date (400 if none). The ledger, GST and `total` are in rupees. Rupee line rate = foreign rate x exchange rate, rounded to paise.
+- `tcs`: `{ natureId?, off? }`. Used only when TCS is switched on in settings.
+
+Responses add `ext` (null when unused): `category`, `lutNo`, `shippingBillNo`, `shippingBillDate`, `portCode`, `country`, `currencyCode`, `exchangeRate`, `fcTotal` (rupee total divided by the rate), `tcsSection`, `tcsRate`, `tcsBase`, `tcsAmount`, `declaration`. `declaration` is the rule 46 endorsement the PDF prints for export and SEZ supplies, with or without payment of tax. Preview adds `tcsAmount`.
+
+TCS is added to `total` (so the customer owes it) and posted to TCS Payable; it is not part of the taxable value. It is rounded to the rupee.
+
+## Settings, LUT, currencies, rates (`/export`, `/fx`)
+
+- `GET|PUT|PATCH /export/settings` `{ tcsEnabled (default false), tcsBase: taxable|total (default taxable) }`.
+- `GET /export/luts`; `POST /export/luts` `{ fy, lutNo, arn?, validFrom, validTo }`; `PATCH /export/luts/:id`.
+- `GET /fx/currencies` (seeds INR-free common list on first call); `POST /fx/currencies` `{ code, name, symbol, decimals }`; `PATCH /fx/currencies/:code` `{ name?, symbol?, decimals?, isActive? }`.
+- `GET /fx/rates?code=`; `POST /fx/rates` `{ code, date, rate, note? }` (one rate per currency per day, replaces). `GET /fx/rates/latest?code=&date=` returns `{ rate, date, note }` or 404.
+- `GET|PUT|PATCH /fx/parties/:partyId` `{ defaultCurrency, tcsNatureId, tcsExempt }`.
+- `GET /fx/outstanding?partyId=&currency=` open foreign invoices: `invoiceId, number, date, fcTotal, fcOutstanding, inrOutstanding, rate`.
+
+## Foreign receipts and revaluation
+
+- `POST /fx/receipts` `{ partyId, accountId, date?, mode, reference?, currency, fcAmount, rate, allocations?: [{ invoiceId, fcAmount }] }`. Without `allocations` the oldest open invoices in that currency are settled. Rupees received = `fcAmount x rate`. Rupees cleared on an invoice = `fcAmount x invoice rate` (the whole rupee balance when the foreign balance is cleared). The difference posts to "Exchange Rate Gain or Loss". Any foreign amount left over is held as an unallocated credit at the receipt rate. Returns the payment (`/payments/:id`, cancel it with `/payments/:id/cancel`) plus `fx: { fcAmount, rate, inrReceived, inrCleared, gainLoss }`. `payments.amount` holds the rupees cleared.
+- `POST /fx/revaluation/preview` and `POST /fx/revaluation` `{ asOf, rates?: { USD: 83.2 } }` (missing rates use the latest rate on or before `asOf`). Posts one journal dated `asOf` that restates open foreign receivables at the closing rate against the exchange account, and reverses it the next day. One per `asOf`. Foreign payables are not covered: purchases carry no currency yet.
+
+## Delivery challans (rule 55)
+
+- `reason`: `job_work`, `supply_on_approval`, `exhibition`, `branch_transfer`, `liquid_gas`, `other`. Series `DC/26-27/00001`.
+- `GET /delivery-challans?status=&q=`, `GET /delivery-challans/:id`.
+- `POST /delivery-challans` `{ locationId, reason, reasonNote?, toLocationId? (branch_transfer), partyId?, consignee?: { name, address, gstin, stateCode }, challanDate?, vehicleNo?, transporter?, ewbNo?, notes?, lines: [{ itemId, qty, rate?, description?, provisional? }] }`. Taxable value and tax are computed and shown for information. Stock leaves the location at average cost. Reasons other than `branch_transfer` book it to "Stock out on Challan" (asset); a branch transfer moves it to the other location.
+- `POST /delivery-challans/:id/return` `{ date?, lines: [{ lineId, qty }] }` brings goods back.
+- `POST /delivery-challans/:id/invoice` `{ invoiceDate?, lines?: [{ lineId, qty }] }` returns the stock then raises a normal invoice for the pending quantity (partial allowed). Not for `job_work` or `branch_transfer`; needs a customer.
+- `POST /delivery-challans/:id/cancel` `{ reason }` only while nothing was returned or invoiced.
+- Status: `open`, `partly_closed`, `closed`, `cancelled`. Each line carries `returnedQty`, `invoicedQty`, `pendingQty`.
+
+## TCS (`/tcs`)
+
+- `GET /tcs/natures` (seeds defaults on first call, all with editable rates); `POST /tcs/natures`; `PATCH /tcs/natures/:id` `{ label?, rate?, threshold?, sectionOld?, sectionNew?, isActive? }`.
+- `PUT /tcs/items/:itemId` `{ natureId | null }`.
+- `GET /tcs/report?from=&to=` rows for the TCS return (27EQ): `invoiceId, number, date, partyName, pan, section, rate, base, tcs`; plus `totals` by section.
+- Section 206C(1H) (sale of goods above 50 lakh) is not built: it does not apply from 1 April 2025. Rates are seeded from the 206C(1) table and are editable; the whole feature is off until `tcsEnabled` is set.
+
+## GST returns
+
+GSTR-1 gains `exp` (export invoices: `invoiceId, number, date, invoiceValue, exportType WPAY|WOPAY, shippingBillNo, shippingBillDate, portCode, rates`) and `sez` (supplies to SEZ: `gstin, supplyType SEWP|SEWOP`, same fields). Deemed exports stay in `b2b` with `invTyp: "DE"`. GSTR-3B puts export and SEZ supplies in table 3.1(b) (`zeroRated`) and their IGST in the payable.
+
+# v1.20 TDS forms and returns
+
+Migration 051. Permissions: `tds.view` to read, `tds.manage` to change or generate; salary items also need `payroll.view`. Everything about the Income-tax Act 2025 (forms, section numbers, interest and fee sections) is **unconfirmed**: the official text was not reachable, names come from secondary reports of the Income-tax Rules 2026 and are editable data. The certificates are working copies; the valid one is downloaded from TRACES after the statement is filed.
+
+Form names by period (from 1 April 2026 the 2025 Act applies; earlier periods keep the old names):
+
+| Item | Before 1 Apr 2026 | From 1 Apr 2026 |
+|---|---|---|
+| Salary return | 24Q | Form 138 |
+| Non-salary return (residents) | 26Q | Form 140 |
+| Non-residents / TCS | 27Q / 27EQ | Form 144 / 143 |
+| Salary certificate | Form 16 | Form 130 |
+| Non-salary certificate | Form 16A | Form 131 |
+| Annual statement | Form 26AS | Form 168 |
+| Period word | Assessment year | Tax year |
+
+- `GET /tds/forms/names?fy=` the names above for a financial year, plus `periodLabel` and `unconfirmed`.
+- `GET /tds/section-map?date=&kind=` rows `{id, oldCode, oldSection, newSection, paymentCode, nature, rateText, thresholdText, kind, effectiveFrom, confirmed, sourceUrl, note, system, reference}`; `reference` is the section to show for `date` (old before `effectiveFrom`, new on or after). Existing section codes keep working.
+- `PATCH /tds/section-map/:id` edit a row (`newSection, paymentCode, nature, rateText, thresholdText, effectiveFrom, confirmed, sourceUrl, note, isActive`). A system row is copied to the company on first edit.
+- `POST /tds/interest-calc` `{kind: late_deduction|late_deposit|late_filing, tax, dueOn?, onDate?, daysLate?}` gives interest or fee: 1% a month or part for late deduction, 1.5% for late deposit, Rs 200 a day capped at the TDS for a late statement.
+- `GET|POST /tds/salary-challans`, `POST /tds/salary-challans/:id/cancel`. Body `{month: "YYYY-MM", depositDate, bsrCode (7), challanSerial (5), amount, interest?, lateFee?}`. One live challan per month; amount must equal payroll TDS for the month. Record only, no journal.
+- `GET /tds/form16?fy=&employeeId=` Part A (quarterly deducted and deposited, deposits with challan details) and Part B (salary, standard deduction, professional tax, chapter VI-A, total income, tax, rebate, cess, marginal relief, relief u/s 89 = 0, net tax, TDS, balance), regime, warnings.
+- `GET /tds/form16a?fy=&quarter=&partyId=` one object per deductee for the quarter (all deductees when `partyId` is omitted).
+- `POST /tds/certificates/generate` `{kind: salary|non_salary, fy, quarter?, employeeId?|partyId?}` bulk when the person is omitted. Stores the figures as issued, numbered `SAL|NSL/<fy>/<seq>`; regenerating keeps the number. `GET /tds/certificates?kind=&fy=&quarter=` lists them with snapshots (used for PDFs).
+- `GET /tds/returns?fy=&quarter=&kind=salary|non_salary&format=json|csv` return data with `checks` (TAN, responsible person, PAN missing and PAN format, challan link and amount, late deposit interest, late filing fee, annual tax against TDS in Q4), `lateInterest`, `lateFee`, `canFile`. The salary return includes the annual salary details in Q4. The CSV is Progen's working layout, **not** the RPU import format (that specification was not found); the older FVU-style `.txt` draft at `/tds/statement` is unchanged.
+- Rent (194I) thresholds become 6,00,000 a year from 1 April 2025 (unconfirmed).
+
+# Statutory payroll (migration 048)
+
+Module `payroll`. No new permissions: settings and rate rows need `payroll.employees`; runs, bonus, encashment, overtime entry and drafting a settlement need `payroll.run`; approving and paying a settlement need `payroll.approve` (the preparer cannot approve); reads need `payroll.view`. Settings routes accept PUT and PATCH.
+
+## Dated rates and settings
+- `GET /payroll/statutory/settings`, `PUT|PATCH` same path. Fields: `wagesRuleEnabled` (default false), `wagesRuleFrom` (2025-11-21), `wagesRulePercent` (50), `minimumWage`, `bonusPct` (8.33 to 20), `bonusEligibilityCeiling` (21000), `bonusCalcCeiling` (7000), `bonusMinDays` (30), `gratuityYears` (5), `gratuityFixedTermYears` (1), `gratuityCap` (2000000), `leaveExemptCap` (2500000), `otMultiplier` (2), `hoursPerDay` (8).
+- `GET /payroll/statutory/rates?month=YYYY-MM&stateCode=NN` returns built-in and company rows (`source` built_in or company) and `inForce` for the month. `POST` body `{kind: epf|esi|pt|lwf, stateCode (pt, lwf), effectiveFrom, config, note}`; `DELETE /payroll/statutory/rates/:id` (company rows only). Config: epf `{ceiling, epsCeiling, epsBps, edliBps, adminBps, adminMin}`; esi `{ceiling, employeeBps, employerBps, dailyExempt}`; pt `{periodicity, deductMonths, monthOverride, slabs[{from,to,amount,sex}]}`; lwf `{employee, employer, months}`. The row with the latest `effectiveFrom` on or before the first day of the pay month is used; on the same date a company row wins. 409 `RATE_EXISTS` for a repeated date.
+- `GET /payroll/runs/:id/wage-rule` lists employees whose PF wage was raised by the Labour Code rule in that run (`affected[]`, `totalAddback`). The rule raises PF wage to at least `wagesRulePercent` of earned pay once `wagesRuleEnabled` and the pay month is on or after `wagesRuleFrom`.
+- `GET|PUT|PATCH /payroll/employees/:id/statutory` `{fixedTerm}`.
+
+## Gratuity, bonus, leave encashment
+- `GET /payroll/gratuity/report?month=YYYY-MM`: per active employee `{wages, completedYears, countedYears, eligible, accrued, payable, taxFree, taxable, movement}` and `totals`. Formula 15/26 x wages x counted years; a part year over six months counts as a year; wages are basic plus DA (or the Labour Code wages when the rule is on).
+- `GET /payroll/bonus/preview?fy=2026&pct=` and `POST /payroll/bonus/run {fy, pct?, runId}`: bonus = min(wage, max(calcCeiling, minimumWage)) x months paid x pct. Eligible when wage is at most the eligibility ceiling and days paid at least `bonusMinDays`. The run adds one taxable earning adjustment per employee to the draft or computed run and recomputes it. One bonus per employee per year.
+- `GET /payroll/leave-encashment/types`, `PUT|PATCH /payroll/leave-encashment/types/:id {encashable, maxDays}`, `GET /payroll/leave-encashment/preview?fy=`, `POST /payroll/leave-encashment/run {fy, runId}`: days = min(balance, max days left this year); amount = wages / 30 x days. Writes a negative leave adjustment and a taxable earning adjustment.
+
+## Full and final settlement
+- `POST /payroll/fnf/preview` and `POST /payroll/fnf` body `{employeeId, exitDate, noticeRequiredDays, noticeServedDays, noticeMode: none|recover|payout, lopDays, includeGratuity, includeLeave, includeBonus, leaveExempt, extraLines[{kind,label,amount,taxable}], notes}`. `GET /payroll/fnf`, `GET /payroll/fnf/:id` (adds `company` and the full `result` for the statement PDF), `PUT|PATCH /payroll/fnf/:id` (draft only), `POST /payroll/fnf/:id/cancel` (draft), `/approve` (posts the accrual, records encashment and bonus, sets the employee to `left` with the leaving date), `/pay {payDate?, accountId?}`. Statuses draft, approved, paid, cancelled; 409 `FNF_EXISTS`, `FNF_STATE`, `FNF_LOCKED`.
+- The exit month is worked out with the normal payroll line, so PF, ESI, PT and TDS follow the same rules. If a live payroll line already exists for the exit month, pending salary is not paid again. Notice shortfall = short days x monthly gross / 30, recovered or paid. Gratuity up to `gratuityCap` is tax free. Approved settlements drop the employee from later payroll runs.
+
+## Shifts and overtime
+- `GET|POST /payroll/shifts`, `PATCH /payroll/shifts/:id` `{name, startTime, endTime, breakMinutes, isActive}`.
+- `GET /payroll/shift-log?month=YYYY-MM&employeeId=`, `PUT /payroll/shift-log {employeeId, entries[{day, shiftId, otHours}]}`. Compute the run again to pick up overtime: pay = wages / divisor days / hours per day x hours x multiplier, added as a taxable "Overtime" earning.
+
+## Legal figures and confirmation
+- EPF wage ceiling 25,000 from 17 Sep 2026 (S.O. 5109(E)): reported by several secondary sources (scconline.com/blog/post/2026/09/19/labour-ministry-notifies-25000-wage-ceiling-under-social-security-code/); Gazette text not read. September 2026 uses the ceiling of the first day of the month (15,000); the split-month method is not built. ESI ceiling stays 21,000.
+- Code on Wages 50% rule and gratuity wages from 21 Nov 2025: labour.gov.in/faqs-labour-codes confirms added-back allowances and a 20 lakh gratuity maximum; the 50% figure and fixed-term one-year rule are from commentary. The rule is off by default.
+- Bonus eligibility 21,000 and calculation ceiling 7,000 (or minimum wage): S.O. 4711(E) and 4710(E) of 25 Aug 2026, per scconline.com/blog/post/2026/08/26/bonus-rules-under-code-on-wages-eligibility-calculation/. The 8.33% to 20% range is from commentary.
+- Overtime at twice the ordinary rate (Factories Act s.59, Code on Wages): not looked up; kept as a setting. Leave encashment tax-free cap 25 lakh: not confirmed. Divisor 30 for encashment and notice pay is a convention.
+
+## Helpdesk, contracts and timesheets: clarifications (migration 055)
+
+- Only a staff `reply` sets `firstResponseAt`; status changes and notes never do.
+- Contract bills are dated today (invoices cannot be future-dated, and past periods are not back-dated). Contract `value` is before GST; the service item's GST is added by the invoice.
+- `GET /helpdesk/staff` and `GET /timesheets/staff` return `{data: [{id, name}]}` for pickers.
+- Contract `status` values returned: `active`, `expired` (active past its end date), `cancelled`, `renewed`.
+
+Note (landed cost and RFQ): `PUT /rfqs/:id/quotes` and `PUT /rfqs/:id/choices` are also served as `PATCH` for the Flutter client. Stock moves of kind `landed_cost` and `landed_cost_cancel` have quantity 0 (value only).
+- `PATCH /timesheets/week` does the same as `PUT /timesheets/week` (the Flutter client has no PUT).

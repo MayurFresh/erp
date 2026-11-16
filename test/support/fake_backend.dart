@@ -134,6 +134,10 @@ class FakeBackend implements HttpClientAdapter {
       ('GET', '/parties/p2') => (200, vendor),
       ('GET', '/parties/p1/outstanding') => (200, customerOutstanding),
       ('GET', '/parties/p2/outstanding') => (200, vendorOutstanding),
+      ('GET', '/parties/p1/contacts' || '/parties/p2/contacts') => (
+        200,
+        {'data': <Object>[]},
+      ),
       ('GET', '/parties/p1/statement' || '/parties/p2/statement') => (
         200,
         statement,
@@ -887,29 +891,86 @@ class FakeBackend implements HttpClientAdapter {
     'previousFrom': '2026-09-01',
     'previousTo': '2026-09-30',
     'kpis': {
-      'current': {'sales': 412000, 'purchases': 250000, 'expenses': 40000, 'receivables': 264910, 'payables': 8000, 'cashAndBank': 150000.5, 'netProfit': 52000},
-      'previous': {'sales': 368000, 'purchases': 210000, 'expenses': 35000, 'receivables': 200000, 'payables': 9000, 'cashAndBank': 120000, 'netProfit': 41000},
+      'current': {
+        'sales': 412000,
+        'purchases': 250000,
+        'expenses': 40000,
+        'receivables': 264910,
+        'payables': 8000,
+        'cashAndBank': 150000.5,
+        'netProfit': 52000,
+      },
+      'previous': {
+        'sales': 368000,
+        'purchases': 210000,
+        'expenses': 35000,
+        'receivables': 200000,
+        'payables': 9000,
+        'cashAndBank': 120000,
+        'netProfit': 41000,
+      },
     },
     'trend': [
-      {'month': '2026-08', 'sales': 300000, 'purchases': 180000, 'expenses': 30000},
-      {'month': '2026-09', 'sales': 368000, 'purchases': 210000, 'expenses': 35000},
-      {'month': '2026-10', 'sales': 412000, 'purchases': 250000, 'expenses': 40000},
+      {
+        'month': '2026-08',
+        'sales': 300000,
+        'purchases': 180000,
+        'expenses': 30000,
+      },
+      {
+        'month': '2026-09',
+        'sales': 368000,
+        'purchases': 210000,
+        'expenses': 35000,
+      },
+      {
+        'month': '2026-10',
+        'sales': 412000,
+        'purchases': 250000,
+        'expenses': 40000,
+      },
     ],
     'cashFlow': [
       {'month': '2026-09', 'cashIn': 300000, 'cashOut': 220000},
       {'month': '2026-10', 'cashIn': 350000, 'cashOut': 260000},
     ],
     'topCustomers': [
-      {'partyId': 'p1', 'name': 'Mumbai Infra Projects LLP', 'amount': 150000, 'invoices': 4, 'share': 36},
+      {
+        'partyId': 'p1',
+        'name': 'Mumbai Infra Projects LLP',
+        'amount': 150000,
+        'invoices': 4,
+        'share': 36,
+      },
     ],
     'topItems': [
-      {'itemId': 'i1', 'name': 'Portland Cement 53 Grade 50kg', 'unit': 'bag', 'qty': 120, 'amount': 50400},
+      {
+        'itemId': 'i1',
+        'name': 'Portland Cement 53 Grade 50kg',
+        'unit': 'bag',
+        'qty': 120,
+        'amount': 50400,
+      },
     ],
     'salesByLocation': [],
     'expensesByCategory': [],
     'ageing': {
-      'receivables': {'notDue': 150000, 'd1_30': 60000, 'd31_60': 30000, 'd61_90': 14910, 'd90plus': 10000, 'total': 264910},
-      'payables': {'notDue': 8000, 'd1_30': 0, 'd31_60': 0, 'd61_90': 0, 'd90plus': 0, 'total': 8000},
+      'receivables': {
+        'notDue': 150000,
+        'd1_30': 60000,
+        'd31_60': 30000,
+        'd61_90': 14910,
+        'd90plus': 10000,
+        'total': 264910,
+      },
+      'payables': {
+        'notDue': 8000,
+        'd1_30': 0,
+        'd31_60': 0,
+        'd61_90': 0,
+        'd90plus': 0,
+        'total': 8000,
+      },
     },
   };
 

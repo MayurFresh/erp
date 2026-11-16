@@ -37,6 +37,7 @@ class Party {
     this.msmeCategory,
     this.tdsSectionId,
     this.tdsSectionCode,
+    this.priceListId,
     this.custom = const {},
   });
 
@@ -61,6 +62,7 @@ class Party {
     msmeCategory: asStringOrNull(json['msmeCategory']),
     tdsSectionId: asStringOrNull(json['tdsSectionId']),
     tdsSectionCode: asStringOrNull(json['tdsSectionCode']),
+    priceListId: asStringOrNull(json['priceListId']),
     custom: asJson(json['custom']),
   );
 
@@ -96,6 +98,9 @@ class Party {
   final String? msmeCategory;
   final String? tdsSectionId;
   final String? tdsSectionCode;
+
+  /// Price list used when a sales line has no rate.
+  final String? priceListId;
 
   /// Custom field values (`key → value`).
   final Json custom;

@@ -34,6 +34,7 @@ const createBody = z.object({
   udyamNo: z.preprocess(blankToUndefined, udyamField.optional()),
   msmeCategory: z.enum(['micro', 'small', 'medium']).nullable().optional(),
   tdsSectionId: z.uuid().nullable().optional(),
+  priceListId: z.uuid().nullable().optional(),
   custom: customInput,
 });
 const blankToNull = (v: unknown) => (v === '' ? null : v);
@@ -53,6 +54,7 @@ const patchBody = z.object({
   udyamNo: z.preprocess(blankToNull, udyamField.nullable().optional()),
   msmeCategory: z.enum(['micro', 'small', 'medium']).nullable().optional(),
   tdsSectionId: z.uuid().nullable().optional(),
+  priceListId: z.uuid().nullable().optional(),
   custom: customInput,
 });
 const listQuery = pagingQuery.extend({ type: z.enum(['customer', 'vendor']).optional() });
@@ -61,6 +63,7 @@ export const partyJson = (p: Selectable<PartyTable>, balance = 0, sectionCode?: 
   id: p.id, companyId: p.company_id, type: p.type, name: p.name, gstin: p.gstin, stateCode: p.state_code,
   phone: p.phone, email: p.email, address: p.address, creditLimit: p.credit_limit, creditDays: p.credit_days,
   pan: p.pan, pincode: p.pincode, udyamNo: p.udyam_no, msmeCategory: p.msme_category,
+  priceListId: p.price_list_id ?? null,
   tdsSectionId: p.tds_section_id, tdsSectionCode: sectionCode ?? null, custom: p.custom ?? {}, balance, createdAt: p.created_at, updatedAt: p.updated_at,
 });
 
@@ -131,6 +134,7 @@ export async function partyRoutes(app: FastifyInstance) {
         state_code: state ?? null, phone: body.phone ?? null, email: body.email ?? null, address: body.address ?? null,
         credit_limit: body.creditLimit ?? 0, credit_days: body.creditDays ?? 0, pan: body.pan ?? null, pincode: body.pincode ?? null,
         udyam_no: body.udyamNo ?? null, msme_category: body.msmeCategory ?? null, tds_section_id: body.tdsSectionId ?? null,
+        price_list_id: body.priceListId ?? null,
         custom,
       }).returningAll().executeTakeFirstOrThrow();
       await writeAudit(tx, auditOf(ctx), 'party', row.id, 'create', null, row);
@@ -164,7 +168,7 @@ export async function partyRoutes(app: FastifyInstance) {
       checkMsme(body.type ?? before.type, body.msmeCategory !== undefined ? body.msmeCategory : before.msme_category,
         body.creditDays ?? before.credit_days);
       const changes = definedOnly({
-        udyam_no: body.udyamNo, msme_category: body.msmeCategory, tds_section_id: body.tdsSectionId,
+        udyam_no: body.udyamNo, msme_category: body.msmeCategory, tds_section_id: body.tdsSectionId, price_list_id: body.priceListId,
         type: body.type, name: body.name, gstin: body.gstin, phone: body.phone, email: body.email,
         address: body.address, credit_limit: body.creditLimit, credit_days: body.creditDays, pan: body.pan, pincode: body.pincode,
       });

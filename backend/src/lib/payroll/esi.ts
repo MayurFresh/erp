@@ -25,6 +25,7 @@ export interface EsiInput {
   coveredUntil: string | null;
   paidDays: number;
   ceiling?: number;
+  employeeBps?: number; employerBps?: number; dailyExempt?: number;
 }
 export interface EsiResult { covered: boolean; coveredUntil: string | null; employee: number; employer: number }
 
@@ -41,7 +42,7 @@ export function computeEsi(i: EsiInput): EsiResult {
   const daily = i.paidDays > 0 ? i.esiWage / i.paidDays : 0;
   return {
     covered: true, coveredUntil,
-    employee: daily <= ESI_DAILY_EXEMPT ? 0 : ceilRupee((i.esiWage * ESI_EMPLOYEE_BPS) / 10000),
-    employer: ceilRupee((i.esiWage * ESI_EMPLOYER_BPS) / 10000),
+    employee: daily <= (i.dailyExempt ?? ESI_DAILY_EXEMPT) ? 0 : ceilRupee((i.esiWage * (i.employeeBps ?? ESI_EMPLOYEE_BPS)) / 10000),
+    employer: ceilRupee((i.esiWage * (i.employerBps ?? ESI_EMPLOYER_BPS)) / 10000),
   };
 }

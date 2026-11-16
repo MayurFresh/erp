@@ -1,3 +1,4 @@
+import '../platform_extras/search_screen.dart' show GlobalSearchField;
 import '../platform/notifications_screen.dart' show NotificationBell;
 import 'dart:math' as math;
 
@@ -33,6 +34,7 @@ class AppShell extends ConsumerWidget {
 
   /// Path segments whose plain capitalised form reads wrong.
   static const _crumbNames = {
+    'crm': 'Leads and deals',
     'ipd': 'In-patients',
     'boms': 'Bills of materials',
     'jobwork': 'Job work',
@@ -93,6 +95,20 @@ class AppShell extends ConsumerWidget {
     final actions = [
       if (!wide && session.companies.length > 1)
         _CompanySwitcher(session: session, compact: true),
+      if (session.company != null && wide)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: Space.sm),
+          child: GlobalSearchField(width: 240),
+        ),
+      // Under 400 px the bar keeps room for the title; search sits at the top of the drawer.
+      if (session.company != null &&
+          !wide &&
+          MediaQuery.sizeOf(context).width >= 400)
+        IconButton(
+          tooltip: 'Search',
+          icon: const Icon(Icons.search),
+          onPressed: () => context.go('/search'),
+        ),
       if (session.user != null && session.company != null)
         const NotificationBell(),
       if (session.user != null)
@@ -214,7 +230,7 @@ class _Breadcrumb extends StatelessWidget {
   }
 }
 
-const double _sidebarWidth = 240;
+const double _sidebarWidth = 256;
 
 class _NavMenu extends StatelessWidget {
   const _NavMenu({
@@ -299,6 +315,23 @@ class _NavMenu extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSidebarMuted,
               ),
+            ),
+          ),
+        if (!embedded && company != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.lg, 0),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: colors.onSidebar,
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+                alignment: Alignment.centerLeft,
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+                context.go('/search');
+              },
+              icon: const Icon(Icons.search, size: 20),
+              label: const Text('Search'),
             ),
           ),
         for (final (index, group) in groups.indexed) ...[

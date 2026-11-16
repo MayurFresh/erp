@@ -1,5 +1,6 @@
 import '../../core/json.dart';
 import '../documents/document_models.dart';
+import '../export_currency/export_models.dart';
 
 export '../documents/document_models.dart'
     show DocStatus, PaymentStatus, Settlement, TaxLine, TaxSummary, UserRef;
@@ -144,6 +145,7 @@ class Invoice implements TaxSummary {
     this.settlements,
     this.einvoice,
     this.ewaybill,
+    this.ext,
     this.reverseCharge = false,
     this.rcmTax = 0,
   });
@@ -198,7 +200,11 @@ class Invoice implements TaxSummary {
     reverseCharge: json['reverseCharge'] == true,
     rcmTax: asDouble(json['rcmTax']),
     ewaybill: EWayBill.maybe(json['ewaybill']),
+    ext: InvoiceExt.fromJson(json['ext']),
   );
+
+  /// Export, foreign-currency and TCS facts; `null` for a plain invoice.
+  final InvoiceExt? ext;
 
   /// `null` in previews.
   final String? id;
@@ -285,10 +291,30 @@ class InvoiceDraft {
     this.costCentreId,
     this.custom = const {},
     this.notes,
+    this.allowOverLimit = false,
+    this.extra = const {},
   });
 
   final String locationId;
   final String partyId;
+
+  /// Export, currency and TCS fields (`ExportChoice.toJson()`).
+  final Json extra;
+
+  /// Bill even over the customer's credit limit (needs `parties.credit_override`).
+  final bool allowOverLimit;
+
+  InvoiceDraft withOverLimit() => InvoiceDraft(
+    locationId: locationId,
+    partyId: partyId,
+    lines: lines,
+    invoiceDate: invoiceDate,
+    costCentreId: costCentreId,
+    custom: custom,
+    notes: notes,
+    allowOverLimit: true,
+    extra: extra,
+  );
 
   /// `YYYY-MM-DD`; server defaults to today.
   final String? invoiceDate;
@@ -304,7 +330,9 @@ class InvoiceDraft {
     'invoiceDate': invoiceDate,
     'notes': notes,
     'costCentreId': costCentreId,
+    if (allowOverLimit) 'allowOverLimit': true,
     if (custom.isNotEmpty) 'custom': custom,
+    ...extra,
     'lines': [for (final line in lines) line.toJson()],
   });
 }

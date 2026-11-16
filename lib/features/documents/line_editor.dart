@@ -10,13 +10,26 @@ import '../../widgets/states.dart';
 import '../items/item_model.dart';
 import 'document_models.dart';
 import 'document_widgets.dart';
+import '../pricing/price_prefill.dart';
 
 /// An editable line (item, qty, rate, discount) of an invoice or purchase.
-class LineDraft {
+class LineDraft with PricedLine {
   LineDraft(this.item, {double? defaultRate})
     : qty = TextEditingController(text: '1'),
       rate = TextEditingController(text: formatPlain(defaultRate)),
       discount = TextEditingController();
+
+  /// The scheme's free goods were already added as a separate line.
+  bool freeAdded = false;
+
+  @override
+  TextEditingController get priceRateField => rate;
+  @override
+  TextEditingController get priceDiscountField => discount;
+  @override
+  String get priceItemId => item.id;
+  @override
+  double get priceQty => parseNumber(qty.text) ?? 0;
 
   final Item item;
   final TextEditingController qty;
@@ -84,8 +97,11 @@ class LineEditor extends StatelessWidget {
     required this.onChanged,
     required this.onRemove,
     this.rateHint,
+    this.onAddFree,
   });
 
+  /// Adds the free goods of the line's scheme as a separate line.
+  final VoidCallback? onAddFree;
   final LineDraft line;
   final TaxLine? preview;
   final Map<String, String> errors;
@@ -178,7 +194,7 @@ class LineEditor extends StatelessWidget {
       onPressed: onRemove,
     );
 
-    return Card(
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 12),
       color: theme.colorScheme.surface,
       child: LayoutBuilder(
@@ -256,6 +272,28 @@ class LineEditor extends StatelessWidget {
           );
         },
       ),
+    );
+    final price = line.resolved;
+    if (price == null ||
+        (price.priceListName == null &&
+            price.source != 'customer' &&
+            price.discountPct <= 0 &&
+            price.freeQty <= 0)) {
+      return card;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+          child: SchemeHint(
+            price: price,
+            onAddFree: onAddFree,
+            freeAdded: line.freeAdded,
+          ),
+        ),
+        card,
+      ],
     );
   }
 }
@@ -514,7 +552,11 @@ class DocLinesSection extends StatelessWidget {
     required this.onAdd,
     this.enabled = true,
     this.rateHint,
+    this.onAddFree,
   });
+
+  /// Called with the line whose scheme free goods should be added.
+  final ValueChanged<LineDraft>? onAddFree;
 
   final List<LineDraft> lines;
 
@@ -548,6 +590,7 @@ class DocLinesSection extends StatelessWidget {
               preview: matches ? preview[index] : null,
               errors: lineErrors[index] ?? const {},
               rateHint: rateHint,
+              onAddFree: onAddFree == null ? null : () => onAddFree!(line),
               onChanged: onChanged,
               onRemove: () => onRemove(line),
             ),

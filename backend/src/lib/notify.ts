@@ -1,4 +1,6 @@
+import { sql } from 'kysely';
 import type { Config } from '../config.ts';
+import { sendSms } from './sms.ts';
 import type { Tx } from '../db/database.ts';
 import { enqueue, registerJobHandler, type JobDeps } from './jobs.ts';
 import { TEMPLATES, type TemplateId } from './templates.ts';
@@ -7,7 +9,7 @@ export interface NotifyInput {
   /** Users get an in-app row (if the template has one) and email/WhatsApp per their prefs. */
   userIds?: string[];
   /** Someone who isn't a user, e.g. a customer. */
-  to?: { email?: string | null; phone?: string | null; partyId?: string | null; channels?: ('email' | 'whatsapp')[] };
+  to?: { email?: string | null; phone?: string | null; partyId?: string | null; channels?: ('email' | 'whatsapp' | 'sms')[] };
   template: TemplateId;
   data: Record<string, unknown>;
   /** Client route opened from the in-app notification, e.g. `/approvals/<id>`. */
@@ -20,7 +22,7 @@ export async function notify(
 ): Promise<string[]> {
   const def = TEMPLATES[n.template];
   const msg = def.render(n.data);
-  const outbox: { channel: 'email' | 'whatsapp'; to: string | null; userId: string | null; partyId: string | null }[] = [];
+  const outbox: { channel: 'email' | 'whatsapp' | 'sms'; to: string | null; userId: string | null; partyId: string | null; extra?: Record<string, unknown> }[] = [];
 
   const userIds = [...new Set(n.userIds ?? [])];
   if (userIds.length) {
@@ -48,13 +50,24 @@ export async function notify(
     if (def.whatsapp && channels.includes('whatsapp')) {
       outbox.push({ channel: 'whatsapp', to: n.to.phone ?? null, userId: null, partyId: n.to.partyId ?? null });
     }
+    // SMS only when asked for, the template allows it and the company has turned SMS on.
+    if (def.sms && n.to.channels?.includes('sms') && who.companyId) {
+      const s = await smsSettingsFor(tx, who.companyId);
+      if (s?.enabled) {
+        const t = s.templates?.[n.template];
+        outbox.push({
+          channel: 'sms', to: n.to.phone ?? null, userId: null, partyId: n.to.partyId ?? null,
+          extra: { dlt: { entityId: s.dlt_entity_id, senderId: s.sender_id, templateId: t?.dltTemplateId ?? null }, smsText: t?.text ?? null },
+        });
+      }
+    }
   }
   if (!outbox.length) return [];
 
   const rows = await tx.insertInto('notification_outbox').values(outbox.map((o) => ({
     tenant_id: who.tenantId, company_id: who.companyId, channel: o.channel, to_address: o.to?.trim() || null,
     user_id: o.userId, party_id: o.partyId, template: n.template, subject: msg.subject, body: msg.body,
-    data: JSON.stringify(n.data), status: o.to?.trim() ? 'pending' : 'skipped',
+    data: JSON.stringify(o.extra ? { ...n.data, ...o.extra } : n.data), status: o.to?.trim() ? 'pending' : 'skipped',
     error: o.to?.trim() ? null : 'No address',
   }))).returning(['id', 'status']).execute();
   for (const r of rows) {
@@ -67,7 +80,13 @@ export async function notify(
 
 // Delivery -----------------------------------------------------------------------------------
 
-export interface OutboundMessage { channel: 'email' | 'whatsapp'; to: string; template: string; subject: string | null; body: string; data: Record<string, any> }
+/** A company's SMS settings, or null. */
+async function smsSettingsFor(tx: Tx, companyId: string) {
+  return (await sql<{ enabled: boolean; dlt_entity_id: string | null; sender_id: string | null; templates: Record<string, { dltTemplateId?: string; text?: string }> }>
+    `select enabled, dlt_entity_id, sender_id, templates from sms_settings where company_id = ${companyId}`.execute(tx)).rows[0] ?? null;
+}
+
+export interface OutboundMessage { channel: 'email' | 'whatsapp' | 'sms'; to: string; template: string; subject: string | null; body: string; data: Record<string, any> }
 
 /** Sends one message; returns the provider's reference. Tests may replace it with `setSender`. */
 export type Sender = (m: OutboundMessage, cfg: Config, log?: JobDeps['log']) => Promise<string>;
@@ -85,8 +104,16 @@ const defaultSender: Sender = async (m, cfg, log) => {
       const nodemailer = await import('nodemailer');
       mailer = nodemailer.createTransport(cfg.SMTP_URL);
     }
-    const info = await mailer.sendMail({ from: cfg.EMAIL_FROM, to: m.to, subject: m.subject ?? '', text: m.body });
+    const info = await mailer.sendMail({
+      from: cfg.EMAIL_FROM, to: m.to, subject: m.subject ?? '', text: m.body,
+      ...(typeof m.data.html === 'string' ? { html: m.data.html } : {}),
+      ...(Array.isArray(m.data.attachments) ? { attachments: m.data.attachments } : {}),
+    });
     return info.messageId ?? 'smtp';
+  }
+  if (m.channel === 'sms') {
+    const text = typeof m.data.smsText === 'string' && m.data.smsText ? m.data.smsText : m.body;
+    return sendSms({ to: m.to, text, dlt: m.data.dlt, variables: Array.isArray(m.data.smsVars) ? m.data.smsVars : undefined }, cfg, log);
   }
   if (cfg.WHATSAPP_DRIVER === 'log') {
     log?.info(`[whatsapp:log] to=${m.to} template=${m.template}\n${m.body}`);
@@ -126,7 +153,7 @@ registerJobHandler('notification.send', async (tx, job, deps) => {
   const row = await tx.selectFrom('notification_outbox').selectAll().where('id', '=', outboxId).forUpdate().executeTakeFirst();
   if (!row || row.status !== 'pending' || !row.to_address) return { skipped: true };
   const ref = await sender({
-    channel: row.channel as 'email' | 'whatsapp', to: row.to_address, template: row.template, subject: row.subject,
+    channel: row.channel as 'email' | 'whatsapp' | 'sms', to: row.to_address, template: row.template, subject: row.subject,
     body: row.body, data: (row.data ?? {}) as Record<string, any>,
   }, deps.config, deps.log);
   await tx.updateTable('notification_outbox').set({

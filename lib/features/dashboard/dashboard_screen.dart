@@ -16,6 +16,7 @@ import '../../widgets/status_chip.dart';
 import '../auth/session.dart';
 import '../compliance/alerts_card.dart';
 import '../compliance/tax_perms.dart';
+import '../crm/crm_follow_ups_card.dart';
 import '../filings/filing_models.dart';
 import '../filings/filings_repository.dart';
 import '../filings/needs_you_card.dart';
@@ -165,6 +166,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     cards.addAll([
       // Only roles that can see returns ask for the filing calendar.
       if (perms.can(TaxPerm.complianceView)) (1, const NeedsYouCard()),
+      if (perms.can(Perm.crmView) &&
+          ref.watch(businessProfileProvider).hasModule('crm'))
+        (1, const CrmFollowUpsCard()),
       (1, const AlertsCard()),
       if (d.lowStockCount > 0)
         (

@@ -28,6 +28,8 @@ export interface EpfInput {
   ratePct?: number;
   /** A new joiner above the ceiling has no pension (EPS) share. */
   epsEligible?: boolean;
+  /** From the dated rate row; defaults are the long-standing constants. */
+  epsCeiling?: number; epsBps?: number; edliBps?: number; adminBps?: number;
 }
 export interface EpfResult {
   epfWage: number; epsWage: number;
@@ -37,13 +39,13 @@ export interface EpfResult {
 export function computeEpf(i: EpfInput): EpfResult {
   const pct = Math.round((i.ratePct ?? 12) * 100);
   const wage = i.optHigher ? i.pfWage : Math.min(i.pfWage, i.ceiling);
-  const epsWage = Math.min(i.pfWage, i.ceiling);
+  const epsWage = Math.min(i.pfWage, i.epsCeiling ?? i.ceiling);
   const employee = roundRupee((wage * pct) / 10000);
   const employerTotal = roundRupee((wage * pct) / 10000);
-  const eps = i.epsEligible === false ? 0 : Math.min(employerTotal, roundRupee((epsWage * EPS_BPS) / 10000));
+  const eps = i.epsEligible === false ? 0 : Math.min(employerTotal, roundRupee((epsWage * (i.epsBps ?? EPS_BPS)) / 10000));
   return {
     epfWage: wage, epsWage, employee, eps, epfEmployer: employerTotal - eps, employerTotal,
-    edli: roundRupee((epsWage * EDLI_BPS) / 10000), admin: roundRupee((wage * ADMIN_BPS) / 10000),
+    edli: roundRupee((epsWage * (i.edliBps ?? EDLI_BPS)) / 10000), admin: roundRupee((wage * (i.adminBps ?? ADMIN_BPS)) / 10000),
   };
 }
 

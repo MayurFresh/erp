@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import type { Tx } from '../db/database.ts';
+import { companyLayers, fifoActive, valuationSetting, type Layer } from './fifo.ts';
 
 /**
  * Weighted-average costing. An item's average cost is (sum of move values) ÷ (sum of qty)
@@ -13,7 +14,8 @@ export async function lockItems(tx: Tx, companyId: string, itemIds: string[]): P
   }
 }
 
-export interface Position { qty: number; value: number }
+/** `layers` is set only when the company costs issues by FIFO: the receipt layers left, oldest first. */
+export interface Position { qty: number; value: number; layers?: Layer[] }
 
 export async function positions(tx: Tx, companyId: string, itemIds: string[]): Promise<Map<string, Position>> {
   const result = new Map<string, Position>();
@@ -24,6 +26,11 @@ export async function positions(tx: Tx, companyId: string, itemIds: string[]): P
     .where('company_id', '=', companyId).where('item_id', 'in', [...new Set(itemIds)])
     .groupBy('item_id').execute();
   for (const r of rows) result.set(r.item_id, { qty: Number(r.qty), value: Number(r.value) });
+  const setting = await valuationSetting(tx, companyId);
+  if (fifoActive(setting)) {
+    const layers = await companyLayers(tx, companyId, [...new Set(itemIds)], setting);
+    for (const [id, pos] of result) pos.layers = layers.get(id) ?? [];
+  }
   return result;
 }
 
@@ -48,6 +55,7 @@ export function averageCost(pos: Position, fallback: number): number {
  * Issuing the last units takes the exact remaining value so no paise are stranded.
  */
 export function issue(pos: Position, qty: number, fallback: number): { value: number; costRate: number; after: Position } {
+  if (pos.layers) return issueFifo(pos, qty, fallback);
   const rate = averageCost(pos, fallback);
   const lastUnits = pos.qty > 0 && Math.abs(pos.qty - qty) < 0.0005;
   const value = lastUnits ? round2(Math.max(pos.value, 0)) : round2(qty * rate);
@@ -56,7 +64,31 @@ export function issue(pos: Position, qty: number, fallback: number): { value: nu
 
 /** Receiving stock with a known total value. */
 export function receive(pos: Position, qty: number, value: number): Position {
-  return { qty: round3(pos.qty + qty), value: round2(pos.value + value) };
+  const after: Position = { qty: round3(pos.qty + qty), value: round2(pos.value + value) };
+  if (pos.layers) after.layers = qty > 0 ? [...pos.layers, { qty, rate: value / qty, date: '' }] : pos.layers;
+  return after;
+}
+
+/** FIFO: takes the oldest layers first. Units beyond the layers (negative stock) cost at the fallback rate. */
+function issueFifo(pos: Position, qty: number, fallback: number): { value: number; costRate: number; after: Position } {
+  const rest = pos.layers!.map((l) => ({ ...l }));
+  let need = qty;
+  let taken = 0;
+  while (need > 0.0005 && rest.length) {
+    const l = rest[0]!;
+    const take = Math.min(l.qty, need);
+    taken += take * l.rate;
+    l.qty = round3(l.qty - take);
+    need = round3(need - take);
+    if (l.qty <= 0.0005) rest.shift();
+  }
+  if (need > 0.0005) taken += need * averageCost(pos, fallback);
+  const lastUnits = pos.qty > 0 && Math.abs(pos.qty - qty) < 0.0005;
+  const value = lastUnits ? round2(Math.max(pos.value, 0)) : round2(taken);
+  return {
+    value, costRate: round4(qty > 0 ? value / qty : 0),
+    after: { qty: round3(pos.qty - qty), value: round2(pos.value - value), layers: lastUnits ? [] : rest },
+  };
 }
 
 function round3(n: number) {

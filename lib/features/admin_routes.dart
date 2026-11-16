@@ -36,6 +36,8 @@ import 'settings/roles_screens.dart';
 import 'settings/user_edit_screen.dart';
 import 'shell/nav.dart';
 import 'shell/routing.dart';
+import 'finance_reports/finance_reports_routes.dart';
+import 'platform_extras/platform_extras_routes.dart';
 
 export 'settings/user_edit_screen.dart' show UserEditScreen;
 
@@ -244,6 +246,6 @@ const List<NavEntry> adminNavEntries = [
 /// Suggested grouping: two new groups (insert after "Masters") plus
 /// [settingsNavEntries] spread into "Administration".
 const List<NavGroup> adminNavGroups = [
-  NavGroup('Accounting', accountingNavEntries),
-  NavGroup('Reports', reportNavEntries),
+  NavGroup('Accounting', [...accountingNavEntries, ...financeReportNavEntries]),
+  NavGroup('Reports', [...reportNavEntries, scheduledReportsNavEntry]),
 ];

@@ -24,6 +24,7 @@ export interface CompanyTable {
   pos_prices_include_tax: Generated<boolean | null>; pos_invoice_prefix: Generated<string>;
   business_type: Generated<string>; plan: Generated<string>; enabled_modules: string[] | null; terms: Generated<unknown>;
   country: Generated<string>; currency: Generated<string>; logo_file_id: string | null; brand_color: string | null;
+  aato_band: Generated<string>;
 }
 
 export interface LocationTable {
@@ -61,7 +62,9 @@ export interface ItemTable {
   hsn_code: string | null; unit: string; gst_rate: number; sale_price: Generated<number>;
   purchase_price: Generated<number>; track_stock: Generated<boolean>; reorder_level: Generated<number>;
   is_active: Generated<boolean>; created_at: Generated<Date>; updated_at: Generated<Date>; custom: Generated<CustomValues>;
+  default_purchase_unit: Generated<string | null>; default_sale_unit: Generated<string | null>;
 }
+export interface ItemUnitTable { id: Generated<string>; tenant_id: string; company_id: string; item_id: string; name: string; factor: number; created_at: Generated<Date> }
 
 export interface PartyTable {
   id: Generated<string>; tenant_id: string; company_id: string; type: string; name: string;
@@ -69,7 +72,28 @@ export interface PartyTable {
   address: string | null; credit_limit: Generated<number>; created_at: Generated<Date>;
   credit_days: Generated<number>; pan: string | null; pincode: string | null;
   udyam_no: string | null; msme_category: string | null; tds_section_id: string | null; custom: Generated<CustomValues>;
-  updated_at: Generated<Date>;
+  updated_at: Generated<Date>; no_reminders: Generated<boolean>; price_list_id: string | null;
+}
+
+export interface PriceListTable {
+  id: Generated<string>; tenant_id: string; company_id: string; name: string; mode: Generated<string>;
+  adjust_pct: Generated<number>; valid_from: string | null; valid_to: string | null; is_active: Generated<boolean>;
+  notes: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface PriceListItemTable {
+  id: Generated<string>; tenant_id: string; company_id: string; price_list_id: string; item_id: string;
+  min_qty: Generated<number>; rate: number;
+}
+export interface CustomerPriceTable {
+  id: Generated<string>; tenant_id: string; company_id: string; party_id: string; item_id: string;
+  min_qty: Generated<number>; rate: number; valid_from: string | null; valid_to: string | null;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface PriceSchemeTable {
+  id: Generated<string>; tenant_id: string; company_id: string; name: string; kind: string; item_id: string;
+  buy_qty: number | null; free_qty: number | null; free_item_id: string | null; min_qty: number | null;
+  discount_pct: number | null; valid_from: string | null; valid_to: string | null; is_active: Generated<boolean>;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 
 export interface StockMoveTable {
@@ -100,6 +124,7 @@ export interface InvoiceLineTable {
   description: string; hsn_code: string | null; qty: number; unit: string; rate: number;
   discount_pct: number; taxable_value: number; gst_rate: number; cgst: number; sgst: number;
   igst: number; line_total: number; returned_qty: Generated<number>; discount_amount: number | null;
+  entered_unit: Generated<string | null>; entered_qty: Generated<number | null>;
 }
 
 export interface AuditLogTable {
@@ -151,6 +176,20 @@ export interface DocLineTable {
 }
 export interface PurchaseLineTable extends DocLineTable {
   purchase_id: string; grn_line_id: Generated<string | null>; grni_value: Generated<number>; variance_value: Generated<number>;
+  returned_qty: Generated<number>; returned_taxable: Generated<number>;
+  entered_unit: Generated<string | null>; entered_qty: Generated<number | null>;
+}
+export interface PurchaseReturnTable {
+  id: Generated<string>; tenant_id: string; company_id: string; purchase_id: string; location_id: string; party_id: string;
+  number: string; fy: string; return_date: string; kind: string; reason: string; status: Generated<string>;
+  place_of_supply: string; supply_type: string; reverse_charge: boolean; subtotal: number; cgst: number; sgst: number;
+  igst: number; round_off: number; total: number; tds_reversed: number; applied_amount: number; stock_value: number;
+  created_by: string; created_at: Generated<Date>; updated_at: Generated<Date>; cancelled_at: Date | null; cancel_reason: string | null;
+}
+export interface PurchaseReturnLineTable {
+  id: Generated<string>; tenant_id: string; return_id: string; line_no: number; purchase_line_id: string; item_id: string;
+  description: string; hsn_code: string | null; qty: number; unit: string; gst_rate: number; taxable_value: number;
+  cgst: number; sgst: number; igst: number; line_total: number; stock_value: number;
 }
 export interface CreditNoteLineTable extends DocLineTable { credit_note_id: string; invoice_line_id: string; discount_amount: number | null }
 
@@ -393,6 +432,25 @@ export interface TdsSectionTable {
   effective_to: string | null; verified: Generated<boolean>; is_active: Generated<boolean>; created_at: Generated<Date>;
 }
 
+export interface TdsSectionMapTable {
+  id: Generated<string>; tenant_id: string | null; old_code: string; old_section: string; new_section: string;
+  payment_code: string | null; nature: string; rate_text: string | null; threshold_text: string | null; kind: Generated<string>;
+  effective_from: Generated<string>; confirmed: Generated<boolean>; source_url: string | null; note: string | null;
+  is_active: Generated<boolean>; updated_at: Generated<Date>;
+}
+
+export interface TdsSalaryChallanTable {
+  id: Generated<string>; tenant_id: string; company_id: string; month: string; deposit_date: string; bsr_code: string;
+  challan_serial: string; amount: number; interest: Generated<number>; late_fee: Generated<number>; status: Generated<string>;
+  cancel_reason: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+
+export interface TdsCertificateTable {
+  id: Generated<string>; tenant_id: string; company_id: string; kind: string; fy: string; quarter: number | null;
+  employee_id: string | null; party_id: string | null; form_name: string; seq: number; number: string; snapshot: unknown;
+  issued_by: string | null; issued_at: Generated<Date>;
+}
+
 export interface TdsChallanTable {
   id: Generated<string>; tenant_id: string; company_id: string; number: string; deposit_date: string; bsr_code: string;
   challan_serial: string; tax_amount: number; interest: Generated<number>; late_fee: Generated<number>; total: number;
@@ -417,7 +475,12 @@ export interface Gst2bLineTable {
   supplier_name: string | null; doc_type: Generated<string>; doc_no: string; doc_date: string; taxable: Generated<number>;
   igst: Generated<number>; cgst: Generated<number>; sgst: Generated<number>; cess: Generated<number>;
   itc_available: Generated<boolean>; purchase_id: string | null; match_status: string; ims_action: Generated<string>;
-  note: string | null;
+  note: string | null; ims_reason: Generated<string | null>; ims_acted_at: Generated<Date | null>; ims_acted_by: Generated<string | null>;
+}
+
+export interface ItemGstRateTable {
+  id: Generated<string>; tenant_id: string; company_id: string; item_id: string; rate: number; effective_from: string;
+  reason: string | null; created_by: string | null; created_at: Generated<Date>;
 }
 
 export interface BankStatementTable {
@@ -632,6 +695,7 @@ export interface SalesOrderLineTable {
   qty_ordered: number; rate: number; discount_pct: Generated<number>; gst_rate: number; allow_backorder: Generated<boolean>;
   qty_reserved: Generated<number>; qty_picked: Generated<number>; qty_packed: Generated<number>;
   qty_dispatched: Generated<number>; qty_returned: Generated<number>; qty_cancelled: Generated<number>;
+  entered_unit: Generated<string | null>; entered_qty: Generated<number | null>;
 }
 export interface SalesOrderEventTable {
   id: Generated<string>; tenant_id: string; order_id: string; kind: string; message: string; created_by: string | null;
@@ -977,6 +1041,65 @@ export interface JobCardLineTable {
   description: string | null; qty: number; rate: number; discount_pct: Generated<number>; issued_at: Date | null; issued_by: string | null;
 }
 
+// Helpdesk, service contracts, timesheets (055)
+export interface HdSettingsTable {
+  company_id: string; tenant_id: string; hours_mode: Generated<string>; work_days: Generated<number[]>; start_time: Generated<string>;
+  end_time: Generated<string>; auto_close_days: Generated<number>; notify_customer: Generated<boolean>; renewal_days: Generated<number>;
+  updated_at: Generated<Date>;
+}
+export interface HdSlaTable {
+  id: Generated<string>; tenant_id: string; company_id: string; priority: string; first_response_hours: number; resolution_hours: number;
+}
+export interface ServiceContractTable {
+  id: Generated<string>; tenant_id: string; company_id: string; number: string; party_id: string; title: string; start_date: string;
+  end_date: string; value: number; billing: string; bill_frequency: string | null; visit_frequency: Generated<string>;
+  service_item_id: string; location_id: string | null; status: Generated<string>; cancel_reason: string | null;
+  renewed_from_id: string | null; renewed_to_id: string | null; notes: string | null; created_by: string;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface ServiceContractAssetTable {
+  id: Generated<string>; tenant_id: string; contract_id: string; item_id: string | null; serial_no: string | null; description: string | null;
+}
+export interface ServiceContractBillTable {
+  id: Generated<string>; tenant_id: string; contract_id: string; period: string; period_date: string; amount: number; invoice_id: string;
+  created_at: Generated<Date>;
+}
+export interface ServiceVisitTable {
+  id: Generated<string>; tenant_id: string; company_id: string; contract_id: string; due_date: string; status: Generated<string>;
+  technician_id: string | null; done_date: string | null; notes: string | null; parts_used: Generated<unknown>; signature_name: string | null;
+  signature_file_id: string | null; photo_file_ids: Generated<string[]>; skip_reason: string | null;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface ServiceContractLinkTable {
+  id: Generated<string>; tenant_id: string; contract_id: string; ref_type: string; ref_id: string; created_at: Generated<Date>;
+}
+export interface ServiceContractReminderTable { contract_id: string; tenant_id: string; sent_on: Generated<string> }
+export interface HdTicketTable {
+  id: Generated<string>; tenant_id: string; company_id: string; number: string; party_id: string; contact_name: string | null;
+  contact_phone: string | null; subject: string; description: string | null; channel: string; category: string | null;
+  priority: Generated<string>; status: Generated<string>; item_id: string | null; serial_no: string | null; invoice_id: string | null;
+  contract_id: string | null; assignee_id: string | null; first_response_due: Date; resolution_due: Date; first_response_at: Date | null;
+  resolved_at: Date | null; closed_at: Date | null; created_by: string; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface HdMessageTable {
+  id: Generated<string>; tenant_id: string; ticket_id: string; kind: string; body: string; author_id: string | null;
+  file_ids: Generated<string[]>; created_at: Generated<Date>;
+}
+export interface TsSettingsTable {
+  company_id: string; tenant_id: string; service_item_id: string | null; approval_required: Generated<boolean>;
+  daily_target_hours: Generated<number>; updated_at: Generated<Date>;
+}
+export interface TsRateTable {
+  id: Generated<string>; tenant_id: string; company_id: string; user_id: string | null; party_id: string | null; rate: number;
+  updated_at: Generated<Date>;
+}
+export interface TsEntryTable {
+  id: Generated<string>; tenant_id: string; company_id: string; user_id: string; work_date: string; party_id: string;
+  project_id: string | null; matter_id: string | null; ticket_id: string | null; task: string; hours: number; billable: Generated<boolean>;
+  rate: Generated<number>; status: Generated<string>; reject_reason: string | null; submitted_at: Date | null; approved_by: string | null;
+  approved_at: Date | null; invoice_id: string | null; billed_at: Date | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+
 // Manufacturing (032)
 export interface MfgSettingsTable { company_id: string; tenant_id: string; overhead_pct: Generated<number>; updated_at: Generated<Date> }
 export interface MfgWorkCentreTable {
@@ -1043,7 +1166,137 @@ export interface MfgJobworkReceiptLineTable {
   qty_scrap: Generated<number>; value: Generated<number>;
 }
 
+// v1.14 CRM and quotations (migration 044)
+export interface CrmSettingsTable {
+  company_id: string; tenant_id: string; default_owner_id: string | null; lost_reasons: Generated<string[]>;
+  indiamart_key_sealed: string | null; indiamart_last_pull_at: Date | null; indiamart_last_error: string | null;
+  updated_at: Generated<Date>;
+}
+export interface CrmStageTable {
+  id: Generated<string>; tenant_id: string; company_id: string; name: string; probability: number; kind: Generated<string>;
+  sort: number; is_active: Generated<boolean>; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface PartyContactTable {
+  id: Generated<string>; tenant_id: string; company_id: string; party_id: string; name: string; designation: string | null;
+  phone: string | null; email: string | null; is_primary: Generated<boolean>; notes: string | null;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface CrmLeadTable {
+  id: Generated<string>; tenant_id: string; company_id: string; name: string; company_name: string | null; phone: string | null;
+  email: string | null; city: string | null; state_code: string | null; requirement: string | null; estimated_value: number | null;
+  source: Generated<string>; source_ref: string | null; owner_id: string | null; status: Generated<string>;
+  lost_reason: string | null; party_id: string | null; deal_id: string | null; first_contact_at: Date | null;
+  converted_at: Date | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface CrmDealTable {
+  id: Generated<string>; tenant_id: string; company_id: string; title: string; party_id: string | null; contact_id: string | null;
+  lead_id: string | null; stage_id: string; value: Generated<number>; probability: number | null; expected_close: string | null;
+  owner_id: string | null; status: Generated<string>; lost_reason: string | null; won_at: Date | null; lost_at: Date | null;
+  stage_changed_at: Generated<Date>; notes: string | null; created_by: string | null; created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+export interface CrmDealStageHistoryTable {
+  id: Generated<string>; tenant_id: string; deal_id: string; from_stage_id: string | null; to_stage_id: string;
+  changed_by: string | null; changed_at: Generated<Date>;
+}
+export interface CrmActivityTable {
+  id: Generated<string>; tenant_id: string; company_id: string; kind: string; subject: string; notes: string | null;
+  due_at: Date | null; done_at: Date | null; outcome: string | null; duration_min: number | null; lead_id: string | null;
+  deal_id: string | null; party_id: string | null; owner_id: string | null; created_by: string | null;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface CrmTargetTable {
+  id: Generated<string>; tenant_id: string; company_id: string; user_id: string | null; month: string; amount: number;
+}
+export interface QuotationTable {
+  id: Generated<string>; tenant_id: string; company_id: string; kind: Generated<string>; number: string; fy: string;
+  location_id: string; party_id: string; contact_id: string | null; deal_id: string | null; quote_date: string;
+  valid_until: string | null; place_of_supply: string | null; status: Generated<string>; subtotal: Generated<number>;
+  tax_total: Generated<number>; total: Generated<number>; notes: string | null; terms: string | null; revision_of: string | null;
+  sales_order_id: string | null; invoice_id: string | null; sent_at: Date | null; accepted_at: Date | null;
+  declined_at: Date | null; decline_reason: string | null; created_by: string; created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+export interface QuotationLineTable {
+  id: Generated<string>; tenant_id: string; quotation_id: string; line_no: number; item_id: string; description: string;
+  qty: number; rate: number; discount_pct: Generated<number>; discount_amount: Generated<number>; gst_rate: number;
+  entered_unit: Generated<string | null>; entered_qty: Generated<number | null>;
+}
+
+// Landed cost and RFQ (migration 054)
+export interface LandedCostTable {
+  id: Generated<string>; tenant_id: string; company_id: string; number: string; fy: string; voucher_date: string;
+  basis: string; charges_total: number; igst_total: Generated<number>; inventory_total: Generated<number>;
+  cogs_total: Generated<number>; status: Generated<string>; notes: string | null; created_by: string;
+  created_at: Generated<Date>; updated_at: Generated<Date>; cancelled_at: Date | null; cancel_reason: string | null;
+}
+export interface LandedCostChargeTable {
+  id: Generated<string>; tenant_id: string; landed_cost_id: string; line_no: number; kind: string; description: string | null;
+  amount: number; igst_amount: Generated<number>; source_type: Generated<string>; source_id: string | null;
+  credit_account_id: string | null; party_id: string | null;
+}
+export interface LandedCostLineTable {
+  id: Generated<string>; tenant_id: string; landed_cost_id: string; line_no: number; doc_type: string; doc_id: string;
+  doc_line_id: string; doc_number: string; doc_date: string; item_id: string; location_id: string; qty: number;
+  base_value: number; weight: Generated<number>; on_hand_pct: Generated<number>; allocated: Generated<number>;
+  to_inventory: Generated<number>; to_cogs: Generated<number>;
+}
+export interface RfqTable {
+  id: Generated<string>; tenant_id: string; company_id: string; location_id: string; number: string; fy: string;
+  rfq_date: string; due_date: string | null; status: Generated<string>; indent_id: string | null; notes: string | null;
+  sent_at: Date | null; closed_at: Date | null; created_by: string; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface RfqLineTable {
+  id: Generated<string>; tenant_id: string; rfq_id: string; line_no: number; item_id: string; description: string | null;
+  qty: number; unit: string; indent_line_id: string | null; chosen_party_id: string | null; purchase_order_id: string | null;
+}
+export interface RfqVendorTable {
+  id: Generated<string>; tenant_id: string; rfq_id: string; party_id: string; sent_at: Date | null;
+}
+export interface RfqQuoteTable {
+  id: Generated<string>; tenant_id: string; rfq_id: string; rfq_line_id: string; party_id: string; rate: number;
+  discount_pct: Generated<number>; gst_rate: Generated<number>; lead_days: number | null; payment_terms: string | null;
+  valid_until: string | null; notes: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+
+export interface CfMappingTable {
+  id: Generated<string>; tenant_id: string; company_id: string; account_id: string; category: string;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface YearEndCloseTable {
+  id: Generated<string>; tenant_id: string; company_id: string; fy: string; close_date: string; entry_id: string;
+  profit: number; equity_account_id: string; previous_lock: string | null; status: Generated<string>;
+  closed_by: string | null; closed_at: Generated<Date>; reopened_at: Date | null; reopened_by: string | null;
+}
+export interface BudgetTable {
+  id: Generated<string>; tenant_id: string; company_id: string; fy: string; account_id: string;
+  cost_centre_id: string | null; month: string; amount: number; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface ChequeBookTable {
+  id: Generated<string>; tenant_id: string; company_id: string; account_id: string; name: string | null;
+  prefix: Generated<string>; from_no: number; to_no: number; is_active: Generated<boolean>; created_by: string | null;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface ChequeTable {
+  id: Generated<string>; tenant_id: string; company_id: string; direction: string; bank_account_id: string;
+  book_id: string | null; cheque_no: string; cheque_no_num: number | null; cheque_date: string; party_id: string;
+  amount: number; drawn_on: string | null; status: Generated<string>; payment_id: string | null;
+  deposited_on: string | null; cleared_on: string | null; bounced_on: string | null; bounce_reason: string | null;
+  bounce_charges: Generated<number>; bounce_entry_id: string | null; notes: string | null; created_by: string | null;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface ChequeLayoutTable {
+  id: Generated<string>; tenant_id: string; company_id: string; account_id: string; layout: unknown;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+
 export interface Database {
+  cf_mappings: CfMappingTable;
+  year_end_closes: YearEndCloseTable;
+  budgets: BudgetTable;
+  cheque_books: ChequeBookTable;
+  cheques: ChequeTable;
+  cheque_layouts: ChequeLayoutTable;
   purchase_orders: PurchaseOrderTable;
   purchase_order_lines: PurchaseOrderLineTable;
   goods_receipts: GoodsReceiptTable;
@@ -1064,6 +1317,10 @@ export interface Database {
   webhook_deliveries: WebhookDeliveryTable;
   notifications: NotificationTable;
   notification_outbox: NotificationOutboxTable;
+  receivable_settings: ReceivableSettingsTable;
+  reminder_log: ReminderLogTable;
+  recurring_invoices: RecurringInvoiceTable;
+  recurring_invoice_runs: RecurringInvoiceRunTable;
   notification_prefs: NotificationPrefTable;
   approval_rules: ApprovalRuleTable;
   approval_rule_levels: ApprovalRuleLevelTable;
@@ -1093,6 +1350,14 @@ export interface Database {
   items: ItemTable;
   parties: PartyTable;
   stock_moves: StockMoveTable;
+  item_units: ItemUnitTable;
+  landed_costs: LandedCostTable;
+  landed_cost_charges: LandedCostChargeTable;
+  landed_cost_lines: LandedCostLineTable;
+  rfqs: RfqTable;
+  rfq_lines: RfqLineTable;
+  rfq_vendors: RfqVendorTable;
+  rfq_quotes: RfqQuoteTable;
   invoice_series: InvoiceSeriesTable;
   invoices: InvoiceTable;
   invoice_lines: InvoiceLineTable;
@@ -1107,6 +1372,8 @@ export interface Database {
   payment_allocations: PaymentAllocationTable;
   credit_notes: CreditNoteTable;
   credit_note_lines: CreditNoteLineTable;
+  purchase_returns: PurchaseReturnTable;
+  purchase_return_lines: PurchaseReturnLineTable;
   transfers: TransferTable;
   transfer_lines: TransferLineTable;
   expenses: ExpenseTable;
@@ -1148,7 +1415,22 @@ export interface Database {
   payroll_runs: PayrollRunTable;
   payroll_lines: PayrollLineTable;
   payroll_adjustments: PayrollAdjustmentTable;
+  claim_categories: ClaimCategoryTable;
+  expense_claims: ExpenseClaimTable;
+  expense_claim_lines: ExpenseClaimLineTable;
+  employee_loans: EmployeeLoanTable;
+  loan_installments: LoanInstallmentTable;
   payroll_overrides: PayrollOverrideTable;
+  payroll_rate_rows: PayrollRateRowTable;
+  payroll_statutory_settings: PayrollStatutorySettingsTable;
+  employee_statutory: EmployeeStatutoryTable;
+  leave_type_encashment: LeaveTypeEncashmentTable;
+  payroll_line_extras: PayrollLineExtrasTable;
+  shifts: ShiftTable;
+  shift_logs: ShiftLogTable;
+  bonus_payouts: BonusPayoutTable;
+  leave_encashments: LeaveEncashmentTable;
+  fnf_settlements: FnfSettlementTable;
   payment_plans: PaymentPlanTable;
   payment_plan_stages: PaymentPlanStageTable;
   bookings: BookingTable;
@@ -1163,9 +1445,13 @@ export interface Database {
   gst_rates: GstRateTable;
   tds_sections: TdsSectionTable;
   tds_challans: TdsChallanTable;
+  tds_section_map: TdsSectionMapTable;
+  tds_salary_challans: TdsSalaryChallanTable;
+  tds_certificates: TdsCertificateTable;
   tds_deductions: TdsDeductionTable;
   gst_2b_imports: Gst2bImportTable;
   gst_2b_lines: Gst2bLineTable;
+  item_gst_rates: ItemGstRateTable;
   bank_statements: BankStatementTable;
   bank_statement_lines: BankStatementLineTable;
   compliance_docs: ComplianceDocTable;
@@ -1178,6 +1464,20 @@ export interface Database {
   channel_settlements: ChannelSettlementTable;
   channel_settlement_lines: ChannelSettlementLineTable;
   sales_order_lines: SalesOrderLineTable;
+  crm_settings: CrmSettingsTable;
+  crm_stages: CrmStageTable;
+  party_contacts: PartyContactTable;
+  price_lists: PriceListTable;
+  price_list_items: PriceListItemTable;
+  customer_prices: CustomerPriceTable;
+  price_schemes: PriceSchemeTable;
+  crm_leads: CrmLeadTable;
+  crm_deals: CrmDealTable;
+  crm_deal_stage_history: CrmDealStageHistoryTable;
+  crm_activities: CrmActivityTable;
+  crm_targets: CrmTargetTable;
+  quotations: QuotationTable;
+  quotation_lines: QuotationLineTable;
   sales_order_events: SalesOrderEventTable;
   stock_reservations: StockReservationTable;
   pick_lists: PickListTable;
@@ -1239,6 +1539,19 @@ export interface Database {
   mem_visits: MemVisitTable;
   job_cards: JobCardTable;
   job_card_lines: JobCardLineTable;
+  hd_settings: HdSettingsTable;
+  hd_sla: HdSlaTable;
+  service_contracts: ServiceContractTable;
+  service_contract_assets: ServiceContractAssetTable;
+  service_contract_bills: ServiceContractBillTable;
+  service_visits: ServiceVisitTable;
+  service_contract_links: ServiceContractLinkTable;
+  service_contract_reminders: ServiceContractReminderTable;
+  hd_tickets: HdTicketTable;
+  hd_messages: HdMessageTable;
+  ts_settings: TsSettingsTable;
+  ts_rates: TsRateTable;
+  ts_entries: TsEntryTable;
   funds_settings: FundsSettingsTable;
   funds: FundTable;
   budget_heads: BudgetHeadTable;
@@ -1536,13 +1849,104 @@ export interface PayrollLineTable {
   tds: Generated<number>; tds_working: unknown | null; other_ded_total: Generated<number>; net: Generated<number>;
   overrides: Generated<unknown>; warnings: Generated<unknown>; updated_at: Generated<Date>;
 }
+export interface ClaimCategoryTable {
+  id: Generated<string>; tenant_id: string; company_id: string; name: string; expense_account_id: string;
+  gst_itc_allowed: Generated<boolean>; per_claim_limit: number | null; monthly_limit: number | null;
+  requires_receipt: Generated<boolean>; is_active: Generated<boolean>; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface ExpenseClaimTable {
+  id: Generated<string>; tenant_id: string; company_id: string; number: string; employee_id: string; purpose: string;
+  claim_date: string; status: Generated<string>; total: Generated<number>; gst_total: Generated<number>; itc_total: Generated<number>;
+  settlement: string | null; submitted_at: Date | null; submitted_by: string | null; decided_by: string | null; decided_at: Date | null;
+  decision_note: string | null; entry_id: string | null; paid_at: Date | null; pay_date: string | null; pay_account_id: string | null;
+  pay_entry_id: string | null; payroll_run_id: string | null; payroll_adjustment_id: string | null; created_by: string;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface ExpenseClaimLineTable {
+  id: Generated<string>; tenant_id: string; claim_id: string; line_no: number; category_id: string; expense_date: string;
+  description: string; amount: number; vendor_gstin: string | null; gst_amount: Generated<number>; itc_eligible: Generated<boolean>;
+  receipt_file_id: string | null;
+}
+export interface EmployeeLoanTable {
+  id: Generated<string>; tenant_id: string; company_id: string; number: string; employee_id: string; kind: string; purpose: string;
+  amount: number; interest_rate: Generated<number>; instalment: number; start_month: string; tenure: number;
+  total_interest: Generated<number>; status: Generated<string>; disbursed_on: string; disburse_account_id: string | null;
+  disburse_entry_id: string | null; ca_review: Generated<boolean>; foreclosed_on: string | null; foreclose_amount: number | null;
+  foreclose_entry_id: string | null; closed_on: string | null; created_by: string; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface LoanInstallmentTable {
+  id: Generated<string>; tenant_id: string; loan_id: string; seq: number; due_month: string; principal: number; interest: Generated<number>;
+  amount: number; status: Generated<string>; run_id: string | null; adjustment_id: string | null; recovered_on: string | null;
+}
 export interface PayrollAdjustmentTable {
   id: Generated<string>; tenant_id: string; run_id: string; employee_id: string; kind: string; label: string; amount: number;
   taxable: Generated<boolean>; reason: string | null; created_by: string | null; created_at: Generated<Date>;
 }
+// Statutory payroll (migration 048)
+export interface PayrollRateRowTable {
+  id: Generated<string>; tenant_id: string; company_id: string; kind: string; state_code: string | null; effective_from: string;
+  config: unknown; note: string | null; created_by: string | null; created_at: Generated<Date>;
+}
+export interface PayrollStatutorySettingsTable {
+  company_id: string; tenant_id: string; wages_rule_enabled: Generated<boolean>; wages_rule_from: Generated<string>; wages_rule_percent: Generated<number>;
+  minimum_wage: Generated<number>; bonus_pct: Generated<number>; bonus_eligibility_ceiling: Generated<number>; bonus_calc_ceiling: Generated<number>;
+  bonus_min_days: Generated<number>; gratuity_years: Generated<number>; gratuity_fixed_term_years: Generated<number>; gratuity_cap: Generated<number>;
+  leave_exempt_cap: Generated<number>; ot_multiplier: Generated<number>; hours_per_day: Generated<number>; updated_at: Generated<Date>;
+}
+export interface EmployeeStatutoryTable { employee_id: string; tenant_id: string; fixed_term: Generated<boolean> }
+export interface LeaveTypeEncashmentTable { leave_type_id: string; tenant_id: string; encashable: Generated<boolean>; max_days: Generated<number> }
+export interface PayrollLineExtrasTable { line_id: string; tenant_id: string; wage_rule_addback: Generated<number>; ot_hours: Generated<number>; ot_pay: Generated<number> }
+export interface ShiftTable {
+  id: Generated<string>; tenant_id: string; company_id: string; name: string; start_time: string; end_time: string;
+  break_minutes: Generated<number>; is_active: Generated<boolean>; updated_at: Generated<Date>;
+}
+export interface ShiftLogTable {
+  id: Generated<string>; tenant_id: string; company_id: string; employee_id: string; day: string; shift_id: string | null;
+  ot_hours: Generated<number>; updated_by: string | null; updated_at: Generated<Date>;
+}
+export interface BonusPayoutTable {
+  id: Generated<string>; tenant_id: string; company_id: string; employee_id: string; fy: number; pct: number; amount: number;
+  run_id: string | null; created_by: string | null; created_at: Generated<Date>;
+}
+export interface LeaveEncashmentTable {
+  id: Generated<string>; tenant_id: string; company_id: string; employee_id: string; leave_type_id: string; fy: number; days: number;
+  amount: number; kind: Generated<string>; run_id: string | null; settlement_id: string | null; created_by: string | null; created_at: Generated<Date>;
+}
+export interface FnfSettlementTable {
+  id: Generated<string>; tenant_id: string; company_id: string; number: string; employee_id: string; exit_date: string;
+  notice_required_days: Generated<number>; notice_served_days: Generated<number>; notice_mode: Generated<string>; lop_days: Generated<number>;
+  include_gratuity: Generated<boolean>; include_leave: Generated<boolean>; include_bonus: Generated<boolean>; leave_exempt: Generated<boolean>;
+  extra_lines: Generated<unknown>; notes: string | null; status: Generated<string>; result: Generated<unknown>;
+  gross: Generated<number>; deductions: Generated<number>; tds: Generated<number>; net: Generated<number>;
+  created_by: string | null; approved_by: string | null; approved_at: Date | null; accrual_entry_id: string | null;
+  paid_at: Date | null; pay_date: string | null; payout_entry_id: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
 export interface PayrollOverrideTable {
   id: Generated<string>; tenant_id: string; run_id: string; employee_id: string; field: string; value: number; reason: string;
   created_by: string | null; created_at: Generated<Date>;
+}
+
+export interface ReceivableSettingsTable {
+  company_id: string; tenant_id: string; reminders_enabled: Generated<boolean>; days_before: number | null;
+  on_due_date: Generated<boolean>; repeat_every_days: Generated<number>; max_repeats: Generated<number>;
+  channels: Generated<string[]>; overdue_interest_pct: Generated<number>; updated_at: Generated<Date>;
+}
+export interface ReminderLogTable {
+  id: Generated<string>; tenant_id: string; company_id: string; party_id: string; invoice_id: string; step: string;
+  step_date: string; run_date: string; channels: Generated<string[]>; outbox_ids: Generated<string[]>;
+  amount: Generated<number>; status: string; note: string | null; created_at: Generated<Date>;
+}
+export interface RecurringInvoiceTable {
+  id: Generated<string>; tenant_id: string; company_id: string; name: string; party_id: string; location_id: string;
+  lines: unknown; frequency: string; start_date: string; end_date: string | null; max_runs: number | null;
+  day_of_month: number | null; status: Generated<string>; slot_no: Generated<number>; next_date: string | null;
+  runs_done: Generated<number>; auto_send: Generated<boolean>; send_channels: Generated<string[]>;
+  notes: string | null; last_error: string | null; last_run_at: Date | null; created_by: string;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface RecurringInvoiceRunTable {
+  id: Generated<string>; tenant_id: string; company_id: string; template_id: string; period: string;
+  invoice_id: string; created_at: Generated<Date>;
 }
 
 export interface ApiKeyTable {

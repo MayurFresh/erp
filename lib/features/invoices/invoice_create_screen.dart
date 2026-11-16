@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import '../controls/cost_centre_widgets.dart';
 import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
+import '../../core/permissions.dart';
+import '../auth/session.dart';
+import '../documents/credit_limit_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/business_profile.dart';
@@ -12,13 +17,19 @@ import '../../widgets/form_support.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/picker_field.dart';
 import '../../widgets/states.dart';
+import '../documents/document_models.dart' show DraftLine;
 import '../documents/line_editor.dart';
+import '../items/items_repository.dart';
+import '../pricing/bill_discount.dart';
+import '../pricing/price_prefill.dart';
 import '../items/item_picker.dart';
 import '../locations/location_filter.dart';
 import '../locations/locations_repository.dart';
 import '../parties/parties_repository.dart';
 import '../parties/party_model.dart';
 import '../parties/party_picker.dart';
+import '../export_currency/export_fields_card.dart';
+import '../export_currency/export_models.dart';
 import 'invoice_model.dart';
 import 'invoices_repository.dart';
 import '../../widgets/busy.dart';
@@ -41,8 +52,12 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
         DirtyTracking<InvoiceCreateScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notes = TextEditingController();
+  final _billDiscount = TextEditingController();
+  bool _billPercent = false;
+  Timer? _priceTimer;
   String? _costCentreId;
   Json _custom = const {};
+  Json _exportExtra = const {};
   final List<LineDraft> _lines = [];
   String? _locationId;
   Party? _party;
@@ -74,6 +89,8 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
 
   @override
   void dispose() {
+    _priceTimer?.cancel();
+    _billDiscount.dispose();
     _notes.dispose();
     for (final line in _lines) {
       line.dispose();
@@ -94,8 +111,77 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
       notes: trimmedOrNull(_notes.text),
       costCentreId: _costCentreId,
       custom: _custom,
-      lines: [for (final line in _lines) line.toDraft()],
+      extra: _exportExtra,
+      lines: _draftLines(),
     );
+  }
+
+  BillDiscount get _bill => BillDiscount(
+    value: parseNumber(_billDiscount.text) ?? 0,
+    isPercent: _billPercent,
+  );
+
+  List<BillLine> get _billLines => [
+    for (final l in _lines)
+      BillLine(
+        qty: l.priceQty,
+        rate: parseNumber(l.rate.text) ?? 0,
+        discountPct: parseNumber(l.discount.text) ?? 0,
+      ),
+  ];
+
+  /// A bill discount becomes a fixed discount on every line, so GST is
+  /// charged on the reduced value.
+  List<DraftLine> _draftLines() {
+    if (_bill.isZero) return [for (final line in _lines) line.toDraft()];
+    final fixed = fixedDiscounts(_billLines, _bill);
+    return [
+      for (final (i, line) in _lines.indexed)
+        DraftLine(
+          itemId: line.item.id,
+          qty: parseNumber(line.qty.text)!,
+          rate: parseNumber(line.rate.text) ?? 0,
+          discountAmount: fixed[i],
+        ),
+    ];
+  }
+
+  /// Fills rates and scheme discounts from price lists, customer prices and schemes.
+  Future<void> _reprice() async {
+    final ok = await repriceLines(ref, _party?.id, _lines);
+    if (ok && mounted) {
+      setState(() {});
+      schedulePreview();
+    }
+  }
+
+  void _linesChanged() {
+    schedulePreview();
+    _priceTimer?.cancel();
+    _priceTimer = Timer(const Duration(milliseconds: 500), _reprice);
+  }
+
+  /// Adds the scheme's free goods as a separate zero-rate line.
+  Future<void> _addFree(LineDraft l) async {
+    final p = l.resolved;
+    if (p == null || p.freeQty <= 0) return;
+    var item = l.item;
+    if (p.freeItemId != null && p.freeItemId != l.item.id) {
+      try {
+        item = await ref.read(itemsRepositoryProvider).get(p.freeItemId!);
+      } catch (_) {
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      l.freeAdded = true;
+      final free = LineDraft(item, defaultRate: 0);
+      free.qty.text = formatPlain(p.freeQty);
+      _lines.insert(_lines.indexOf(l) + 1, free);
+    });
+    markDirty();
+    schedulePreview();
   }
 
   @override
@@ -112,15 +198,22 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
       });
     }
     schedulePreview();
+    _reprice();
   }
 
   Future<void> _addLine() async {
     final item = await pickItem(context, ref);
     if (item == null) return;
     if (mounted) {
-      setState(() => _lines.add(LineDraft(item, defaultRate: item.salePrice)));
+      setState(
+        () => _lines.add(
+          LineDraft(item, defaultRate: item.salePrice)
+            ..autoRate = item.salePrice,
+        ),
+      );
     }
     schedulePreview();
+    _reprice();
   }
 
   void _removeLine(LineDraft line) {
@@ -157,7 +250,28 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
     cancelPreview();
     setState(() => _saving = true);
     try {
-      final invoice = await ref.read(invoicesRepositoryProvider).create(draft);
+      Invoice invoice;
+      try {
+        invoice = await ref.read(invoicesRepositoryProvider).create(draft);
+      } catch (e) {
+        final limit = creditLimitError(e);
+        if (limit == null || !mounted) rethrow;
+        final billAnyway = await confirmCreditLimit(
+          context,
+          limit,
+          canOverride: ref
+              .read(permissionsProvider)
+              .can(Perm.partiesCreditOverride),
+          document: 'invoice',
+        );
+        if (!billAnyway || !mounted) {
+          setState(() => _saving = false);
+          return;
+        }
+        invoice = await ref
+            .read(invoicesRepositoryProvider)
+            .create(draft.withOverLimit());
+      }
       ref.bump(const [DataKind.invoices, DataKind.stock, DataKind.parties]);
       if (!mounted) return;
       showInfoSnackBar(context, 'Invoice ${invoice.number ?? ''} saved');
@@ -267,6 +381,14 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
         title: context.w('New invoice'),
         main: [
           details,
+          ExportFieldsCard(
+            invoiceDate: apiDate(_date),
+            onChanged: (ExportChoice c) {
+              _exportExtra = c.toJson();
+              markDirty();
+              schedulePreview();
+            },
+          ),
           CustomFieldsSection(
             entity: 'invoice',
             values: _custom,
@@ -281,10 +403,32 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
             previewLines: preview?.lines,
             lineErrors: _lineErrors,
             enabled: !_saving,
-            onChanged: schedulePreview,
+            onChanged: _linesChanged,
             onRemove: _removeLine,
             onAdd: _addLine,
+            onAddFree: _addFree,
           ),
+          if (_lines.isNotEmpty)
+            SectionCard(
+              title: 'Discount on bill',
+              child: BillDiscountField(
+                controller: _billDiscount,
+                isPercent: _billPercent,
+                appliedAmount: billDiscountTotal(
+                  _billLines.fold<double>(0, (a, l) => a + l.taxable),
+                  _bill,
+                ),
+                onModeChanged: (v) {
+                  setState(() => _billPercent = v);
+                  markDirty();
+                  schedulePreview();
+                },
+                onChanged: () {
+                  markDirty();
+                  schedulePreview();
+                },
+              ),
+            ),
         ],
         summary: SectionCard(
           title: 'Summary',

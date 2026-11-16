@@ -89,6 +89,9 @@ const DAILY: { kind: string; hourIst: number }[] = [
   { kind: 'digest.compliance', hourIst: 9 },
   { kind: 'cleanup.auth', hourIst: 2 },
   { kind: 'cleanup.channels', hourIst: 3 },
+  { kind: 'recurring.run', hourIst: 6 },
+  { kind: 'reminders.run', hourIst: 10 },
+  { kind: 'helpdesk.daily', hourIst: 7 },
 ];
 
 export async function scheduleDaily(db: Db, now = new Date()): Promise<void> {
@@ -110,6 +113,7 @@ export function startJobWorker(deps: JobDeps): { stop: () => Promise<void> } {
         lastDaily = Date.now();
         await scheduleDaily(deps.db);
         await sql`select channel_enqueue_pulls()`.execute(deps.db);
+        await sql`select scheduled_reports_enqueue()`.execute(deps.db);
       }
       while ((await runJobsOnce(deps)) > 0) { /* drain */ }
     })().catch((err) => deps.log?.error(err, 'job worker tick failed')).finally(() => { busy = null; });

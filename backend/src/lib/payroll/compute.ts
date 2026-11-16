@@ -4,6 +4,7 @@ import { computeEpf, pfCeiling } from './epf.ts';
 import { computeEsi } from './esi.ts';
 import { roundRupee, round2 } from './money.ts';
 import { computeLwf, computePt } from './pt.ts';
+import { ptRuleOf, type RatesInForce } from './rates.ts';
 import { prorate, type LopDivisor } from './proration.ts';
 import { monthIndex, monthlyTds } from './tds.ts';
 
@@ -30,6 +31,10 @@ export interface LineInput {
     taxRegime: 'new' | 'old'; previousIncome: number; previousTds: number;
   };
   ptStateCode: string | null;
+  /** Dated rates in force for the month. When absent the long-standing constants are used. */
+  rates?: RatesInForce;
+  /** Labour Code wages rule: PF wage is at least this share of earned pay once active. */
+  wageRule?: { active: boolean; percent: number };
   /** Taxable pay and TDS from earlier live lines of the same tax year. */
   ytd: { taxable: number; tds: number; pt: number; pfEmployee: number };
 }
@@ -44,7 +49,7 @@ export interface LineResult {
   esiEmployee: number; esiEmployer: number; esiCoveredUntil: string | null;
   pt: number; lwfEmployee: number; lwfEmployer: number; tds: number; tdsWorking: unknown;
   otherDedTotal: number; net: number; employerCost: number;
-  overrides: OverrideInput[]; warnings: string[];
+  overrides: OverrideInput[]; warnings: string[]; wageRuleAddback: number;
 }
 
 const ov = (list: OverrideInput[], f: OverrideField) => list.find((o) => o.field === f);
@@ -69,25 +74,31 @@ export function computeLine(i: LineInput): LineResult {
   const adjTotal = adjEarn.reduce((s, a) => s + a.amount, 0);
   const gross = round2(earnTotal + adjTotal);
   const taxableGross = round2(sumOf((e) => e.taxable) + adjEarn.filter((a) => a.taxable).reduce((s, a) => s + a.amount, 0));
-  const pfWage = sumOf((e) => flag(e.componentId, 'pfWage'));
+  let pfWage = sumOf((e) => flag(e.componentId, 'pfWage'));
+  let wageRuleAddback = 0;
+  if (i.wageRule?.active && earnTotal > 0) {
+    const need = round2((earnTotal * i.wageRule.percent) / 100);
+    if (pfWage < need) { wageRuleAddback = round2(need - pfWage); pfWage = need; }
+  }
   const esiWage = sumOf((e) => flag(e.componentId, 'esiWage'));
 
   // PF
   let pfEmployee = 0, pfEps = 0, pfEpfEmployer = 0, pfEdli = 0, pfAdmin = 0;
   if (i.settings.pfEnabled && i.employee.pfApplicable && pfWage > 0) {
-    const ceiling = pfCeiling(i.monthStart);
-    const e = computeEpf({ pfWage, ceiling, optHigher: i.employee.pfHigherWage, ratePct: i.settings.pfRate });
+    const r = i.rates?.epf;
+    const ceiling = r?.ceiling ?? pfCeiling(i.monthStart);
+    const e = computeEpf({ pfWage, ceiling, optHigher: i.employee.pfHigherWage, ratePct: i.settings.pfRate, epsCeiling: r?.epsCeiling, epsBps: r?.epsBps, edliBps: r?.edliBps, adminBps: r?.adminBps });
     pfEmployee = e.employee; pfEps = e.eps; pfEpfEmployer = e.epfEmployer; pfEdli = e.edli; pfAdmin = e.admin;
   }
   // ESI
   let esiEmployee = 0, esiEmployer = 0, esiCoveredUntil = i.employee.esiCoveredUntil;
   if (i.settings.esiEnabled && i.employee.esiApplicable) {
-    const e = computeEsi({ esiWage, monthStart: i.monthStart, coveredUntil: i.employee.esiCoveredUntil, paidDays: pr.paidDays || 1 });
+    const e = computeEsi({ esiWage, monthStart: i.monthStart, coveredUntil: i.employee.esiCoveredUntil, paidDays: pr.paidDays || 1, ...(i.rates ? i.rates.esi : {}) });
     esiEmployee = e.employee; esiEmployer = e.employer; esiCoveredUntil = e.coveredUntil ?? i.employee.esiCoveredUntil;
   }
   // PT and LWF follow the work state.
-  const pt = i.settings.ptEnabled ? computePt({ stateCode: i.ptStateCode, monthlyGross: gross, month, sex: i.sex }).amount : 0;
-  const lwf = i.settings.lwfEnabled ? computeLwf(i.ptStateCode, month) : { employee: 0, employer: 0 };
+  const pt = i.settings.ptEnabled ? computePt({ stateCode: i.ptStateCode, monthlyGross: gross, month, sex: i.sex, rule: i.rates && i.ptStateCode && i.rates.pt ? ptRuleOf(i.ptStateCode, i.rates.pt) : null }).amount : 0;
+  const lwf = i.settings.lwfEnabled ? (i.rates ? computeLwf(i.ptStateCode, month, i.rates.lwf ?? { employee: 0, employer: 0, months: [] }) : computeLwf(i.ptStateCode, month)) : { employee: 0, employer: 0 };
 
   let ptF = pt, lwfEmp = lwf.employee;
   const o = { pf: ov(i.overrides, 'pf_employee'), esi: ov(i.overrides, 'esi_employee'), pt: ov(i.overrides, 'pt'), lwf: ov(i.overrides, 'lwf_employee') };
@@ -134,6 +145,6 @@ export function computeLine(i: LineInput): LineResult {
     workingDays: pr.divisorDays, paidDays: pr.paidDays, lopDays, earnings, adjustments: i.adjustments, otherDeductions,
     gross, taxableGross, pfWage, esiWage, pfEmployee, pfEps, pfEpfEmployer, pfEdli, pfAdmin,
     esiEmployee, esiEmployer, esiCoveredUntil, pt: ptF, lwfEmployee: lwfEmp, lwfEmployer: lwf.employer, tds, tdsWorking: tdsCalc.working,
-    otherDedTotal, net, employerCost, overrides: i.overrides, warnings,
+    otherDedTotal, net, employerCost, overrides: i.overrides, warnings, wageRuleAddback,
   };
 }

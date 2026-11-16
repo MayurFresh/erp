@@ -15,7 +15,8 @@ export async function accountTotals(
     .innerJoin('journal_lines as jl', 'jl.account_id', 'a.id')
     .innerJoin('journal_entries as je', 'je.id', 'jl.entry_id')
     .where('a.company_id', '=', companyId).where('je.entry_date', '<=', to);
-  if (from) q = q.where('je.entry_date', '>=', from);
+  // A dated profit and loss ignores year-end closing entries; trial balance and balance sheet (from null) count them.
+  if (from) q = q.where('je.entry_date', '>=', from).where('je.voucher_type', '<>', 'closing');
   if (filter.costCentreId) q = q.where('jl.cost_centre_id', '=', filter.costCentreId);
   if (filter.locationId) q = q.where('jl.location_id', '=', filter.locationId);
   const rows = await q.groupBy(['a.id', 'a.code', 'a.name', 'a.type', 'a.system_key'])

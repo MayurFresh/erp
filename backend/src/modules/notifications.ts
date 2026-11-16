@@ -21,7 +21,7 @@ const prefsBody = z.object({
 });
 const round2 = (n: number) => Math.round(n * 100) / 100;
 /** Templates a user can tune: payment reminders go to customers, not users. */
-const USER_TEMPLATES = TEMPLATE_IDS.filter((t) => t !== 'payment_reminder');
+const USER_TEMPLATES = TEMPLATE_IDS.filter((t) => t !== 'payment_reminder' && t !== 'recurring_invoice');
 
 /** In-app notifications, preferences, the outbox and payment reminders (v1.7 section 6). */
 export async function notificationRoutes(app: FastifyInstance, _deps: AppDeps): Promise<void> {
@@ -100,7 +100,7 @@ export async function notificationRoutes(app: FastifyInstance, _deps: AppDeps): 
       const current = await prefsOf(tx, ctx.userId);
       for (const p of prefs) {
         const def = TEMPLATES[p.template as TemplateId];
-        if (!def || p.template === 'payment_reminder') throw badRequest('Unknown notification.', { template: 'Unknown' });
+        if (!def || p.template === 'payment_reminder' || p.template === 'recurring_invoice') throw badRequest('Unknown notification.', { template: 'Unknown' });
         if (def.mandatory && p.email === false) throw badRequest(`${def.label} cannot be turned off.`, { [p.template]: 'Mandatory' });
         if (p.whatsapp === true && !def.whatsapp) throw badRequest(`${def.label} is not sent on WhatsApp.`, { [p.template]: 'No WhatsApp' });
         const cur = current.find((c) => c.template === p.template)!;

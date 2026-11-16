@@ -370,7 +370,7 @@ class SettlementsList extends StatelessWidget {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(
-              s.kind == 'credit_note'
+              s.kind == 'credit_note' || s.kind == 'debit_note'
                   ? Icons.assignment_return_outlined
                   : Icons.payments_outlined,
             ),

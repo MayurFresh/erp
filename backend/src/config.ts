@@ -47,6 +47,13 @@ const schema = z.object({
   WHATSAPP_TOKEN: z.string().optional(),
   WHATSAPP_PHONE_ID: z.string().optional(),
   WHATSAPP_API_VERSION: z.string().default('v21.0'),
+  // SMS: 'msg91' (flow API) or 'http' (your own provider URL and body template); 'log' only writes to the log.
+  SMS_DRIVER: z.enum(['log', 'msg91', 'http']).default('log'),
+  SMS_AUTH_KEY: z.string().optional(),
+  SMS_SENDER_ID: z.string().optional(),
+  SMS_HTTP_URL: z.string().optional(),
+  SMS_HTTP_HEADERS: z.string().optional(),
+  SMS_HTTP_BODY: z.string().optional(),
   JOBS_WORKER: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 });
 

@@ -2,7 +2,7 @@
 
 export interface GstLineInput {
   qty: number;          // up to 3 decimals
-  rate: number;         // rupees, up to 2 decimals
+  rate: number;         // rupees, up to 4 decimals
   discountPct: number;  // up to 2 decimals
   discountAmount?: number; // rupees before GST; when set it is used instead of discountPct
   gstRate: number;      // percent, up to 2 decimals (e.g. 18, 0.25)
@@ -33,7 +33,8 @@ export function computeGst(sellerState: string, placeOfSupply: string, inputs: G
   let subtotal = 0n, cgst = 0n, sgst = 0n, igst = 0n;
 
   const lines = inputs.map((l) => {
-    const gross = mulDivRound(scaled(l.qty, 1000), scaled(l.rate, 100), 1000n);
+    // Rates carry up to 4 decimals (a rate converted from another unit); 2-decimal rates give the same result as before.
+    const gross = mulDivRound(scaled(l.qty, 1000), scaled(l.rate, 10_000), 100_000n);
     let discount = l.discountAmount === undefined ? mulDivRound(gross, scaled(l.discountPct, 100), 10_000n) : scaled(l.discountAmount, 100);
     if (discount > gross) discount = gross;
     const taxable = gross - discount;

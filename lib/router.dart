@@ -57,6 +57,21 @@ import 'features/platform/super_routes.dart';
 import 'features/controls/controls_routes.dart';
 import 'features/purchase_orders/purchasing_routes.dart';
 import 'features/sales_orders/sales_orders_routes.dart';
+import 'features/quotations/quotation_routes.dart';
+import 'features/crm/crm_routes.dart';
+import 'features/pricing/pricing_routes.dart';
+import 'features/purchase_returns/purchase_return_routes.dart';
+import 'features/receivables/receivables_routes.dart';
+import 'features/tds_forms/tds_forms_routes.dart';
+import 'features/stock_tools/stock_tools_routes.dart';
+import 'features/claims/claims_routes.dart';
+import 'features/export_currency/export_currency_routes.dart';
+import 'features/finance_reports/finance_reports_routes.dart';
+import 'features/landed_cost/landed_cost_routes.dart';
+import 'features/rfq/rfq_routes.dart';
+import 'features/platform_extras/platform_extras_routes.dart';
+import 'features/helpdesk/helpdesk_routes.dart';
+import 'features/timesheets/timesheet_routes.dart';
 import 'features/fixed_assets/fixed_asset_routes.dart';
 import 'features/income_tax/income_tax_routes.dart';
 import 'features/shell/app_shell.dart';
@@ -402,6 +417,21 @@ final routerProvider = Provider<GoRouter>((ref) {
           ...superAdminRoutes(),
           ...controlsRoutes(),
           ...salesOrderRoutes(),
+          ...quotationRoutes(),
+          ...crmRoutes(),
+          ...pricingRoutes(),
+          ...purchaseReturnRoutes(),
+          ...receivablesRoutes(),
+          ...tdsFormsRoutes(),
+          ...stockToolRoutes(),
+          ...claimsRoutes(),
+          ...exportCurrencyRoutes(),
+          ...financeReportRoutes(),
+          ...landedCostRoutes(),
+          ...rfqRoutes(),
+          ...platformExtrasRoutes(),
+          ...helpdeskRoutes(),
+          ...timesheetRoutes(),
           ...purchasingRoutes(),
           GoRoute(
             path: '/audit',

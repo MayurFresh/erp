@@ -44,7 +44,7 @@ const ledgerQuery = z.object({ from: dateField.optional(), to: dateField.optiona
 const journalQuery = pagingQuery.extend({
   from: dateField.optional(),
   to: dateField.optional(),
-  voucherType: z.enum(['sales', 'purchase', 'receipt', 'payment', 'credit_note', 'expense', 'stock', 'transfer', 'journal',
+  voucherType: z.enum(['sales', 'purchase', 'receipt', 'payment', 'credit_note', 'debit_note', 'expense', 'stock', 'transfer', 'journal',
     'issue', 'wages', 'labour_advance', 'contractor_advance', 'ra_bill', 'retention_release', 'demand', 'possession',
     'tds_challan', 'bank_entry', 'gst_payment', 'gst_setoff', 'tax_payment', 'asset_capitalise', 'depreciation',
     'intercompany', 'opening', 'settlement',

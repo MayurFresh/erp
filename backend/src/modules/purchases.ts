@@ -26,6 +26,7 @@ import { checkIndentLink, fulfilIndent, reverseFulfilment } from './indents.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
 import { warehouseReceive, warehouseReverse, whLineFields } from './warehouse.ts';
+import { convertUnits, enteredJson, enteredOf, saveEntered } from '../lib/uom.ts';
 import { applyGrnBilling, loadGrnLines, priceVarianceError, priceVariances, releaseGrnBilling } from './p2p-match.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -37,6 +38,8 @@ const lineBody = z.object({
   rate: moneyField.optional(),
   discountPct: percentField.optional(),
   description: optionalText(300),
+  /** Unit the quantity and rate are entered in (an alternate unit of the item); omitted means the base unit. */
+  unit: z.string().trim().max(20).optional(),
   grnLineId: z.uuid().optional(),
   ...whLineFields,
 });
@@ -80,10 +83,11 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
   if (billDate > todayIst()) throw badRequest('Bill date cannot be in the future.', { billDate: 'In the future' });
   if (body.indentId) await checkIndentLink(tx, ctx, body.indentId, location.id);
 
+  await convertUnits(tx, ctx, body.lines);
   const ids = [...new Set(body.lines.map((l) => l.itemId))];
   const items = await tx.selectFrom('items').selectAll().where('company_id', '=', ctx.companyId).where('id', 'in', ids).execute();
   const byId = new Map(items.map((i) => [i.id, i]));
-  const grn = await loadGrnLines(tx, ctx, body.lines, party.id, location.id);
+  const grn =await loadGrnLines(tx, ctx, body.lines, party.id, location.id);
   const lines = body.lines.map((l, idx) => {
     const item = byId.get(l.itemId);
     if (!item) throw badRequest(`Line ${idx + 1}: item not found.`, { [`lines.${idx}.itemId`]: 'Not found' });
@@ -128,6 +132,7 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
     location, party, billDate, dueDate: addDays(billDate, party.credit_days), fy: financialYear(billDate),
     placeOfSupply: location.state_code, lines, gst, tds, reverseCharge, total, roundOff, tdsAmount,
     netPayable: round2(total - tdsAmount), msmeDueDate, purchaseOrderId: [...grn.values()][0]?.purchaseOrderId ?? null,
+    entered: enteredOf(body.lines),
   };
 }
 
@@ -192,14 +197,20 @@ async function loadPurchase(tx: Tx, ctx: RequestContext, id: string) {
     .select(['p.id', 'p.number', 'p.payment_date', 'a.amount'])
     .where('a.doc_id', '=', id).where('a.doc_type', '=', 'purchase').where('p.status', '=', 'posted')
     .orderBy('p.payment_date').execute();
+  const debitNotes = await tx.selectFrom('purchase_returns').select(['id', 'number', 'return_date', 'applied_amount'])
+    .where('purchase_id', '=', id).where('status', '=', 'posted').where('applied_amount', '>', 0).orderBy('return_date').execute();
   return {
     ...purchaseJson(row),
-    settlements: payments.map((p) => ({ kind: 'payment', id: p.id, number: p.number, date: p.payment_date, amount: p.amount })),
+    settlements: [
+      ...payments.map((p) => ({ kind: 'payment', id: p.id, number: p.number, date: p.payment_date, amount: p.amount })),
+      ...debitNotes.map((d) => ({ kind: 'debit_note', id: d.id, number: d.number, date: d.return_date, amount: d.applied_amount })),
+    ],
     lines: lines.map((l) => ({
       id: l.id, itemId: l.item_id, description: l.description, hsnCode: l.hsn_code, qty: l.qty, unit: l.unit,
       rate: l.rate, discountPct: l.discount_pct, taxableValue: l.taxable_value, gstRate: l.gst_rate,
       cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.line_total,
       grnLineId: l.grn_line_id, grniValue: l.grni_value, varianceValue: l.variance_value,
+      returnedQty: l.returned_qty, returnedTaxable: l.returned_taxable, ...enteredJson(l),
     })),
   };
 }
@@ -248,6 +259,7 @@ export async function createPurchase(ctx: RequestContext, tx: Tx, body: CreateBo
       grn_line_id: l.grn?.grnLineId ?? null, grni_value: match[i]?.clearing ?? 0, variance_value: match[i]?.variance ?? 0,
     };
   })).execute();
+  await saveEntered(tx, 'purchase_lines', 'purchase_id', row.id, p.entered);
   await applyGrnBilling(tx, p.lines.flatMap((l, i) => l.grn ? [{
     grnLineId: l.grn.grnLineId, poLineId: l.grn.poLineId, purchaseOrderId: l.grn.purchaseOrderId, qty: l.qty,
     clearing: match[i]?.clearing ?? 0,
@@ -378,6 +390,8 @@ export async function purchaseRoutes(app: FastifyInstance) {
       if (!current || !ctx.canAccessLocation(current.location_id)) throw notFound('Purchase bill');
       if (current.status === 'cancelled') throw conflict('This bill is already cancelled.', 'ALREADY_CANCELLED');
       if (current.amount_paid > 0) throw conflict('Payments are applied to this bill. Cancel them first.', 'HAS_SETTLEMENTS');
+      const returns = await tx.selectFrom('purchase_returns').select('id').where('purchase_id', '=', id).where('status', '=', 'posted').executeTakeFirst();
+      if (returns) throw conflict('Debit notes are posted against this bill. Cancel them first.', 'HAS_RETURNS');
 
       const moves = await tx.selectFrom('stock_moves as m').innerJoin('items as i', 'i.id', 'm.item_id')
         .select(['m.item_id', 'm.location_id', 'm.qty', 'm.rate', 'm.cost_rate', 'm.value', 'i.name', 'i.unit'])

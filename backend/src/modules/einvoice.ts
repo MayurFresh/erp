@@ -6,6 +6,7 @@ import { badRequest, conflict, notFound } from '../lib/errors.ts';
 import { buildEinvoicePayload } from '../lib/einvoice-payload.ts';
 import { callGsp, resolveGsp } from '../lib/gsp/registry.ts';
 import { GSTIN_PATTERN } from '../lib/india.ts';
+import { documentAge, EINVOICE_WINDOW_DAYS, EWB_MAX_DOC_AGE_DAYS, ewbValidity } from '../lib/gst-compliance.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { loadInvoice } from './invoices.ts';
@@ -89,6 +90,9 @@ export async function einvoiceRoutes(app: FastifyInstance) {
 
       const sandbox = d.company.einvoice_mode === 'sandbox';
       const viaAdapter = sandbox || d.company.einvoice_mode === 'gsp';
+      if (viaAdapter && d.company.aato_band === '10cr_plus' && documentAge(d.invoice.invoice_date) >= EINVOICE_WINDOW_DAYS) {
+        throw conflict(`This invoice is dated ${d.invoice.invoice_date}. The e-invoice portal refuses new IRNs after ${EINVOICE_WINDOW_DAYS} days from the invoice date for businesses with turnover of Rs 10 crore or more.`, 'EINVOICE_WINDOW_PASSED');
+      }
       let irn: string, ackNo: string, ackDate: Date, qr: string;
       if (viaAdapter) {
         const g = await resolveGsp(tx, d.company, 'einvoice');
@@ -149,6 +153,9 @@ export async function einvoiceRoutes(app: FastifyInstance) {
       const { invoice } = d;
       if (invoice.status === 'cancelled') throw conflict('This invoice is cancelled.', 'CONFLICT');
       if (invoice.irn_status !== 'active') throw conflict('Generate the e-invoice (IRN) before the e-way bill.', 'IRN_REQUIRED');
+      if (documentAge(invoice.invoice_date) > EWB_MAX_DOC_AGE_DAYS) {
+        throw conflict(`This invoice is dated ${invoice.invoice_date}. An e-way bill cannot be made for a document older than ${EWB_MAX_DOC_AGE_DAYS} days.`, 'EWB_DOCUMENT_TOO_OLD');
+      }
       if (invoice.ewb_status === 'active') throw conflict('This invoice already has an active e-way bill.', 'CONFLICT');
       if (body.transportMode === 'road' && !body.vehicleNo) throw badRequest('Enter the vehicle number for road transport.', { vehicleNo: 'Required for road' });
 
@@ -160,7 +167,7 @@ export async function einvoiceRoutes(app: FastifyInstance) {
           irn: invoice.irn!, transportMode: body.transportMode, distanceKm: body.distanceKm,
           vehicleNo: body.vehicleNo, transporterGstin: body.transporterGstin,
         }));
-        ewbNo = r.ewbNo; ewbDate = r.ewbDate; validUntil = r.validUntil ?? new Date(ewbDate.getTime() + Math.max(1, Math.ceil(body.distanceKm / 200)) * 86_400_000);
+        ewbNo = r.ewbNo; ewbDate = r.ewbDate; validUntil = r.validUntil ?? ewbValidity(ewbDate, body.distanceKm).validUntil;
       } else {
         const missing: Record<string, string> = {};
         for (const k of ['ewbNo', 'ewbDate', 'validUntil'] as const) if (body[k] === undefined) missing[k] = 'Required';

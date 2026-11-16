@@ -11,6 +11,7 @@ import { paymentInfo } from '../lib/docs.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
 import { documentRoute } from '../lib/openapi.ts';
 import { computeGst } from '../lib/gst.ts';
+import { fallbackRates } from '../lib/pricing.ts';
 import { optionalText } from '../lib/india.ts';
 import { moneyField, percentField, qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
@@ -18,11 +19,15 @@ import { scopedLocationIds } from '../lib/scope.ts';
 import { assertGstRates } from '../lib/rates.ts';
 import { customInput, validateCustom } from '../lib/custom-fields.ts';
 import { parse, docDate } from '../lib/validate.ts';
+import { enforceCreditLimit, type CreditCheck } from './credit-limit.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { resolveCostCentre } from './cost-centres.ts';
 import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
+import { withDatedRates } from '../lib/gst-compliance.ts';
 import { warehouseIssue, warehouseReverse, whLineFields } from './warehouse.ts';
+import { convertUnits, enteredJson, enteredOf, saveEntered } from '../lib/uom.ts';
+import { extShape, loadExt, resolveExt, saveExt, tcsOn, tcsPayableAccount, toInrRate } from '../lib/export-currency.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 
@@ -34,6 +39,8 @@ const lineBody = z.object({
   /** Fixed discount in rupees before GST; use instead of discountPct, not with it. */
   discountAmount: moneyField.optional(),
   description: optionalText(300),
+  /** Unit the quantity and rate are entered in (an alternate unit of the item); omitted means the base unit. */
+  unit: z.string().trim().max(20).optional(),
   ...whLineFields,
 }).refine((l) => !(l.discountAmount !== undefined && l.discountPct), { message: 'Give a line discount as a percent or an amount, not both.', path: ['discountAmount'] });
 const createBody = z.object({
@@ -44,7 +51,10 @@ const createBody = z.object({
   costCentreId: z.uuid().nullable().optional(),
   /** Tax is payable by the recipient: none is collected on the invoice. */
   reverseCharge: z.boolean().optional(),
+  /** Bill even when the customer would pass the credit limit (needs parties.credit_override). */
+  allowOverLimit: z.boolean().optional(),
   custom: customInput,
+  ...extShape,
   lines: z.array(lineBody).min(1, 'Add at least one line').max(200, 'At most 200 lines'),
 });
 const cancelBody = z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) });
@@ -60,7 +70,7 @@ const listQuery = pagingQuery.extend({
 type CreateBody = z.infer<typeof createBody>;
 
 /** Validates the request against the database and computes all GST figures. Saves nothing. */
-async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
+async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody, opts?: { itemPriceOnly?: boolean }) {
   const location = await getLocation(tx, ctx, body.locationId);
   if (!location.is_active) throw badRequest('This location is inactive.', { locationId: 'Inactive' });
 
@@ -72,15 +82,21 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
   const invoiceDate = body.invoiceDate ?? todayIst();
   if (invoiceDate > todayIst()) throw badRequest('Invoice date cannot be in the future.', { invoiceDate: 'In the future' });
 
+  const ext = await resolveExt(tx, ctx, body, { party, invoiceDate, itemIds: body.lines.map((l) => l.itemId) });
+  await convertUnits(tx, ctx, body.lines);
   const ids = [...new Set(body.lines.map((l) => l.itemId))];
-  const items = await tx.selectFrom('items').selectAll()
-    .where('company_id', '=', ctx.companyId).where('id', 'in', ids).execute();
+  const items = await withDatedRates(tx, await tx.selectFrom('items').selectAll()
+    .where('company_id', '=', ctx.companyId).where('id', 'in', ids).execute(), invoiceDate);
   const byId = new Map(items.map((i) => [i.id, i]));
+  // Counter billing (POS) keeps the item's own price; other callers fill a missing rate from price lists.
+  const priced = opts?.itemPriceOnly
+    ? body.lines.map(() => undefined)
+    : await fallbackRates(tx, ctx.companyId, body.partyId, body.lines, invoiceDate);
   const lines = body.lines.map((l, idx) => {
     const item = byId.get(l.itemId);
     if (!item) throw badRequest(`Line ${idx + 1}: item not found.`, { [`lines.${idx}.itemId`]: 'Not found' });
     if (!item.is_active) throw badRequest(`Line ${idx + 1}: ${item.name} is inactive.`, { [`lines.${idx}.itemId`]: 'Inactive' });
-    const rate = l.rate ?? item.sale_price;
+    const rate = toInrRate(ext, l.rate, priced[idx] ?? item.sale_price);
     if (l.discountAmount !== undefined) {
       const gross = Math.round(l.qty * rate * 100) / 100;
       if (l.discountAmount > gross) throw badRequest(`Line ${idx + 1}: the discount is more than the line.`, { [`lines.${idx}.discountAmount`]: 'Too large' });
@@ -95,15 +111,20 @@ async function prepare(tx: Tx, ctx: RequestContext, body: CreateBody) {
     rate: l.item.gst_rate, hsn: l.item.hsn_code, field: `lines.${idx}.itemId`, label: `${l.item.name} (line ${idx + 1})`,
   })), ctx.companyId);
 
-  const placeOfSupply = party.state_code ?? location.state_code;
-  const gst = computeGst(location.state_code, placeOfSupply, lines.map((l) => ({
+  const placeOfSupply = ext.placeOfSupply ?? party.state_code ?? location.state_code;
+  const gst0 = computeGst(ext.forceInter ? '--' : location.state_code, placeOfSupply, lines.map((l) => ({
     qty: l.qty, rate: l.rate, discountPct: l.discountPct, discountAmount: l.discountAmount, gstRate: l.item.gst_rate,
   })));
   const rc = body.reverseCharge === true;
   if (rc && !party.gstin) throw badRequest('Reverse charge applies when the customer is a registered business. Add the customer GSTIN first.', { reverseCharge: 'Customer has no GSTIN' });
+  const gst = rc || ext.noTax ? withoutTax(gst0) : gst0;
+  // TCS is added on top of the invoice total; it is not part of the taxable value.
+  const tcs = tcsOn(ext, lines.map((l, i) => ({ itemId: l.item.id, taxable: gst.lines[i]!.taxableValue, total: gst.lines[i]!.lineTotal })));
   return {
     location, party, invoiceDate, dueDate: addDays(invoiceDate, party.credit_days), fy: financialYear(invoiceDate),
-    placeOfSupply, lines, gst: rc ? withoutTax(gst) : gst, rcmTax: rc ? gst.taxTotal : 0, reverseCharge: rc,
+    placeOfSupply, lines, gst: tcs.amount ? { ...gst, total: Math.round((gst.total + tcs.amount) * 100) / 100 } : gst,
+    rcmTax: rc ? gst0.taxTotal : 0, reverseCharge: rc, ext, tcsAmount: tcs.amount, tcsBase: tcs.base,
+    entered: enteredOf(body.lines),
   };
 }
 
@@ -124,7 +145,7 @@ function preparedJson(ctx: RequestContext, p: Prepared) {
     partyId: p.party.id, partyName: p.party.name, partyGstin: p.party.gstin, number: null, fy: p.fy,
     invoiceDate: p.invoiceDate, dueDate: p.dueDate, placeOfSupply: p.placeOfSupply, supplyType: p.gst.supplyType, status: 'posted',
     subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst, taxTotal: p.gst.taxTotal,
-    roundOff: p.gst.roundOff, total: p.gst.total, reverseCharge: p.reverseCharge, rcmTax: p.rcmTax, ...paymentInfo(p.gst.total, 0, 'posted'), notes: null, createdAt: new Date(),
+    roundOff: p.gst.roundOff, total: p.gst.total, reverseCharge: p.reverseCharge, rcmTax: p.rcmTax, tcsAmount: p.tcsAmount, ...paymentInfo(p.gst.total, 0, 'posted'), notes: null, createdAt: new Date(),
     createdBy: { id: ctx.userId, name: ctx.userName }, cancelledAt: null, cancelReason: null, einvoice: null, ewaybill: null,
     lines: p.lines.map((l, i) => ({
       id: null, itemId: l.item.id, description: l.description, hsnCode: l.item.hsn_code, qty: l.qty, unit: l.item.unit,
@@ -179,18 +200,24 @@ async function loadInvoice(tx: Tx, ctx: RequestContext, id: string) {
   ].sort((a, b) => a.date.localeCompare(b.date));
   return {
     ...invoiceJson(row),
+    ext: await loadExt(tx, id),
     settlements,
     lines: lines.map((l) => ({
       id: l.id, itemId: l.item_id, description: l.description, hsnCode: l.hsn_code, qty: l.qty, unit: l.unit,
       rate: l.rate, discountPct: l.discount_pct, taxableValue: l.taxable_value, gstRate: l.gst_rate,
-      cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.line_total, returnedQty: l.returned_qty,
+      cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.line_total, returnedQty: l.returned_qty, ...enteredJson(l),
     })),
   };
 }
 
 /** Creates a posted invoice with its stock moves and journal (shared by the route and sales-order dispatch). */
-export async function createInvoice(ctx: RequestContext, tx: Tx, body: CreateBody, opts?: { series?: { key: string; prefix: string } }) {
-  const p = await prepare(tx, ctx, body);
+export async function createInvoice(
+  ctx: RequestContext, tx: Tx, body: CreateBody,
+  /** `creditCheck` is set by the HTTP route only; sector flows that bill through here are never blocked by the limit. */
+  opts?: { series?: { key: string; prefix: string }; creditCheck?: CreditCheck; itemPriceOnly?: boolean },
+) {
+  const p = await prepare(tx, ctx, body, { itemPriceOnly: opts?.itemPriceOnly });
+  if (opts?.creditCheck) await enforceCreditLimit(tx, ctx, p.party.id, p.gst.total, opts.creditCheck);
   const costCentreId = await resolveCostCentre(tx, ctx, body.costCentreId);
   const custom = await validateCustom(tx, ctx.companyId, 'invoice', body.custom);
 
@@ -243,6 +270,7 @@ export async function createInvoice(ctx: RequestContext, tx: Tx, body: CreateBod
       taxable_value: g.taxableValue, gst_rate: l.item.gst_rate, cgst: g.cgst, sgst: g.sgst, igst: g.igst, line_total: g.lineTotal,
     };
   })).execute();
+  await saveEntered(tx, 'invoice_lines', 'invoice_id', inv.id, p.entered);
 
   if (costs.length) {
     await tx.insertInto('stock_moves').values(costs.map((c) => ({
@@ -266,8 +294,10 @@ export async function createInvoice(ctx: RequestContext, tx: Tx, body: CreateBod
       { accountId: acc.round_off, amount: -p.gst.roundOff, locationId: loc },
       { accountId: acc.cogs, amount: cogs, locationId: loc, costCentreId },
       { accountId: acc.inventory, amount: -cogs, locationId: loc },
+      ...(p.tcsAmount ? [{ accountId: await tcsPayableAccount(tx, ctx), amount: -p.tcsAmount, locationId: loc }] : []),
     ],
   });
+  await saveExt(tx, ctx, inv.id, p.ext, { total: p.gst.total, tcsAmount: p.tcsAmount, tcsBase: p.tcsBase });
 
   await warehouseIssue(tx, ctx, { locationId: p.location.id, refType: 'invoice', refId: inv.id, note: number, lines: body.lines });
   const saved = await loadInvoice(tx, ctx, inv.id);
@@ -321,7 +351,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('invoices.create');
     const body = parse(createBody, req.body);
-    const invoice = await ctx.tx((tx) => createInvoice(ctx, tx, body));
+    const invoice = await ctx.tx((tx) => createInvoice(ctx, tx, body, { creditCheck: { allowOver: body.allowOverLimit } }));
     return reply.status(201).send(invoice);
   });
 

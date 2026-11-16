@@ -96,9 +96,11 @@ class HrAmountRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Text(label, style: style)),
-          Text(text ?? formatMoney(amount), style: style),
+          Expanded(flex: 3, child: Text(label, style: style)),
+          const SizedBox(width: 8),
+          Flexible(flex: 2, child: Text(text ?? formatMoney(amount), style: style, textAlign: TextAlign.right)),
         ],
       ),
     );

@@ -156,7 +156,7 @@ describe('platform admin', () => {
     const solo = await api('PATCH', `/platform/companies/${a.companyId}`, { plan: 'solo' });
     expect(solo.status).toBe(200);
     expect(solo.body.plan).toBe('solo');
-    const allowed = ['sales', 'purchases', 'inventory', 'gst', 'tds', 'income_tax', 'einvoice', 'fixed_assets', 'accounting', 'reports'];
+    const allowed = ['sales', 'crm', 'purchases', 'inventory', 'gst', 'tds', 'income_tax', 'einvoice', 'fixed_assets', 'accounting', 'reports'];
     expect(solo.body.enabledModules.every((m: string) => allowed.includes(m))).toBe(true);
     const typed = await api('PATCH', `/platform/companies/${a.companyId}`, { businessType: 'restaurant', plan: 'business' });
     expect(typed.body).toMatchObject({ businessType: 'restaurant', plan: 'business' });

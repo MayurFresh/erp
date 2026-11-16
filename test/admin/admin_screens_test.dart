@@ -91,7 +91,10 @@ void main() {
     );
     expect(post().onPressed, isNull);
 
-    await tester.enterText(find.byType(TextField).first, 'Cash to site');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Narration'),
+      'Cash to site',
+    );
     Future<void> pick(int line, String account) async {
       await tester.tap(find.text('Account').at(line + 1)); // +1: grid header
       await tester.pumpAndSettle();

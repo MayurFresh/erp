@@ -5,6 +5,7 @@ import '../../core/json.dart';
 import '../../core/providers.dart';
 import '../accounts/account_model.dart';
 import '../auth/session.dart';
+import 'contact_model.dart';
 import 'party_model.dart';
 
 final partiesRepositoryProvider = Provider<PartiesRepository>(
@@ -19,6 +20,13 @@ final partyProvider = FutureProvider.autoDispose.family<Party, String>((
   ref.watch(revisionProvider(DataKind.parties));
   return ref.watch(partiesRepositoryProvider).get(id);
 });
+
+/// Contact persons of a party (primary first).
+final partyContactsProvider = FutureProvider.autoDispose
+    .family<List<ContactPerson>, String>((ref, partyId) {
+      ref.watch(activeCompanyIdProvider);
+      return ref.watch(partiesRepositoryProvider).contacts(partyId);
+    });
 
 class PartiesRepository {
   PartiesRepository(this._api);
@@ -69,5 +77,27 @@ class PartiesRepository {
         },
       ),
     );
+  }
+
+  Future<List<ContactPerson>> contacts(String partyId) async {
+    final j = await _api.getJson('/parties/$partyId/contacts');
+    return [for (final c in asJsonList(j['data'])) ContactPerson.fromJson(c)];
+  }
+
+  Future<ContactPerson> addContact(String partyId, Json body) async =>
+      ContactPerson.fromJson(
+        await _api.postJson('/parties/$partyId/contacts', body: body),
+      );
+
+  Future<ContactPerson> updateContact(
+    String partyId,
+    String contactId,
+    Json body,
+  ) async => ContactPerson.fromJson(
+    await _api.patchJson('/parties/$partyId/contacts/$contactId', body: body),
+  );
+
+  Future<void> deleteContact(String partyId, String contactId) async {
+    await _api.delete('/parties/$partyId/contacts/$contactId');
   }
 }

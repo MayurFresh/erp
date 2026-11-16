@@ -500,13 +500,20 @@ class StockValuationRow {
 }
 
 class StockValuation {
-  const StockValuation({this.rows = const [], this.totalValue = 0});
+  const StockValuation({
+    this.rows = const [],
+    this.totalValue = 0,
+    this.method = 'average',
+  });
 
   factory StockValuation.fromJson(Json json) => StockValuation(
     rows: asJsonList(json['rows']).map(StockValuationRow.fromJson).toList(),
     totalValue: asDouble(json['totalValue']),
+    method: asString(json['method'], 'average'),
   );
 
+  /// `average` or `fifo`: how the books cost stock.
+  final String method;
   final List<StockValuationRow> rows;
   final double totalValue;
 }

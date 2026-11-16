@@ -27,6 +27,7 @@ enum DataKind {
   purchases,
   payments,
   creditNotes,
+  purchaseReturns,
   transfers,
   expenses,
   accounts,
@@ -56,6 +57,7 @@ const moneyKinds = [
   DataKind.purchases,
   DataKind.payments,
   DataKind.creditNotes,
+  DataKind.purchaseReturns,
 ];
 
 extension WatchRevisions on Ref {

@@ -28,7 +28,7 @@ export async function setupTestApp(): Promise<TestEnv> {
   const system: Record<string, unknown[]> = {};
   try {
     await owner.query('begin');
-    for (const t of ['gst_rates', 'tds_sections']) system[t] = (await owner.query(`select * from ${t} where tenant_id is null`)).rows;
+    for (const t of ['gst_rates', 'tds_sections', 'tds_section_map']) system[t] = (await owner.query(`select * from ${t} where tenant_id is null`)).rows;
     if (!system.gst_rates!.length) throw new Error(`${dbName} has no system GST rates left. Drop and recreate this test database.`);
     await owner.query('truncate tenants cascade');
     for (const [t, rows] of Object.entries(system)) {

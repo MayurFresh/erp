@@ -9,6 +9,7 @@ import { AppError } from './errors.ts';
  * stock, accounting, reports), which are menu choices only.
  */
 export const MODULE_ROUTES: Record<string, string> = {
+  crm: 'crm',
   pos: 'pos',
   restaurant: 'restaurant',
   clinic: 'clinic',
@@ -20,10 +21,15 @@ export const MODULE_ROUTES: Record<string, string> = {
   donors: 'donations',
   memberships: 'memberships',
   'job-cards': 'job_cards',
+  helpdesk: 'helpdesk',
+  'service-contracts': 'helpdesk',
+  timesheets: 'timesheets',
   channels: 'channels',
   warehouse: 'warehouse',
   payroll: 'payroll',
   employees: 'payroll',
+  claims: 'payroll',
+  loans: 'payroll',
   holidays: 'payroll',
   hr: 'payroll',
   'leave-types': 'payroll',

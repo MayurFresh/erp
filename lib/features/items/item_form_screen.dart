@@ -16,6 +16,7 @@ import '../tax/tax_pickers.dart';
 import 'item_model.dart';
 import 'items_repository.dart';
 import '../../widgets/busy.dart';
+import '../gst_compliance/rate_history_card.dart';
 
 /// Create (`/items/new`) or edit (`/items/:id`) an item.
 class ItemFormScreen extends ConsumerWidget {
@@ -384,6 +385,17 @@ class _ItemFormState extends ConsumerState<ItemForm>
               ],
             ),
           ),
+          if (_editing) RateHistoryCard(itemId: widget.item!.id),
+          if (_editing)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () =>
+                    context.push('/items/${widget.item!.id}/units'),
+                icon: const Icon(Icons.straighten_outlined),
+                label: const Text('Other units (box, dozen)'),
+              ),
+            ),
           CustomFieldsSection(
             entity: 'item',
             values: _custom,

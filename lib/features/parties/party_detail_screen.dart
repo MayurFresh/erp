@@ -15,6 +15,7 @@ import '../documents/document_widgets.dart';
 import '../payments/payment_model.dart';
 import '../payments/payments_repository.dart';
 import '../platform/reminder_action.dart';
+import 'contacts_section.dart';
 import 'parties_repository.dart';
 import 'party_model.dart';
 import '../../core/app_colors.dart';
@@ -96,6 +97,12 @@ class PartyDetailScreen extends ConsumerWidget {
               icon: Icons.notifications_active_outlined,
               onPressed: () => sendPaymentReminder(context, ref, party.id),
             ),
+          if (showStatement)
+            DocAction(
+              label: 'Statement',
+              icon: Icons.description_outlined,
+              onPressed: () => context.push('/parties/$partyId/statement'),
+            ),
           if (perms.can(Perm.partiesEdit))
             DocAction(
               label: 'Edit',
@@ -130,6 +137,41 @@ class PartyDetailScreen extends ConsumerWidget {
             if (party.address != null && party.address!.isNotEmpty)
               SectionCard(title: 'Address', child: Text(party.address!)),
             CustomValuesCard(entity: 'party', custom: party.custom),
+            if (party.isCustomer &&
+                (perms.can(Perm.crmView) ||
+                    perms.can(Perm.quotationsView) ||
+                    perms.can(Perm.itemsView)))
+              SectionCard(
+                title: 'Sales',
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (perms.can(Perm.crmView))
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            context.push('/crm/customers/$partyId'),
+                        icon: const Icon(Icons.timeline_outlined),
+                        label: const Text('Customer timeline'),
+                      ),
+                    if (perms.can(Perm.quotationsView))
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            context.push('/quotations?partyId=$partyId'),
+                        icon: const Icon(Icons.request_quote_outlined),
+                        label: const Text('Quotations'),
+                      ),
+                    if (perms.can(Perm.itemsView))
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            context.push('/customer-prices/$partyId'),
+                        icon: const Icon(Icons.sell_outlined),
+                        label: const Text('Customer prices'),
+                      ),
+                  ],
+                ),
+              ),
+            if (perms.can(Perm.partiesView)) ContactsSection(partyId: partyId),
             _BalanceCard(party: party, showOutstanding: showOutstanding),
             if (showOutstanding) _OutstandingSection(party: party),
             if (showStatement) _StatementSection(partyId: partyId),

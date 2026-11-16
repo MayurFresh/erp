@@ -25,6 +25,9 @@ import '../parties/party_model.dart';
 import 'einvoice_section.dart';
 import 'invoice_model.dart';
 import '../../core/whatsapp.dart';
+import '../export_currency/export_fields_card.dart';
+import '../../widgets/key_value_list.dart';
+import '../platform_extras/payment_gateway_screens.dart' show collectOnline;
 import 'invoice_pdf.dart';
 import 'invoice_widgets.dart';
 import 'invoices_repository.dart';
@@ -209,6 +212,12 @@ class InvoiceDetailScreen extends ConsumerWidget {
                 ).toString(),
               ),
             ),
+          if (canReceive)
+            DocAction(
+              label: 'Collect online',
+              icon: Icons.qr_code_2_outlined,
+              onPressed: () => collectOnline(context, ref, invoiceId),
+            ),
           DocAction(
             label: 'Print',
             icon: Icons.print_outlined,
@@ -331,6 +340,15 @@ class InvoiceDetailScreen extends ConsumerWidget {
             ),
             if (ref.watch(businessProfileProvider).hasModule('einvoice'))
               EInvoiceSection(invoice: invoice),
+            if (invoice.ext != null)
+              SectionCard(
+                title: 'Export, currency and TCS',
+                child: KeyValueList(
+                  items: [
+                    for (final f in invoiceExtFacts(invoice.ext!)) KeyValue(f.$1, f.$2),
+                  ],
+                ),
+              ),
             CostCentreCard(costCentreId: invoice.costCentreId),
             CustomValuesCard(entity: 'invoice', custom: invoice.custom),
             if (invoice.notes != null && invoice.notes!.isNotEmpty)

@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/permissions.dart';
 import '../shell/nav.dart';
 import '../shell/routing.dart';
+import '../gst_compliance/gst_compliance_routes.dart';
 import 'bank_recon_screen.dart';
 import 'compliance_docs_screen.dart';
 import 'data_export_screen.dart';
@@ -91,9 +92,11 @@ const List<NavEntry> complianceNavEntries = [
     selectedIcon: Icons.download,
     permission: TaxPerm.dataExport,
   ),
+  ...gstComplianceNavEntries,
 ];
 
 List<RouteBase> complianceRoutes() => [
+  ...gstComplianceRoutes(),
   GoRoute(
     path: '/gst-returns',
     pageBuilder: (_, state) => sectionPage(state, const GstReturnsScreen()),

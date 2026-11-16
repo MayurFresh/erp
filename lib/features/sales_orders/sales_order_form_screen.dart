@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import '../../core/permissions.dart';
+import '../auth/session.dart';
+import '../documents/credit_limit_dialog.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,11 +19,13 @@ import '../../widgets/states.dart';
 import '../locations/location_filter.dart';
 import '../parties/party_model.dart';
 import '../parties/party_picker.dart';
+import '../pricing/bill_discount.dart';
+import '../pricing/price_prefill.dart';
 import 'o2c_repository.dart';
 import 'sales_order_models.dart';
 
-class _Line {
-  _Line(this.item, {double qty = 1, double? rate, double discount = 0})
+class _Line with PricedLine {
+  _Line(this.item,{double qty = 1, double? rate, double discount = 0})
     : qty = TextEditingController(text: formatPlain(qty)),
       rate = TextEditingController(text: formatPlain(rate ?? item.salePrice)),
       discount = TextEditingController(
@@ -30,6 +37,19 @@ class _Line {
   final TextEditingController rate;
   final TextEditingController discount;
   bool allowBackorder = false;
+  bool freeAdded = false;
+
+  @override
+  TextEditingController get priceRateField => rate;
+  @override
+  TextEditingController get priceDiscountField => discount;
+  @override
+  String get priceItemId => item.itemId;
+  @override
+  double get priceQty => parseNumber(qty.text) ?? 0;
+
+  double get gross =>
+      round2((parseNumber(qty.text) ?? 0) * (parseNumber(rate.text) ?? 0));
 
   void dispose() {
     qty.dispose();
@@ -86,6 +106,9 @@ class _OrderFormState extends ConsumerState<_OrderForm>
   DateTime _date = DateTime.now();
   DateTime? _expected;
   bool _saving = false;
+  final _billDiscount = TextEditingController();
+  bool _billPercent = false;
+  Timer? _priceTimer;
   String? _linesError;
 
   @override
@@ -125,6 +148,8 @@ class _OrderFormState extends ConsumerState<_OrderForm>
   @override
   void dispose() {
     _ref.dispose();
+    _priceTimer?.cancel();
+    _billDiscount.dispose();
     _notes.dispose();
     for (final l in _lines) {
       l.dispose();
@@ -141,6 +166,7 @@ class _OrderFormState extends ConsumerState<_OrderForm>
     });
     clearServerError('partyId');
     markDirty();
+    _reprice();
   }
 
   Future<void> _pickDate({required bool expected}) async {
@@ -184,10 +210,85 @@ class _OrderFormState extends ConsumerState<_OrderForm>
     );
     if (item == null || !mounted) return;
     setState(() {
-      _lines.add(_Line(item));
+      _lines.add(_Line(item)..autoRate = item.salePrice);
       _linesError = null;
     });
     markDirty();
+    _reprice();
+  }
+
+  /// Fills rates and scheme discounts from price lists, customer prices and schemes.
+  Future<void> _reprice() async {
+    final ok = await repriceLines(ref, _partyId, _lines);
+    if (ok && mounted) setState(() {});
+  }
+
+  void _scheduleReprice() {
+    _priceTimer?.cancel();
+    _priceTimer = Timer(const Duration(milliseconds: 500), _reprice);
+  }
+
+  /// Adds the scheme's free goods as a separate zero-rate line.
+  Future<void> _addFree(_Line l) async {
+    final p = l.resolved;
+    if (p == null || p.freeQty <= 0) return;
+    var free = l.item;
+    if (p.freeItemId != null && p.freeItemId != l.item.itemId) {
+      try {
+        final repo = ref.read(o2cRepositoryProvider);
+        final found = await repo.availability(
+          locationId: _locationId!,
+          q: p.freeItemId!,
+        );
+        final match = found.data.where((a) => a.itemId == p.freeItemId);
+        if (match.isEmpty) {
+          if (mounted) showInfoSnackBar(context, 'The free item was not found');
+          return;
+        }
+        free = match.first;
+      } catch (_) {
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      l.freeAdded = true;
+      _lines.insert(_lines.indexOf(l) + 1, _Line(free, qty: p.freeQty, rate: 0));
+    });
+    markDirty();
+  }
+
+  BillDiscount get _bill => BillDiscount(
+    value: parseNumber(_billDiscount.text) ?? 0,
+    isPercent: _billPercent,
+  );
+
+  List<BillLine> get _billLines => [
+    for (final l in _lines)
+      BillLine(
+        qty: l.priceQty,
+        rate: parseNumber(l.rate.text) ?? 0,
+        discountPct: parseNumber(l.discount.text) ?? 0,
+      ),
+  ];
+
+  /// Order lines to send. A bill discount is spread over the lines in
+  /// proportion to their value; an order line takes a percent, so the spread
+  /// amount is converted to one.
+  List<OrderLineInput> _inputLines() {
+    final fixed = _bill.isZero ? null : fixedDiscounts(_billLines, _bill);
+    return [
+      for (final (i, l) in _lines.indexed)
+        OrderLineInput(
+          itemId: l.item.itemId,
+          qty: parseNumber(l.qty.text) ?? 0,
+          rate: parseNumber(l.rate.text),
+          discountPct: fixed == null
+              ? parseNumber(l.discount.text) ?? 0
+              : discountPctFor(fixed[i], l.gross),
+          allowBackorder: l.allowBackorder,
+        ),
+    ];
   }
 
   void _removeLine(int i) {
@@ -211,26 +312,41 @@ class _OrderFormState extends ConsumerState<_OrderForm>
       expectedDate: _expected == null ? null : apiDate(_expected!),
       externalRef: trimmedOrNull(_ref.text),
       notes: trimmedOrNull(_notes.text),
-      lines: [
-        for (final l in _lines)
-          OrderLineInput(
-            itemId: l.item.itemId,
-            qty: parseNumber(l.qty.text) ?? 0,
-            rate: parseNumber(l.rate.text),
-            discountPct: parseNumber(l.discount.text) ?? 0,
-            allowBackorder: l.allowBackorder,
-          ),
-      ],
+      lines: _inputLines(),
     );
     try {
       final repo = ref.read(o2cRepositoryProvider);
-      final saved = widget.existing == null
-          ? await repo.createOrder(input)
-          : await repo.updateOrder(
-              widget.existing!.id,
-              input,
-              expectedUpdatedAt: widget.existing!.updatedAt,
-            );
+      Future<SalesOrder> create() async {
+        try {
+          return await repo.createOrder(input);
+        } catch (e) {
+          final limit = creditLimitError(e);
+          if (limit == null || !mounted) rethrow;
+          final billAnyway = await confirmCreditLimit(
+            context,
+            limit,
+            canOverride: ref
+                .read(permissionsProvider)
+                .can(Perm.partiesCreditOverride),
+            document: 'order',
+          );
+          if (!billAnyway) throw const _CreditLimitDeclined();
+          return repo.createOrder(input.withOverLimit());
+        }
+      }
+
+      final SalesOrder saved;
+      try {
+        saved = widget.existing == null
+            ? await create()
+            : await repo.updateOrder(
+                widget.existing!.id,
+                input,
+                expectedUpdatedAt: widget.existing!.updatedAt,
+              );
+      } on _CreditLimitDeclined {
+        return;
+      }
       markSaved();
       ref.read(o2cRevisionProvider.notifier).bump();
       if (!mounted) return;
@@ -376,10 +492,32 @@ class _OrderFormState extends ConsumerState<_OrderForm>
                       key: ObjectKey(l),
                       line: l,
                       onRemove: () => _removeLine(i),
+                      onAddFree: () => _addFree(l),
                       onChanged: () {
                         setState(() {});
                         markDirty();
+                        _scheduleReprice();
                       },
+                    ),
+                  if (_lines.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: BillDiscountField(
+                        controller: _billDiscount,
+                        isPercent: _billPercent,
+                        appliedAmount: billDiscountTotal(
+                          _billLines.fold<double>(0, (a, l) => a + l.taxable),
+                          _bill,
+                        ),
+                        onModeChanged: (v) {
+                          setState(() => _billPercent = v);
+                          markDirty();
+                        },
+                        onChanged: () {
+                          setState(() {});
+                          markDirty();
+                        },
+                      ),
                     ),
                   if (_linesError != null)
                     Padding(
@@ -405,11 +543,13 @@ class _LineEditor extends StatelessWidget {
     required this.line,
     required this.onRemove,
     required this.onChanged,
+    this.onAddFree,
   });
 
   final _Line line;
   final VoidCallback onRemove;
   final VoidCallback onChanged;
+  final VoidCallback? onAddFree;
 
   @override
   Widget build(BuildContext context) {
@@ -479,6 +619,15 @@ class _LineEditor extends StatelessWidget {
               field(line.discount, 'Discount %'),
             ],
           ),
+          if (line.resolved != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SchemeHint(
+                price: line.resolved!,
+                onAddFree: onAddFree,
+                freeAdded: line.freeAdded,
+              ),
+            ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -494,4 +643,9 @@ class _LineEditor extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The user went back from the credit limit dialog.
+class _CreditLimitDeclined implements Exception {
+  const _CreditLimitDeclined();
 }

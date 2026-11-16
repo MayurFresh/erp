@@ -49,6 +49,7 @@ export function itemJson(ctx: RequestContext, i: Selectable<ItemTable>, avg?: Ma
     gstRate: i.gst_rate, salePrice: i.sale_price,
     ...(ctx.can('items.view_cost') ? { purchasePrice: i.purchase_price, avgCost: avg?.get(i.id) ?? i.purchase_price } : {}),
     trackStock: i.track_stock, reorderLevel: i.reorder_level, isActive: i.is_active, custom: i.custom ?? {},
+    defaultPurchaseUnit: i.default_purchase_unit, defaultSaleUnit: i.default_sale_unit,
     createdAt: i.created_at, updatedAt: i.updated_at,
   };
 }

@@ -9,6 +9,7 @@ import type { Tx } from '../db/database.ts';
 import { financialYear, isValidDate, todayIst } from '../lib/dates.ts';
 import { badRequest, conflict, notFound } from '../lib/errors.ts';
 import { computeGst } from '../lib/gst.ts';
+import { fallbackRates } from '../lib/pricing.ts';
 import { optionalText } from '../lib/india.ts';
 import { moneyField, percentField, qtyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
@@ -22,7 +23,9 @@ import {
   type OrderLine,
 } from './o2c-common.ts';
 import { reservedQty } from './stock.ts';
+import { enforceCreditLimit, type CreditCheck } from './credit-limit.ts';
 import { documentRoute } from '../lib/openapi.ts';
+import { convertUnits, enteredJson, enteredOf, saveEntered } from '../lib/uom.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
 const positive = qtyField.refine((v) => v > 0, 'Must be more than zero');
@@ -34,6 +37,8 @@ const lineBody = z.object({
   discountPct: percentField.optional(),
   description: optionalText(300),
   allowBackorder: z.boolean().optional(),
+  /** Unit the quantity and rate are entered in (an alternate unit of the item); omitted means the base unit. */
+  unit: z.string().trim().max(20).optional(),
 });
 const orderFields = {
   locationId: z.uuid(),
@@ -44,7 +49,7 @@ const orderFields = {
   notes: optionalText(2000),
   lines: z.array(lineBody).min(1, 'Add at least one line').max(200, 'At most 200 lines'),
 };
-const createBody = z.object(orderFields);
+const createBody = z.object({ ...orderFields, allowOverLimit: z.boolean().optional() });
 const patchBody = z.object(orderFields).partial().extend({ expectedUpdatedAt: z.string().max(40).optional() });
 const cancelBody = z.object({
   reason: z.string().trim().min(3, 'Give a reason').max(300),
@@ -72,9 +77,11 @@ async function prepare(tx: Tx, ctx: RequestContext, body: { locationId: string; 
     .where('id', '=', body.partyId).where('company_id', '=', ctx.companyId).executeTakeFirst();
   if (!party) throw badRequest('Customer not found.', { partyId: 'Not found' });
   if (party.type === 'vendor') throw badRequest('Choose a customer, not a vendor.', { partyId: 'Not a customer' });
+  await convertUnits(tx, ctx, body.lines);
   const ids = [...new Set(body.lines.map((l) => l.itemId))];
   const items = await tx.selectFrom('items').selectAll().where('company_id', '=', ctx.companyId).where('id', 'in', ids).execute();
   const byId = new Map(items.map((i) => [i.id, i]));
+  const priced = await fallbackRates(tx, ctx.companyId, body.partyId, body.lines, todayIst());
   const lines = body.lines.map((l, idx) => {
     const item = byId.get(l.itemId);
     if (!item) throw badRequest(`Line ${idx + 1}: item not found.`, { [`lines.${idx}.itemId`]: 'Not found' });
@@ -83,7 +90,7 @@ async function prepare(tx: Tx, ctx: RequestContext, body: { locationId: string; 
       throw badRequest(`Line ${idx + 1}: ${item.name} is not a stock item. Only stock items can be on a sales order.`, { [`lines.${idx}.itemId`]: 'Not a stock item' });
     }
     return {
-      item, qty: l.qty, rate: l.rate ?? item.sale_price, discountPct: l.discountPct ?? 0, description: l.description ?? item.name,
+      item, qty: l.qty, rate: l.rate ?? priced[idx] ?? item.sale_price, discountPct: l.discountPct ?? 0, description: l.description ?? item.name,
       allowBackorder: l.allowBackorder ?? false,
     };
   });
@@ -91,7 +98,7 @@ async function prepare(tx: Tx, ctx: RequestContext, body: { locationId: string; 
   const gst = computeGst(location.state_code, placeOfSupply, lines.map((l) => ({
     qty: l.qty, rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate,
   })));
-  return { location, party, lines, placeOfSupply, gst };
+  return { location, party, lines, placeOfSupply, gst, entered: enteredOf(body.lines) };
 }
 
 type Prepared = Awaited<ReturnType<typeof prepare>>;
@@ -101,6 +108,7 @@ async function insertLines(tx: Tx, ctx: RequestContext, orderId: string, p: Prep
     tenant_id: ctx.tenantId, order_id: orderId, line_no: i + 1, item_id: l.item.id, description: l.description,
     qty_ordered: l.qty, rate: l.rate, discount_pct: l.discountPct, gst_rate: l.item.gst_rate, allow_backorder: l.allowBackorder,
   }))).execute();
+  await saveEntered(tx, 'sales_order_lines', 'order_id', orderId, p.entered);
 }
 
 const isDuplicateRef = (err: unknown) => ['sales_orders_external_uq', 'sales_orders_channel_ref_uq'].includes((err as { constraint?: string }).constraint ?? '');
@@ -135,7 +143,7 @@ async function linesJson(tx: Tx, orderId: string) {
     description: l.description, qtyOrdered: l.qty_ordered, rate: l.rate, discountPct: l.discount_pct, gstRate: l.gst_rate,
     allowBackorder: l.allow_backorder, qtyReserved: l.qty_reserved, qtyPicked: l.qty_picked, qtyPacked: l.qty_packed,
     qtyDispatched: l.qty_dispatched, qtyReturned: l.qty_returned, qtyCancelled: l.qty_cancelled,
-    qtyOpen: openQty(l), qtyShort: round3(openQty(l) - l.qty_reserved),
+    qtyOpen: openQty(l), qtyShort: round3(openQty(l) - l.qty_reserved), ...enteredJson(l, l.qty_ordered),
   }));
 }
 
@@ -271,8 +279,13 @@ export interface NewOrder extends CreateBody {
 }
 
 /** Creates a draft order and returns its id. A repeated external reference fails on a unique index (see isDuplicateRef). */
-export async function createOrder(tx: Tx, ctx: RequestContext, body: NewOrder): Promise<string> {
+export async function createOrder(
+  tx: Tx, ctx: RequestContext, body: NewOrder,
+  /** Set by the HTTP route only; channel imports and other callers are never blocked by the credit limit. */
+  opts?: { creditCheck?: CreditCheck },
+): Promise<string> {
   const p = await prepare(tx, ctx, body);
+  if (opts?.creditCheck) await enforceCreditLimit(tx, ctx, p.party.id, p.gst.total, opts.creditCheck);
   const orderDate = body.orderDate ?? todayIst();
   const number = await nextNumber(tx, ctx, 'sales_order', financialYear(orderDate));
   const row = await tx.insertInto('sales_orders').values({
@@ -352,7 +365,7 @@ export async function salesOrderRoutes(app: FastifyInstance) {
     ctx.require('sales_orders.manage');
     const body = parse(createBody, req.body);
     try {
-      const order = await ctx.tx(async (tx) => loadOrder(tx, ctx, await createOrder(tx, ctx, body)));
+      const order = await ctx.tx(async (tx) => loadOrder(tx, ctx, await createOrder(tx, ctx, body, { creditCheck: { allowOver: body.allowOverLimit } })));
       return reply.status(201).send(order);
     } catch (err) {
       if (isDuplicateRef(err)) throw duplicateRef();

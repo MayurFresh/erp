@@ -2,7 +2,8 @@
 
 export type TemplateId =
   | 'password_reset' | 'mfa_changed' | 'approval_requested' | 'approval_decided' | 'import_finished'
-  | 'compliance_digest' | 'payment_reminder';
+  | 'compliance_digest' | 'payment_reminder' | 'recurring_invoice' | 'ticket_update' | 'contract_renewal'
+  | 'scheduled_report' | 'payment_link';
 
 export interface Rendered { title: string; subject: string; body: string }
 
@@ -15,6 +16,8 @@ export interface TemplateDef {
   /** Can't be turned off. */
   mandatory: boolean;
   defaultEmail: boolean;
+  /** Can go out as an SMS to a customer, when the company has turned SMS on and registered the message (DLT). */
+  sms?: boolean;
   render: (d: Record<string, any>) => Rendered;
 }
 
@@ -91,13 +94,56 @@ export const TEMPLATES: Record<TemplateId, TemplateDef> = {
     },
   },
   payment_reminder: {
-    label: 'Payment reminder to a customer', inApp: false, email: true, whatsapp: true, mandatory: false, defaultEmail: true,
+    label: 'Payment reminder to a customer', inApp: false, email: true, whatsapp: true, mandatory: false, defaultEmail: true, sms: true,
     render: (d) => ({
       title: `Payment reminder for ${d.partyName}`,
       subject: `Payment reminder from ${d.companyName}`,
       body: `Dear ${d.partyName},\n\n${d.count} invoice${d.count === 1 ? '' : 's'} totalling ${inr(d.amountDue)} `
         + `${d.count === 1 ? 'is' : 'are'} due, the oldest since ${d.oldestDue}.`
         + `${d.upiId ? `\nPay by UPI: ${d.upiId}` : ''}\n\nRegards,\n${d.companyName}`,
+    }),
+  },
+  recurring_invoice: {
+    label: 'Recurring invoice to a customer', inApp: false, email: true, whatsapp: true, mandatory: false, defaultEmail: true,
+    render: (d) => ({
+      title: `Invoice ${d.invoiceNumber} for ${d.partyName}`,
+      subject: `Invoice ${d.invoiceNumber} from ${d.companyName}`,
+      body: `Dear ${d.partyName},\n\nInvoice ${d.invoiceNumber} dated ${d.invoiceDate} for ${inr(d.total)} is ready`
+        + `${d.dueDate ? `, due on ${d.dueDate}` : ''}.${d.upiId ? `\nPay by UPI: ${d.upiId}` : ''}\n\nRegards,\n${d.companyName}`,
+    }),
+  },
+  ticket_update: {
+    label: 'Support ticket update to a customer', inApp: false, email: true, whatsapp: true, mandatory: false, defaultEmail: true,
+    render: (d) => ({
+      title: `Ticket ${d.number} for ${d.partyName}`,
+      subject: `${d.companyName}: ticket ${d.number} ${d.headline}`,
+      body: `Dear ${d.partyName},\n\nTicket ${d.number} (${d.subject}) ${d.headline}.${d.message ? `\n\n${d.message}` : ''}`
+        + `\n\nRegards,\n${d.companyName}`,
+    }),
+  },
+  contract_renewal: {
+    label: 'Service contract renewal due', inApp: true, email: true, whatsapp: false, mandatory: false, defaultEmail: true,
+    render: (d) => ({
+      title: `Contract ${d.number} ends on ${d.endDate}`,
+      subject: `Service contract ${d.number} for ${d.partyName} ends on ${d.endDate}`,
+      body: `Contract ${d.number} (${d.title}) for ${d.partyName} ends on ${d.endDate}, in ${d.daysLeft} day${d.daysLeft === 1 ? '' : 's'}. Renew it to keep the customer covered.`,
+    }),
+  },
+  scheduled_report: {
+    label: 'Scheduled report', inApp: false, email: true, whatsapp: false, mandatory: true, defaultEmail: true,
+    render: (d) => ({
+      title: String(d.reportName),
+      subject: `${d.reportName}: ${d.period}`,
+      body: `${d.reportName} for ${d.companyName}, ${d.period}.\n\n${d.text}\n\nThe full table is attached as a CSV file.`,
+    }),
+  },
+  payment_link: {
+    label: 'Payment link to a customer', inApp: false, email: true, whatsapp: true, mandatory: false, defaultEmail: true, sms: true,
+    render: (d) => ({
+      title: `Pay invoice ${d.invoiceNumber}`,
+      subject: `Pay invoice ${d.invoiceNumber} to ${d.companyName}`,
+      body: `Dear ${d.partyName},\n\nYou can pay ${inr(d.amount)} for invoice ${d.invoiceNumber} online: ${d.url}`
+        + `${d.expiresOn ? `\nThe link works until ${d.expiresOn}.` : ''}\n\nRegards,\n${d.companyName}`,
     }),
   },
 };

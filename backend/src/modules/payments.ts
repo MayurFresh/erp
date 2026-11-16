@@ -13,6 +13,7 @@ import { optionalText } from '../lib/india.ts';
 import { moneyField } from '../lib/numbers.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { nextNumber } from '../lib/series.ts';
+import { partyStatement } from '../lib/statement.ts';
 import { parse, docDate } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { createOrSubmit, registerApprovalDoc } from './approvals.ts';
@@ -49,7 +50,7 @@ const ALLOC_TABLE = { invoice: 'invoices', purchase: 'purchases', ra_bill: 'ra_b
 const ALLOC_COLUMN = { invoice: 'amount_paid', purchase: 'amount_paid', ra_bill: 'amount_paid', demand: 'amount_paid' } as const;
 
 /** Adds `delta` (negative to release) to a document's amount_paid. */
-async function bumpPaid(tx: Tx, docType: PayDocType, docId: string, delta: number) {
+export async function bumpPaid(tx: Tx, docType: PayDocType, docId: string, delta: number) {
   const table = ALLOC_TABLE[docType];
   const col = ALLOC_COLUMN[docType];
   await tx.updateTable(table).set((eb: any) => ({ [col]: eb(col, '+', delta) })).where('id', '=', docId).execute();
@@ -295,16 +296,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     const q = parse(rangeQuery, req.query);
     const to = q.to ?? todayIst();
     const from = q.from ?? fyStart(to);
-    return ctx.tx(async (tx) => {
-      const party = await tx.selectFrom('parties').select(['id', 'name', 'type']).where('id', '=', id).where('company_id', '=', ctx.companyId).executeTakeFirst();
-      if (!party) throw notFound('Party');
-      const acc = await systemAccounts(tx, ctx);
-      const result = await ledger(tx, ctx.companyId, { accountIds: [acc.receivables, acc.payables], partyId: id, from, to });
-      return {
-        accountId: party.type === 'vendor' ? acc.payables : acc.receivables,
-        accountName: `${party.name} — party ledger`, ...result,
-      };
-    });
+    return ctx.tx((tx) => partyStatement(tx, ctx, id, from, to));
   });
 }
 

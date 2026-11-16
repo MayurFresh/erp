@@ -14,6 +14,7 @@ import '../../widgets/states.dart';
 import '../auth/session.dart';
 import '../documents/document_models.dart';
 import '../documents/document_widgets.dart';
+import '../purchase_returns/return_to_vendor_button.dart';
 import 'purchase_model.dart';
 import 'purchases_repository.dart';
 
@@ -85,6 +86,8 @@ class PurchaseDetailScreen extends ConsumerWidget {
                 ).toString(),
               ),
             ),
+          if (posted && perms.can(Perm.purchasesCreate))
+            returnToVendorAction(context, purchaseId),
           if (posted && perms.can(Perm.purchasesCancel))
             DocAction(
               label: 'Cancel bill',
@@ -192,7 +195,7 @@ class PurchaseDetailScreen extends ConsumerWidget {
             ),
             if (bill.settlements != null)
               SectionCard(
-                title: 'Payments',
+                title: 'Payments and debit notes',
                 child: SettlementsList(
                   settlements: bill.settlements!,
                   canOpen: (_) => perms.can(Perm.paymentsView),

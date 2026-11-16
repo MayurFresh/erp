@@ -317,10 +317,26 @@ class SalesOrderInput {
     this.expectedDate,
     this.externalRef,
     this.notes,
+    this.allowOverLimit = false,
   });
 
   final String locationId;
   final String partyId;
+
+  /// Create even over the customer's credit limit (needs `parties.credit_override`).
+  final bool allowOverLimit;
+
+  SalesOrderInput withOverLimit() => SalesOrderInput(
+    locationId: locationId,
+    partyId: partyId,
+    lines: lines,
+    orderDate: orderDate,
+    expectedDate: expectedDate,
+    externalRef: externalRef,
+    notes: notes,
+    allowOverLimit: true,
+  );
+
   final String? orderDate;
   final String? expectedDate;
   final String? externalRef;
@@ -335,5 +351,6 @@ class SalesOrderInput {
     'externalRef': externalRef,
     'notes': notes,
     'lines': [for (final l in lines) l.toJson()],
+    if (allowOverLimit) 'allowOverLimit': true,
   };
 }

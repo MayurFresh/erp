@@ -306,8 +306,9 @@ void main() {
     expect(find.text('Items'), findsWidgets);
     expect(find.text('Stock'), findsOneWidget);
     expect(find.text('Inventory'), findsOneWidget);
-    // Groups without permitted entries are hidden.
-    expect(find.text('Sales'), findsNothing);
+    // Groups without permitted entries are hidden. (Sales shows: price lists open with items.view.)
+    expect(find.text('Purchases'), findsNothing);
+    expect(find.text('Invoices'), findsNothing);
     expect(find.text('Overview'), findsNothing);
     expect(find.text('Dashboard'), findsNothing);
     expect(find.text('Transfers'), findsNothing);

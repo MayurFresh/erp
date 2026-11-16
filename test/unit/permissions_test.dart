@@ -70,7 +70,16 @@ void main() {
         const PermissionSet({Perm.itemsView, Perm.stockView}),
       ).map((e) => e.label);
       // Stock counts only need stock.view to open; posting is checked separately.
-      expect(labels, ['Items', 'Stock', 'Stock counts']);
+      // Price lists, schemes and barcode labels open with items.view, valuation method with stock.view.
+      expect(labels, [
+        'Price lists',
+        'Schemes',
+        'Items',
+        'Stock',
+        'Stock counts',
+        'Valuation method',
+        'Barcode labels',
+      ]);
     });
 
     test('groups hide when empty and keep their order', () {
@@ -87,8 +96,15 @@ void main() {
         'Inventory',
         'Administration',
       ]);
-      // payments.view opens both Receipts (Sales) and Payments (Purchases).
-      expect(groups.first.entries.single.label, 'Receipts');
+      // payments.view opens Receipts, Payment reminders and Payment links (Sales) and Payments (Purchases);
+      // items.view adds price lists and schemes to Sales.
+      expect(groups.first.entries.map((e) => e.label), [
+        'Receipts',
+        'Payment reminders',
+        'Price lists',
+        'Schemes',
+        'Payment links',
+      ]);
       expect(groups[1].entries.single.label, 'Payments');
       expect(visibleNavGroups(PermissionSet.none), isEmpty);
     });

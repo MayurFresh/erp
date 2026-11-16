@@ -400,7 +400,7 @@ async function createSale(ctx: RequestContext, tx: Tx, body: z.infer<typeof sale
 
   const inv = await createInvoice(ctx, tx, {
     locationId: location.id, partyId: party.id, notes: body.notes ?? 'Counter sale', lines: lines.map((l, i) => ({ ...l, ...whExtras(body.lines[i]) })),
-  } as never, { series: { key: 'pos_invoice', prefix: await posPrefix(tx, ctx) } });
+  } as never, { series: { key: 'pos_invoice', prefix: await posPrefix(tx, ctx) }, itemPriceOnly: true });
   const total = Number(inv.total);
   if (fitted && Math.abs(total - fitted.total) > 0.001) throw conflict('The bill total could not be matched. Try again.', 'TOTAL_MISMATCH');
 

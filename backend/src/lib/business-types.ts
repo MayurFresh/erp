@@ -9,6 +9,7 @@ import { PERMISSION_KEYS } from '../auth/permissions.ts';
 export interface ModuleDef { key: string; label: string; description: string; indiaOnly?: boolean }
 export const MODULES: readonly ModuleDef[] = [
   { key: 'sales', label: 'Sales', description: 'Invoices, credit notes, receipts and sales orders' },
+  { key: 'crm', label: 'Leads and deals', description: 'Enquiries, deals by stage, follow-ups, targets and IndiaMART leads' },
   { key: 'pos', label: 'Counter billing', description: 'Register sessions, fast counter sales, split payments, returns and receipts' },
   { key: 'fulfilment', label: 'Fulfilment', description: 'Pick lists, shipments and sales returns' },
   { key: 'purchases', label: 'Purchases', description: 'Purchase orders, bills, payments and expenses' },
@@ -21,6 +22,8 @@ export const MODULES: readonly ModuleDef[] = [
   { key: 'donations', label: 'Donations', description: 'Donors, donation receipts with 80G, donor statements and Form 10BD data' },
   { key: 'memberships', label: 'Memberships', description: 'Plans, members, renewals, recurring bills, dues and check-in' },
   { key: 'job_cards', label: 'Job cards', description: 'Repair intake, estimates, parts and labour, status and job bills' },
+  { key: 'helpdesk', label: 'Helpdesk and service contracts', description: 'Support tickets with SLA times, service contracts (AMC), preventive visits and renewals' },
+  { key: 'timesheets', label: 'Timesheets', description: 'Hours by customer, weekly entry, approval, utilisation and billing of unbilled time' },
   { key: 'legal', label: 'Legal practice', description: 'Matters, court diary, deadlines, time and expenses, and fee bills' },
   { key: 'hotel', label: 'Hotel front office', description: 'Rooms, rates, reservations, check-in and out, folios and housekeeping' },
   { key: 'restaurant', label: 'Restaurant', description: 'Menu, tables, orders, kitchen tickets and bills' },
@@ -45,7 +48,7 @@ export const INDIA_ONLY_MODULES: readonly string[] = MODULES.filter((m) => m.ind
 export interface PlanDef { id: string; name: string; maxUsers: number | null; allowedModules: readonly string[] | null; simplifiedMenu: boolean; features: string[] }
 export const PLANS: readonly PlanDef[] = [
   { id: 'solo', name: 'Solo', maxUsers: 1, simplifiedMenu: true, features: ['1 user', '1 company', 'Simplified menu'],
-    allowedModules: ['sales', 'purchases', 'inventory', 'gst', 'tds', 'income_tax', 'einvoice', 'fixed_assets', 'accounting', 'reports'] },
+    allowedModules: ['sales', 'crm', 'purchases', 'inventory', 'gst', 'tds', 'income_tax', 'einvoice', 'fixed_assets', 'accounting', 'reports'] },
   { id: 'team', name: 'Team', maxUsers: 10, allowedModules: null, simplifiedMenu: false, features: ['Up to 10 users', 'Roles and locations'] },
   { id: 'business', name: 'Business', maxUsers: 50, allowedModules: null, simplifiedMenu: false, features: ['Up to 50 users', 'All modules'] },
   { id: 'enterprise', name: 'Enterprise', maxUsers: null, allowedModules: null, simplifiedMenu: false,
@@ -82,7 +85,8 @@ export interface BusinessType {
 const pk = (...k: string[]) => k;
 const BASE = pk('dashboard.view', 'items.view', 'parties.view', 'locations.view');
 const SELL = pk('invoices.view', 'invoices.create', 'parties.create', 'parties.edit', 'payments.view', 'payments.create',
-  'credit_notes.view', 'credit_notes.create', 'sales_orders.view', 'sales_orders.manage');
+  'credit_notes.view', 'credit_notes.create', 'sales_orders.view', 'sales_orders.manage',
+  'quotations.view', 'quotations.manage', 'crm.view', 'crm.manage');
 const COUNTER = pk('invoices.view', 'invoices.create', 'parties.create', 'payments.view', 'payments.create', 'stock.view', 'pos.use');
 const BUY = pk('purchases.view', 'purchases.create', 'purchase_orders.view', 'purchase_orders.manage', 'grn.manage');
 const STOCK = pk('stock.view', 'stock.adjust', 'items.create', 'items.edit', 'transfers.view', 'transfers.create',
@@ -129,7 +133,7 @@ const NO_SECURITY = FULL.filter((k) => !['roles.manage', 'security.manage', 'com
 const role = (name: string, description: string, ...bundles: string[][]): RoleTemplate =>
   ({ name, description, permissions: [...new Set(bundles.flat())] });
 
-const PAY_HR = pk('payroll.view', 'payroll.employees', 'payroll.leave_approve', 'payroll.run', 'payroll.self');
+const PAY_HR = pk('payroll.view', 'payroll.employees', 'payroll.leave_approve', 'payroll.run', 'payroll.self', 'claims.manage', 'loans.manage');
 const rHr = role('HR Manager', 'Employees, leave, salary structures and payroll runs; the owner approves', BASE, PAY_HR, pk('reports.view'));
 const rAuditor = role('Auditor', 'Read-only with audit log', READ, pk('items.view_cost', 'audit.view'));
 const rAccountsClerk = role('Accounts Clerk', 'Enters spending against budget heads and funds', BASE, BOOKS, FUNDS_ENTRY);
@@ -159,10 +163,10 @@ const QA = {
 const qa = (label: string, base: keyof typeof QA, relabel?: string): QuickAction => ({ ...QA[base], label: relabel || label || QA[base].label });
 
 // Module sets.
-const SHOP = ['sales', 'purchases', 'inventory', 'accounting', 'reports', 'gst', 'tds', 'income_tax', 'einvoice', 'payroll'];
+const SHOP = ['sales', 'crm', 'purchases', 'inventory', 'accounting', 'reports', 'gst', 'tds', 'income_tax', 'einvoice', 'payroll'];
 const POS = [...SHOP, 'pos'];
 const TRADE = [...SHOP, 'fulfilment', 'fixed_assets', 'controls'];
-const SERVICE = ['sales', 'purchases', 'accounting', 'reports', 'gst', 'tds', 'income_tax', 'einvoice', 'fixed_assets', 'payroll'];
+const SERVICE = ['sales', 'crm', 'purchases', 'accounting', 'reports', 'gst', 'tds', 'income_tax', 'einvoice', 'fixed_assets', 'payroll'];
 const BUILD = [...TRADE, 'construction'];
 const NGO = ['sales', 'purchases', 'accounting', 'reports', 'tds', 'income_tax', 'fixed_assets', 'payroll'];
 const BIG = [...TRADE, 'multi_company', 'channels'];
@@ -196,7 +200,7 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   type('garments', 'Garments and fashion', 'retail', 'Clothing, footwear and accessories with sizes and seasons', 'checkroom', [...POS, 'channels'],
     [rShopOwner, role('Sales Staff', 'Bills and customers on the shop floor', BASE, COUNTER), rStoreStaff, rAccounts()], { invoice: 'Bill' },
     [qa('', 'invoice'), qa('', 'item'), qa('', 'stock'), qa('', 'bill')]),
-  type('electronics', 'Electronics and mobile', 'retail', 'Phones, appliances and accessories; serial numbers and warranty', 'devices', [...TRADE, 'pos', 'job_cards', 'channels', 'warehouse'],
+  type('electronics', 'Electronics and mobile', 'retail', 'Phones, appliances and accessories; serial numbers and warranty', 'devices', [...TRADE, 'pos', 'job_cards', 'channels', 'warehouse', 'helpdesk'],
     [rShopOwner, rCounter, rStoreStaff, rAccounts(), role('Service Advisor', 'Receives repairs, writes estimates and bills', BASE, COUNTER, JC_ADVISOR), role('Technician', 'Works on assigned repairs', BASE, pk('stock.view'), JC_TECH)],
     { invoice: 'Bill' }, [qa('', 'invoice'), qa('', 'item'), qa('', 'stock'), qa('', 'jobcard')]),
   type('hardware', 'Hardware and building material', 'retail', 'Tools, paint, sanitary, electrical and building material', 'hardware', [...TRADE, 'pos', 'warehouse'],
@@ -210,7 +214,7 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   type('wholesale', 'Wholesaler or distributor', 'retail', 'Bulk selling to retailers with credit, orders and dispatch', 'warehouse', [...TRADE, 'channels', 'warehouse'],
     [rOwner, role('Sales Manager', 'Orders, customers and receipts', BASE, SELL), role('Warehouse', 'Pick, pack, dispatch and stock', BASE, STOCK, WH_WORK, pk('warehouse.manage', 'fulfilment.manage', 'returns.manage', 'sales_orders.view', 'stock.view')), rPurchase, rAccounts()],
     { customer: 'Retailer' }, [qa('', 'order'), qa('', 'invoice'), qa('', 'receipt'), qa('', 'stock')]),
-  type('auto_parts', 'Auto parts', 'retail', 'Spare parts for vehicles with many part numbers', 'build', [...TRADE, 'pos', 'job_cards', 'warehouse'],
+  type('auto_parts', 'Auto parts', 'retail', 'Spare parts for vehicles with many part numbers', 'build', [...TRADE, 'pos', 'job_cards', 'warehouse', 'helpdesk'],
     [rShopOwner, rCounter, rStoreStaff, rAccounts(), rPurchase, role('Service Advisor', 'Receives fitting jobs, writes estimates and bills', BASE, COUNTER, JC_ADVISOR), role('Technician', 'Works on assigned jobs', BASE, pk('stock.view'), JC_TECH)],
     { item: 'Part' }, [qa('', 'invoice'), qa('', 'item', 'Add part'), qa('', 'stock'), qa('', 'jobcard')]),
 
@@ -253,43 +257,43 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
     { customer: 'Patient', item: 'Test', invoice: 'Bill' }, [qa('', 'clinic'), qa('', 'invoice'), qa('', 'customer', 'Add patient'), qa('', 'item', 'Add test'), qa('', 'expense')]),
 
   // Professional
-  type('advocate', 'Advocates and law firm', 'professional', 'Cases, clients, fees and court expenses', 'gavel', [...SERVICE, 'legal'],
+  type('advocate', 'Advocates and law firm', 'professional', 'Cases, clients, fees and court expenses', 'gavel', [...SERVICE, 'legal', 'timesheets'],
     [role('Managing Partner', 'Everything in the firm', NO_SECURITY),
       role('Senior Advocate', 'All matters, rates, fee bills and receipts', BASE, SELL, LEGAL_MANAGE, pk('expenses.view', 'expenses.create', 'projects.view')),
       role('Associate', 'Own matters: hearings, tasks and time; no fee bills', BASE, LEGAL_WORK, pk('invoices.view', 'expenses.view', 'expenses.create')),
       role('Clerk', 'Court diary, hearings and court fees', BASE, LEGAL_WORK, pk('expenses.create', 'expenses.view', 'payments.view', 'parties.create')),
       role('Accounts', 'Fee bills, receipts, books and GST', BASE, SELL, BOOKS, TAX, LEGAL_MANAGE)],
     { customer: 'Client', item: 'Service', project: 'Matter', invoice: 'Fee bill', receipt: 'Fee receipt' }, [qa('', 'legal'), qa('', 'invoice', 'New fee bill'), qa('', 'customer', 'Add client'), qa('', 'receipt', 'Record fee received'), qa('', 'expense', 'Add court expense')]),
-  type('ca_firm', 'CA and accountants', 'professional', 'Chartered accountants and tax practitioners with many clients', 'calculate', SERVICE,
+  type('ca_firm', 'CA and accountants', 'professional', 'Chartered accountants and tax practitioners with many clients', 'calculate', [...SERVICE, 'timesheets'],
     [role('Partner', 'Everything in the firm', NO_SECURITY), role('Article Assistant', 'Enters data for clients', BASE, pk('invoices.view', 'purchases.view', 'purchases.create', 'expenses.create', 'expenses.view', 'accounts.view')), role('Manager', 'Filing and review', BASE, BOOKS, TAX), role('Accounts', 'Fee bills and receipts', BASE, SELL)],
     { customer: 'Client', item: 'Service', invoice: 'Fee bill' }, [qa('', 'invoice', 'New fee bill'), qa('', 'customer', 'Add client'), qa('', 'receipt'), qa('', 'expense')]),
-  type('consultant', 'Consultants', 'professional', 'Advisory and consulting firms billing by project or hour', 'support_agent', SERVICE,
+  type('consultant', 'Consultants', 'professional', 'Advisory and consulting firms billing by project or hour', 'support_agent', [...SERVICE, 'helpdesk', 'timesheets'],
     [rOwner, role('Project Lead', 'Projects, clients and bills', BASE, SELL, pk('projects.view', 'expenses.create', 'expenses.view')), role('Consultant', 'Own projects and expenses', BASE, pk('projects.view', 'expenses.create', 'expenses.view')), rAccounts()],
     { customer: 'Client', item: 'Service', project: 'Engagement' }, [qa('', 'invoice'), qa('', 'customer', 'Add client'), qa('', 'receipt'), qa('', 'expense')]),
-  type('architect', 'Architects and engineers', 'professional', 'Design practices billing by stage of a project', 'architecture', SERVICE,
+  type('architect', 'Architects and engineers', 'professional', 'Design practices billing by stage of a project', 'architecture', [...SERVICE, 'timesheets'],
     [rOwner, role('Principal Architect', 'Projects, clients and bills', BASE, SELL, pk('projects.view', 'projects.manage')), role('Design Team', 'Own projects and expenses', BASE, pk('projects.view', 'expenses.create', 'expenses.view')), rAccounts()],
     { customer: 'Client', item: 'Service', project: 'Project' }, [qa('', 'invoice', 'New stage bill'), qa('', 'customer', 'Add client'), qa('', 'receipt'), qa('', 'expense')]),
-  type('it_services', 'IT and software services', 'professional', 'Software, agency and IT outsourcing', 'code', SERVICE,
+  type('it_services', 'IT and software services', 'professional', 'Software, agency and IT outsourcing', 'code', [...SERVICE, 'helpdesk', 'timesheets'],
     [rOwner, role('Delivery Manager', 'Projects, clients and bills', BASE, SELL, pk('projects.view', 'projects.manage')), role('Team Member', 'Own projects and expenses', BASE, pk('projects.view', 'expenses.create', 'expenses.view')), role('Finance', 'Books, GST and reports', BASE, SELL, BOOKS, TAX), role('HR and Admin', 'Users and expenses', BASE, pk('users.manage', 'expenses.view', 'expenses.create'))],
     { customer: 'Client', item: 'Service', project: 'Project' }, [qa('', 'invoice'), qa('', 'customer', 'Add client'), qa('', 'receipt'), qa('', 'expense')]),
-  type('freelancer', 'Freelancer', 'professional', 'One person billing a few clients', 'person', ['sales', 'purchases', 'accounting', 'reports', 'gst', 'income_tax'],
+  type('freelancer', 'Freelancer', 'professional', 'One person billing a few clients', 'person', ['sales', 'purchases', 'accounting', 'reports', 'gst', 'income_tax', 'timesheets'],
     [rOwner, role('Assistant', 'Invoices and receipts', BASE, SELL)], { customer: 'Client', item: 'Service' },
     [qa('', 'invoice'), qa('', 'customer', 'Add client'), qa('', 'receipt'), qa('', 'expense')]),
 
   // Construction and property
-  type('contractor', 'Contractor or builder', 'construction', 'Civil contractor with sites, labour and subcontractors', 'engineering', BUILD,
+  type('contractor', 'Contractor or builder', 'construction', 'Civil contractor with sites, labour and subcontractors', 'engineering', [...BUILD, 'timesheets'],
     [role('Owner', 'Everything, including roles', FULL), role('Project Manager', 'Projects, BOQ and approvals', BASE, SITE, pk('boq.manage', 'projects.manage', 'indents.approve', 'dpr.approve', 'labour.manage', 'wages.view', 'wages.manage', 'subcontracts.view', 'subcontracts.manage', 'reports.view')),
       role('Site Engineer', 'Site reports, indents and labour', BASE, SITE, pk('subcontracts.view')), role('Store Keeper', 'Site stock and material issue', BASE, STOCK, pk('consumption.create', 'consumption.view', 'indents.view')), rAccounts(), rPurchase],
     { customer: 'Client' }, [qa('', 'projects'), qa('', 'indent'), qa('', 'invoice', 'New RA invoice'), qa('', 'stock')]),
   type('real_estate', 'Real estate developer', 'construction', 'Plots, flats and villas sold with payment plans', 'apartment', [...BUILD, 'real_estate'],
     [rOwner, role('Sales Head', 'Units, bookings and demands', BASE, pk('units.view', 'units.manage', 'bookings.view', 'bookings.manage', 'invoices.view', 'payments.view', 'payments.create')), role('Project Manager', 'Projects and site work', BASE, SITE, pk('boq.manage', 'projects.manage', 'indents.approve', 'dpr.approve')), rAccounts(), role('CRM Executive', 'Bookings and customer follow-up', BASE, pk('units.view', 'bookings.view', 'bookings.manage'))],
     { customer: 'Buyer', item: 'Item' }, [qa('', 'units'), qa('', 'projects'), qa('', 'receipt'), qa('', 'invoice')]),
-  type('interior', 'Interior designer', 'construction', 'Design and fit-out jobs billed in stages', 'chair', [...SERVICE, 'inventory', 'construction'],
+  type('interior', 'Interior designer', 'construction', 'Design and fit-out jobs billed in stages', 'chair', [...SERVICE, 'inventory', 'construction', 'timesheets'],
     [rOwner, role('Design Lead', 'Projects, clients and bills', BASE, SELL, SITE, pk('projects.manage', 'boq.manage')), role('Site Supervisor', 'Site reports and material', BASE, SITE), rAccounts()],
     { customer: 'Client', project: 'Project' }, [qa('', 'projects'), qa('', 'invoice'), qa('', 'receipt'), qa('', 'expense')]),
 
   // Manufacturing
-  type('manufacturer', 'Small manufacturer', 'manufacturing', 'Makes goods from raw material and sells to dealers', 'precision_manufacturing', [...TRADE, 'manufacturing', 'warehouse'],
+  type('manufacturer', 'Small manufacturer', 'manufacturing', 'Makes goods from raw material and sells to dealers', 'precision_manufacturing', [...TRADE, 'manufacturing', 'warehouse', 'helpdesk'],
     [rOwner, role('Production Manager', 'Bills of materials, production orders, material and quality', BASE, STOCK, MFG_MANAGE, pk('consumption.create', 'consumption.view', 'indents.view', 'indents.approve')), role('Production Supervisor', 'Runs production orders, issues material, records output', BASE, MFG_SUPERVISOR), role('Store', 'Raw material and finished stock', BASE, STOCK, MFG_STORE), role('Quality', 'Inspects production output', BASE, MFG_QUALITY), rPurchase, role('Sales Executive', 'Orders and invoices', BASE, SELL), rAccounts()],
     { customer: 'Dealer' }, [qa('', 'order'), qa('', 'invoice'), qa('', 'stock'), qa('', 'bill')]),
   type('job_work', 'Job work', 'manufacturing', 'Processes material sent by customers for a charge', 'handyman', [...TRADE, 'manufacturing'],
@@ -332,7 +336,7 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
   type('gym', 'Gym or fitness', 'services', 'Memberships and renewals', 'fitness_center', [...SERVICE, 'memberships'],
     [rOwner, role('Front Desk', 'Enrols members, renews, bills and takes receipts', BASE, COUNTER, MEM_DESK), role('Trainer', 'Marks member visits', BASE, MEM_DOOR), rAccounts()], { customer: 'Member', item: 'Plan or product', invoice: 'Bill' },
     [qa('', 'memberships'), qa('', 'checkin'), qa('', 'receipt'), qa('', 'expense')]),
-  type('garage', 'Garage or repair workshop', 'services', 'Vehicle or appliance repair with parts and labour', 'car_repair', [...SHOP, 'job_cards'],
+  type('garage', 'Garage or repair workshop', 'services', 'Vehicle or appliance repair with parts and labour', 'car_repair', [...SHOP, 'job_cards', 'helpdesk'],
     [rShopOwner, role('Service Advisor', 'Job cards, estimates, bills and receipts', BASE, COUNTER, JC_ADVISOR), role('Technician', 'Works on assigned jobs and issues parts', BASE, pk('stock.view'), JC_TECH), rStoreStaff, rAccounts()],
     { customer: 'Customer', item: 'Part or service', invoice: 'Job bill' }, [qa('', 'jobcard'), qa('', 'jobcards'), qa('', 'invoice', 'New job bill'), qa('', 'stock')]),
 
@@ -361,21 +365,21 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
     { customer: 'Taxpayer', item: 'Charge', invoice: 'Demand', receipt: 'Receipt', location: 'Ward or office' }, [qa('', 'invoice', 'New demand'), qa('', 'receipt'), qa('', 'expense'), qa('', 'payment')]),
 
   // Companies
-  type('proprietorship', 'Proprietorship', 'corporate', 'Business owned by one person', 'person_pin', ONLINE,
+  type('proprietorship', 'Proprietorship', 'corporate', 'Business owned by one person', 'person_pin', [...ONLINE, 'helpdesk', 'timesheets'],
     [rOwner, role('Manager', 'Runs daily work', NO_SECURITY), rHr, role('Staff', 'Invoices, receipts and stock view', BASE, COUNTER), rAccounts()], {}, [qa('', 'invoice'), qa('', 'receipt'), qa('', 'expense'), qa('', 'stock')]),
-  type('partnership', 'Partnership firm', 'corporate', 'Firm run by two or more partners', 'handshake', ONLINE,
+  type('partnership', 'Partnership firm', 'corporate', 'Firm run by two or more partners', 'handshake', [...ONLINE, 'helpdesk', 'timesheets'],
     [role('Managing Partner', 'Everything', FULL), role('Partner', 'Everything except roles and security', NO_SECURITY), role('Manager', 'Runs daily work', BASE, SELL, BUY, STOCK), rHr, rAccounts()], {}, [qa('', 'invoice'), qa('', 'receipt'), qa('', 'expense'), qa('', 'bill')]),
-  type('llp', 'LLP', 'corporate', 'Limited liability partnership', 'groups', ONLINE,
+  type('llp', 'LLP', 'corporate', 'Limited liability partnership', 'groups', [...ONLINE, 'helpdesk', 'timesheets'],
     [role('Designated Partner', 'Everything', FULL), role('Partner', 'Everything except roles and security', NO_SECURITY), role('Finance Manager', 'Books, tax and reports', BASE, SELL, BOOKS, TAX), role('Manager', 'Runs daily work', BASE, SELL, BUY, STOCK), rHr], {}, [qa('', 'invoice'), qa('', 'receipt'), qa('', 'expense'), qa('', 'bill')]),
-  type('pvt_ltd', 'Private limited company', 'corporate', 'Private company with directors and departments', 'corporate_fare', [...BIG, 'manufacturing'],
+  type('pvt_ltd', 'Private limited company', 'corporate', 'Private company with directors and departments', 'corporate_fare', [...BIG, 'manufacturing', 'helpdesk', 'timesheets'],
     [role('Director', 'Everything', FULL), role('Production Manager', 'Bills of materials, production orders and quality', BASE, STOCK, MFG_MANAGE), role('Finance Manager', 'Books, tax and reports', BASE, SELL, BOOKS, TAX, pk('approvals.view')), role('Department Head', 'Own department approvals', BASE, pk('indents.view', 'indents.create', 'indents.approve', 'approvals.view', 'reports.view')),
       role('HR Manager', 'Users, employees, leave and payroll runs', BASE, PAY_HR, pk('users.manage', 'expenses.view', 'expenses.create', 'reports.view')), role('Purchase Manager', 'Purchase orders and bills', BASE, BUY, pk('payments.view')), role('Sales Manager', 'Orders, customers and receipts', BASE, SELL)],
     {}, [qa('', 'invoice'), qa('', 'bill'), qa('', 'payment'), qa('', 'receipt')]),
-  type('public_ltd', 'Public limited company', 'corporate', 'Listed or public company with audit and approvals', 'apartment', [...BIG, 'manufacturing'],
+  type('public_ltd', 'Public limited company', 'corporate', 'Listed or public company with audit and approvals', 'apartment', [...BIG, 'manufacturing', 'helpdesk', 'timesheets'],
     [role('Managing Director', 'Everything', FULL), role('Production Manager', 'Bills of materials, production orders and quality', BASE, STOCK, MFG_MANAGE), role('Chief Financial Officer', 'Books, tax, reports and approvals', BASE, SELL, BOOKS, TAX, pk('approvals.view', 'approvals.manage', 'books.lock')), role('Company Secretary', 'Compliance and audit', BASE, pk('compliance.view', 'compliance.manage', 'audit.view', 'reports.view')),
       role('Department Head', 'Own department approvals', BASE, pk('indents.view', 'indents.create', 'indents.approve', 'approvals.view', 'reports.view')), role('Internal Auditor', 'Read-only with costs and audit', READ, pk('items.view_cost', 'audit.view')), rHr],
     {}, [qa('', 'invoice'), qa('', 'bill'), qa('', 'payment'), qa('', 'receipt')]),
-  type('enterprise_group', 'Enterprise group', 'corporate', 'Group of companies with shared books and controls', 'hub', [...BIG, 'manufacturing'],
+  type('enterprise_group', 'Enterprise group', 'corporate', 'Group of companies with shared books and controls', 'hub', [...BIG, 'manufacturing', 'helpdesk', 'timesheets'],
     [role('Group Chairman', 'Everything', FULL), role('Production Manager', 'Bills of materials, production orders and quality', BASE, STOCK, MFG_MANAGE), role('Group CFO', 'Books, tax, consolidation and approvals', BASE, SELL, BOOKS, TAX, pk('approvals.view', 'approvals.manage', 'books.lock', 'companies.create')), role('Company Head', 'Runs one company', NO_SECURITY), role('Group Auditor', 'Read-only with costs and audit', READ, pk('items.view_cost', 'audit.view')), rHr],
     {}, [qa('', 'invoice'), qa('', 'bill'), qa('', 'payment'), qa('', 'receipt')]),
 

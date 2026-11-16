@@ -45,12 +45,12 @@ export const PT_RULES: PtRule[] = [
 
 export const ptRuleFor = (stateCode: string | null | undefined): PtRule | undefined => PT_RULES.find((r) => r.stateCode === stateCode);
 
-export interface PtInput { stateCode: string | null | undefined; monthlyGross: number; month: number; sex?: string | null }
+export interface PtInput { stateCode: string | null | undefined; monthlyGross: number; month: number; sex?: string | null; rule?: PtRule | null }
 export interface PtResult { amount: number; rule: PtRule | null }
 
 /** Professional tax to deduct this month. Unknown states and states without PT give 0. */
 export function computePt(i: PtInput): PtResult {
-  const rule = ptRuleFor(i.stateCode) ?? null;
+  const rule = i.rule ?? ptRuleFor(i.stateCode) ?? null;
   if (!rule) return { amount: 0, rule: null };
   const basis = rule.periodicity === 'half_yearly' ? i.monthlyGross * 6 : i.monthlyGross;
   if (rule.periodicity === 'half_yearly' && !rule.deductMonths!.includes(i.month)) return { amount: 0, rule };
@@ -71,7 +71,7 @@ export const LWF_RULES: LwfRule[] = [
   { stateCode: '24', state: 'Gujarat', employee: 6, employer: 12, months: [6, 12], verified: false },
   { stateCode: '37', state: 'Andhra Pradesh', employee: 30, employer: 70, months: [12], verified: false },
 ];
-export function computeLwf(stateCode: string | null | undefined, month: number): { employee: number; employer: number } {
-  const r = LWF_RULES.find((x) => x.stateCode === stateCode);
+export function computeLwf(stateCode: string | null | undefined, month: number, rule?: { employee: number; employer: number; months: number[] } | null): { employee: number; employer: number } {
+  const r = rule ?? LWF_RULES.find((x) => x.stateCode === stateCode);
   return r && r.months.includes(month) ? { employee: r.employee, employer: r.employer } : { employee: 0, employer: 0 };
 }

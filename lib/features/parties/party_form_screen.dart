@@ -18,6 +18,8 @@ import '../auth/session.dart';
 import 'parties_repository.dart';
 import '../tax/tax_pickers.dart';
 import 'party_model.dart';
+import '../pricing/pricing_models.dart';
+import '../pricing/pricing_repository.dart';
 import '../controls/custom_fields_section.dart';
 import '../../widgets/busy.dart';
 
@@ -63,6 +65,7 @@ class _PartyFormState extends ConsumerState<PartyForm>
   late final TextEditingController _udyam;
   String? _msme;
   String? _tdsSectionId;
+  String? _priceListId;
   late PartyType _type;
   String? _stateCode;
   bool _saving = false;
@@ -87,6 +90,7 @@ class _PartyFormState extends ConsumerState<PartyForm>
     _udyam = TextEditingController(text: p?.udyamNo);
     _msme = p?.msmeCategory;
     _tdsSectionId = p?.tdsSectionId;
+    _priceListId = p?.priceListId;
     _type = p?.type ?? PartyType.customer;
     _stateCode = p?.stateCode;
     _custom = p?.custom ?? const {};
@@ -139,6 +143,7 @@ class _PartyFormState extends ConsumerState<PartyForm>
       'udyamNo': trimmedOrNull(_udyam.text.toUpperCase()),
       'msmeCategory': _msme,
       'tdsSectionId': _tdsSectionId,
+      'priceListId': _type == PartyType.vendor ? null : _priceListId,
     };
     final originalParty = widget.party;
     if (originalParty == null) {
@@ -412,6 +417,40 @@ class _PartyFormState extends ConsumerState<PartyForm>
                     ),
                   ],
                 ),
+                if (_type != PartyType.vendor)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: FormRow(
+                      children: [
+                        DropdownButtonFormField<String?>(
+                          key: const ValueKey('party-price-list'),
+                          initialValue: _priceListId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Price list (optional)',
+                            helperText: 'Used when a sales line has no rate',
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Item sale price'),
+                            ),
+                            for (final l
+                                in ref.watch(priceListsProvider).value ??
+                                    const <PriceList>[])
+                              if (l.isActive || l.id == _priceListId)
+                                DropdownMenuItem<String?>(
+                                  value: l.id,
+                                  child: Text(l.name),
+                                ),
+                          ],
+                          onChanged: canSave
+                              ? (v) => setState(() => _priceListId = v)
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

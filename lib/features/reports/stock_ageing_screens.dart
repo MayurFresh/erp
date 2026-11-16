@@ -37,7 +37,9 @@ class _ValuationState extends ConsumerState<StockValuationScreen> {
     final value = ref.watch(stockValuationProvider(_locationId));
     return ReportPage(
       title: 'Stock valuation',
-      subtitle: 'Weighted-average cost, as of today',
+      subtitle: value.value?.method == 'fifo'
+          ? 'FIFO cost, as of today'
+          : 'Weighted-average cost, as of today',
       export: value.value == null
           ? null
           : stockValuationExport(

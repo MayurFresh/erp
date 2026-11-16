@@ -17,6 +17,7 @@ import { docDate, money, parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { itSchedule } from './fixed-assets.ts';
 import { documentRoute } from '../lib/openapi.ts';
+import { msme43bh } from './gst-compliance.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const taxYearField = z.string().regex(/^\d{4}-\d{2}$/, 'Use a tax year such as 2026-27')
@@ -326,6 +327,8 @@ async function itrPack(ctx: RequestContext, tx: Tx, taxYear: string, formQ?: 'it
   if (dep.totals.depreciation) adjustments.push({ label: 'Income-tax depreciation', amount: dep.totals.depreciation, kind: 'less', reason: 'Block depreciation from the IT schedule.' });
   if (taxInterest) adjustments.push({ label: 'Interest and late fee on taxes', amount: taxInterest, kind: 'add', reason: 'Interest on taxes is not deductible.' });
   if (cashFlag) adjustments.push({ label: 'Cash payments above Rs 10,000', amount: cashFlag, kind: 'add', reason: 'Flagged as possibly disallowed (s.40A(3) equivalent). Review before filing.' });
+  const bh = await msme43bh(tx, ctx.companyId, taxYear);
+  if (bh.total) adjustments.push({ label: 'MSME dues beyond the time limit (s.43B(h))', amount: bh.total, kind: 'add', reason: `Owed to micro and small vendors past the agreed period and unpaid on ${bh.asOf}; allowed in the year paid.` });
   const adjusted = round2(pnl.netProfit + adjustments.reduce((s, a) => s + (a.kind === 'add' ? a.amount : -a.amount), 0));
 
   let presumptive: { digitalReceipts: number; cashReceipts: number; deemedIncome: number } | null = null;
@@ -362,7 +365,7 @@ async function itrPack(ctx: RequestContext, tx: Tx, taxYear: string, formQ?: 'it
     company: { name: co.legal_name ?? co.name, pan: co.pan, gstin: co.gstin, address: co.address },
     pnl: { ...pnlSums, lines: pnlLines },
     balanceSheet: { ...Object.fromEntries(Object.entries(bs).map(([k, v]) => [k, round2(v)])), lines: bsLines },
-    depreciation: dep.rows, adjustments, presumptive,
+    depreciation: dep.rows, adjustments, section43bh: bh.total, presumptive,
     tdsCredits: tds.map((t) => ({ deductorName: t.name, tan: null as string | null, amount: Number(t.amount) })),
     taxesPaid: await postedPayments(tx, ctx.companyId, taxYear),
     incomeEstimate: presumptive ? presumptive.deemedIncome : adjusted, steps, warnings, unverified: [...unverified],

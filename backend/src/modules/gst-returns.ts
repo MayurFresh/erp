@@ -10,6 +10,8 @@ import { parse } from '../lib/validate.ts';
 import { writeAudit, auditOf } from './audit.ts';
 import { systemAccounts } from '../accounting/accounts.ts';
 import { filedRecord } from '../lib/filing-json.ts';
+import { imsExcludedItc } from './gst-compliance.ts';
+import { exportKinds } from '../lib/export-currency.ts';
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 const periodField = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
@@ -133,10 +135,23 @@ export async function buildGstr1(tx: Tx, ctx: RequestContext, period: string) {
   };
 
   const class_ = new Map<string, 'b2b' | 'b2cl' | 'b2cs'>();
+  // Export and SEZ supplies go to their own tables (6A exports, 6B SEZ), not B2B / B2CL / B2CS.
+  const exMap = await exportKinds(tx, ctx.companyId, o.invoices.map((i) => i.id));
+  const exp: any[] = [];
+  const sez: any[] = [];
   for (const inv of o.invoices) {
+    const ex = exMap.get(inv.id);
+    if (ex && ex.category !== 'deemed') {
+      const row = { invoiceId: inv.id, number: inv.number, date: inv.date, partyName: inv.partyName, gstin: inv.gstin, placeOfSupply: inv.pos, invoiceValue: inv.value, reverseCharge: false,
+        shippingBillNo: ex.shippingBillNo, shippingBillDate: ex.shippingBillDate, portCode: ex.portCode, rates: ratesOf(inv.lines) };
+      if (ex.category.startsWith('export')) exp.push({ ...row, exportType: ex.category === 'export_igst' ? 'WPAY' : 'WOPAY' });
+      else sez.push({ ...row, invTyp: ex.category === 'sez_igst' ? 'SEWP' : 'SEWOP', supplyType: ex.category === 'sez_igst' ? 'SEWP' : 'SEWOP' });
+      for (const l of inv.lines) bumpHsn(inv.gstin ? 'b2b' : 'b2c', l, 1);
+      continue;
+    }
     const kind = inv.gstin ? 'b2b' : isB2cl(inv, inv.value) ? 'b2cl' : 'b2cs';
     class_.set(inv.id, kind);
-    if (kind === 'b2b') b2b.push({ invoiceId: inv.id, number: inv.number, date: inv.date, partyName: inv.partyName, gstin: inv.gstin, placeOfSupply: inv.pos, invoiceValue: inv.value, reverseCharge: inv.reverseCharge === true, rates: ratesOf(inv.lines) });
+    if (kind === 'b2b') b2b.push({ invoiceId: inv.id, number: inv.number, date: inv.date, partyName: inv.partyName, gstin: inv.gstin, placeOfSupply: inv.pos, invoiceValue: inv.value, reverseCharge: inv.reverseCharge === true, invTyp: ex ? 'DE' : 'R', rates: ratesOf(inv.lines) });
     else if (kind === 'b2cl') b2cl.push({ invoiceId: inv.id, number: inv.number, date: inv.date, placeOfSupply: inv.pos, invoiceValue: inv.value, rates: ratesOf(inv.lines) });
     for (const l of inv.lines) {
       if (kind === 'b2cs') bumpB2cs(inv.pos, inv.supply, l.rate, l, 1);
@@ -173,7 +188,7 @@ export async function buildGstr1(tx: Tx, ctx: RequestContext, period: string) {
   return {
     period, gstin: company.gstin, filing: company.gst_filing as 'monthly' | 'quarterly',
     b2b, b2cl, b2cs: b2cs.filter((r) => r.taxable || r.igst || r.cgst || r.sgst).sort((a, b) => a.placeOfSupply.localeCompare(b.placeOfSupply) || a.rate - b.rate),
-    cdnr, cdnur, nil,
+    cdnr, cdnur, nil, exp, sez,
     hsn: [...hsnMap.values()].sort((a, b) => a.segment.localeCompare(b.segment) || a.hsnCode.localeCompare(b.hsnCode) || a.rate - b.rate),
     docs: [...docRange('invoice', o.invoiceDocs), ...docRange('credit_note', o.cnDocs)],
     totals, ledger: ledgerMv, variance, warnings,
@@ -194,7 +209,9 @@ export function gstnJson(g: Gstr1) {
   return {
     _note: 'Unofficial; check with the GST offline tool before upload',
     gstin: g.gstin, fp: `${g.period.slice(5, 7)}${g.period.slice(0, 4)}`,
-    b2b: byCtin(g.b2b).map(([ctin, invs]) => ({ ctin, inv: invs.map((i) => ({ inum: i.number, idt: ddmmyyyy(i.date), val: i.invoiceValue, pos: i.placeOfSupply, rchrg: i.reverseCharge ? 'Y' : 'N', inv_typ: 'R', itms: itms(i.rates) })) })),
+    b2b: byCtin([...g.b2b, ...g.sez]).map(([ctin, invs]) => ({ ctin, inv: invs.map((i: any) => ({ inum: i.number, idt: ddmmyyyy(i.date), val: i.invoiceValue, pos: i.placeOfSupply, rchrg: i.reverseCharge ? 'Y' : 'N', inv_typ: i.invTyp ?? 'R', itms: itms(i.rates) })) })),
+    exp: ['WPAY', 'WOPAY'].filter((t) => g.exp.some((i: any) => i.exportType === t)).map((t) => ({ exp_typ: t, inv: g.exp.filter((i: any) => i.exportType === t).map((i: any) => ({
+      inum: i.number, idt: ddmmyyyy(i.date), val: i.invoiceValue, sbpcode: i.portCode ?? undefined, sbnum: i.shippingBillNo ?? undefined, sbdt: i.shippingBillDate ? ddmmyyyy(i.shippingBillDate) : undefined, itms: itms(i.rates) })) })),
     b2cl: [...new Set(g.b2cl.map((i) => i.placeOfSupply))].map((pos) => ({ pos, inv: g.b2cl.filter((i) => i.placeOfSupply === pos).map((i) => ({ inum: i.number, idt: ddmmyyyy(i.date), val: i.invoiceValue, itms: itms(i.rates) })) })),
     b2cs: g.b2cs.map((r) => ({ sply_ty: r.supplyType === 'inter' ? 'INTER' : 'INTRA', pos: r.placeOfSupply, typ: 'OE', rt: r.rate, txval: r.taxable, iamt: r.igst, camt: r.cgst, samt: r.sgst, csamt: 0 })),
     cdnr: byCtin(g.cdnr).map(([ctin, notes]) => ({ ctin, nt: notes.map((n) => ({ ntty: 'C', nt_num: n.number, nt_dt: ddmmyyyy(n.date), val: n.noteValue, pos: n.placeOfSupply, rchrg: n.reverseCharge ? 'Y' : 'N', inv_typ: 'R', itms: itms(n.rates) })) })),
@@ -213,8 +230,13 @@ export async function buildGstr3b(tx: Tx, ctx: RequestContext, period: string) {
   const o = await loadOutward(tx, ctx.companyId, from, to);
   let outward = zeroTax();
   let zeroNil = 0;
+  let zeroRated = zeroTax();
+  const exMap = await exportKinds(tx, ctx.companyId, o.invoices.map((i) => i.id));
   const unreg = new Map<string, { taxable: number; igst: number }>();
   const apply = (d: OutDoc, sign: number) => {
+    // Exports and supplies to SEZ are zero rated: table 3.1(b), with any IGST paid on them.
+    const ex = sign === 1 ? exMap.get(d.id) : undefined;
+    if (ex && ex.category !== 'deemed') { for (const l of d.lines) zeroRated = addTax(zeroRated, l, 1); return; }
     for (const l of d.lines) {
       if (l.rate > 0) outward = addTax(outward, l, sign); else zeroNil = round2(zeroNil + sign * l.taxable);
       if (!d.gstin && d.supply === 'inter' && l.rate > 0) {
@@ -240,6 +262,17 @@ export async function buildGstr3b(tx: Tx, ctx: RequestContext, period: string) {
     if (r.rcm) rcm = addTax(rcm, r);
     else if (r.igst + r.cgst + r.sgst > 0) others = addTax(others, r);
   }
+  // Debit notes to vendors dated in the period take their tax back out of the credit claimed.
+  const returns = await tx.selectFrom('purchase_returns').select(['subtotal', 'cgst', 'sgst', 'igst', 'reverse_charge'])
+    .where('company_id', '=', ctx.companyId).where('status', '=', 'posted').where('return_date', '>=', from).where('return_date', '<=', to).execute();
+  for (const r of returns) {
+    const t = { taxable: r.subtotal, igst: r.igst, cgst: r.cgst, sgst: r.sgst };
+    if (r.reverse_charge) rcm = addTax(rcm, t, -1);
+    else if (r.igst + r.cgst + r.sgst > 0) others = addTax(others, t, -1);
+  }
+  // IMS: tax on purchases whose 2B document was rejected or left pending is not claimed.
+  const imsExcluded = await imsExcludedItc(tx, ctx.companyId, period);
+  others = addTax(others, imsExcluded, -1);
   const [rev, others2b, inwardExempt, filing] = await Promise.all([
     itcReversalRows(tx, ctx.companyId, period),
     itcFrom2b(tx, ctx.companyId, period),
@@ -249,17 +282,18 @@ export async function buildGstr3b(tx: Tx, ctx: RequestContext, period: string) {
   const reversedRule37 = rev.totals.reversal;
   const reclaimed = rev.totals.reclaim;
   const net = addTax(addTax(addTax(rcm, others), reversedRule37, -1), reclaimed);
-  const head = (h: 'igst' | 'cgst' | 'sgst') => Math.max(0, round2(outward[h] + rcm[h] - net[h]));
+  const head = (h: 'igst' | 'cgst' | 'sgst') => Math.max(0, round2(outward[h] + zeroRated[h] + rcm[h] - net[h]));
   const payable = { igst: head('igst'), cgst: head('cgst'), sgst: head('sgst') };
   const warnings: string[] = [];
   if (!company.gstin) warnings.push('Company GSTIN is missing. Add it in company settings.');
-  warnings.push('Export invoices are not supported yet, so table 3.1(b) is 0.');
+  if (zeroRated.taxable || zeroRated.igst) warnings.push('Table 3.1(b) holds export and SEZ invoices. Credit notes against them are not netted here.');
+  if (imsExcluded.igst + imsExcluded.cgst + imsExcluded.sgst > 0) warnings.push('Credit on purchases whose 2B document is rejected or pending in IMS is left out of 4A(5).');
   if (rev.rows.length) warnings.push('ITC reversals or reclaims under Rule 37 apply this period. Include them in 4B(2) and 4D(1).');
   return {
     period, outward, zeroNil: { taxable: zeroNil }, inwardRcm: rcm,
-    zeroRated: zeroTax(), nonGst: { taxable: 0 }, inwardExempt,
+    zeroRated, nonGst: { taxable: 0 }, inwardExempt,
     interStateUnregistered: [...unreg.entries()].filter(([, v]) => v.taxable || v.igst).map(([placeOfSupply, v]) => ({ placeOfSupply, ...v })),
-    itc: { rcm, others, reversed: { rule42_43: zeroTax(), rule37: reversedRule37 }, reclaimed, net, others2b },
+    itc: { rcm, others, reversed: { rule42_43: zeroTax(), rule37: reversedRule37 }, reclaimed, net, others2b, imsExcluded },
     payable, payableNoCross: payable,
     rcmCash: { igst: rcm.igst, cgst: rcm.cgst, sgst: rcm.sgst },
     filing, warnings,
@@ -287,6 +321,13 @@ export async function itcReversalRows(tx: Tx, companyId: string, period: string)
       .select(['a.doc_id', 'a.payment_id', 'a.amount', 'p.payment_date']).where('p.status', '=', 'posted').where('a.doc_type', '=', 'purchase')
       .where('a.doc_id', 'in', ps.map((x) => x.id)).orderBy('p.payment_date').orderBy('a.payment_id').execute()
     : [];
+  // A debit note applied to a bill settles that much of it, like a payment on the note's date.
+  const dn = ps.length
+    ? await tx.selectFrom('purchase_returns').select(['purchase_id', 'return_date', 'applied_amount'])
+      .where('status', '=', 'posted').where('purchase_id', 'in', ps.map((x) => x.id)).where('applied_amount', '>', 0).execute()
+    : [];
+  const debitNotes = new Map<string, { date: string; amount: number }[]>();
+  for (const d of dn) debitNotes.set(d.purchase_id, [...(debitNotes.get(d.purchase_id) ?? []), { date: d.return_date, amount: d.applied_amount }]);
   const rows: ItcRevRow[] = [];
   const totals = { reversal: zeroTax(), reclaim: zeroTax() };
   const share = (v: number, part: number, total: number) => (total > 0 ? round2((v * part) / total) : 0);
@@ -294,7 +335,8 @@ export async function itcReversalRows(tx: Tx, companyId: string, period: string)
     if (p.cgst + p.sgst + p.igst <= 0 || p.total <= 0) continue;
     const day180 = addDays(p.bill_date, 180);
     const mine = allocs.filter((a) => a.doc_id === p.id);
-    const paid180 = mine.filter((a) => a.payment_date <= day180).reduce((s, a) => s + a.amount, 0);
+    const paid180 = mine.filter((a) => a.payment_date <= day180).reduce((s, a) => s + a.amount, 0)
+      + (debitNotes.get(p.id) ?? []).filter((d) => d.date <= day180).reduce((s, d) => s + d.amount, 0);
     const unpaid = Math.max(0, round2(p.net_payable - paid180));
     const base = { purchaseId: p.id, number: p.number, partyName: p.name, supplierGstin: p.gstin ?? '', billDate: p.bill_date, day180 };
     const rem = { igst: share(p.igst, unpaid, p.total), cgst: share(p.cgst, unpaid, p.total), sgst: share(p.sgst, unpaid, p.total) };

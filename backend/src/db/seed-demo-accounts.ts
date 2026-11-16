@@ -31,6 +31,7 @@ const rows = (r: unknown): Record<string, unknown>[] => (Array.isArray(r) ? r : 
 
 // Sector sample data, by module key. A seed file that is missing or has no such export is skipped.
 const MODULE_SEEDS: [module: string, file: string, fn: string][] = [
+  ['crm', './seed-crm.ts', 'seedCrmDemo'],
   ['pos', './seed-pos.ts', 'seedPosDemo'],
   ['restaurant', './seed-restaurant.ts', 'seedRestaurantDemo'],
   ['clinic', './seed-clinic.ts', 'seedClinicDemo'],

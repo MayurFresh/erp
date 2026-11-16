@@ -8,6 +8,8 @@ import { scopedLocationIds } from '../lib/scope.ts';
 import { visibleProjectIds } from './subcontract-common.ts';
 import { parse } from '../lib/validate.ts';
 import { msmeInterest } from '../lib/msme.ts';
+import { valuationSetting } from '../accounting/fifo.ts';
+import { comparisonValuation, effectiveMethod } from './stock-tools.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -212,9 +214,14 @@ export async function reportRoutes(app: FastifyInstance) {
     const ctx = req.ctx;
     ctx.require('reports.view');
     ctx.require('items.view_cost');
-    const q = parse(z.object({ locationId: z.uuid().optional() }), req.query);
+    const q = parse(z.object({ locationId: z.uuid().optional(), method: z.enum(['average', 'fifo']).optional() }), req.query);
     const { scope, locationId } = scopeOf(ctx, q.locationId);
     return ctx.tx(async (tx) => {
+      const setting = await valuationSetting(tx, ctx.companyId);
+      const booksMethod = effectiveMethod(setting);
+      const method = q.method ?? booksMethod;
+      // Another method than the books use: rebuilt from the moves, for comparison only.
+      if (method !== booksMethod) return { method, setting, comparison: true, booksMethod, ...(await comparisonValuation(tx, ctx, method, scope, locationId)) };
       let base = tx.selectFrom('stock_moves as m').innerJoin('items as i', 'i.id', 'm.item_id').where('m.company_id', '=', ctx.companyId);
       if (scope) base = base.where('m.location_id', 'in', scope);
       if (locationId) base = base.where('m.location_id', '=', locationId);
@@ -226,7 +233,7 @@ export async function reportRoutes(app: FastifyInstance) {
         const value = round2(Number(r.value));
         return { itemId: r.id, name: r.name, sku: r.sku, unit: r.unit, qty, avgCost: qty > 0 ? Math.round((value / qty) * 100) / 100 : 0, value };
       }).filter((r) => r.qty !== 0 || r.value !== 0);
-      return { rows: data, totalValue: round2(data.reduce((s, r) => s + r.value, 0)) };
+      return { method, setting, comparison: false, booksMethod, rows: data, totalValue: round2(data.reduce((s, r) => s + r.value, 0)) };
     });
   });
 

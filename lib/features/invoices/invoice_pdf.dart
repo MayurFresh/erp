@@ -407,8 +407,18 @@ class _InvoicePdf {
         kit.totalRow('IGST', formatAmount(invoice.igst)),
       if (invoice.roundOff != 0)
         kit.totalRow('Round off', formatAmount(invoice.roundOff)),
+      if ((invoice.ext?.tcsAmount ?? 0) > 0)
+        kit.totalRow(
+          'TCS ${invoice.ext!.tcsSection ?? ''} at ${formatPlain(invoice.ext!.tcsRate)}%',
+          formatAmount(invoice.ext!.tcsAmount),
+        ),
       pw.Divider(color: kLine, thickness: 0.6, height: 8),
       kit.totalRow('Grand total', formatMoney(invoice.total), strong: true),
+      if (invoice.ext?.currencyCode != null && invoice.ext?.fcTotal != null)
+        kit.totalRow(
+          'In ${invoice.ext!.currencyCode} at ${formatPlain(invoice.ext!.exchangeRate)}',
+          '${invoice.ext!.currencyCode} ${formatAmount(invoice.ext!.fcTotal!)}',
+        ),
       if (invoice.reverseCharge) ...[
         pw.SizedBox(height: 4),
         kit.totalRow('Tax payable on reverse charge: Yes', formatAmount(invoice.rcmTax)),
@@ -487,9 +497,25 @@ class _InvoicePdf {
 
   pw.Widget _closing() {
     final c = company;
+    final ext = invoice.ext;
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
+        // Rule 46: the endorsement for export and SEZ supplies.
+        if (_has(ext?.declaration)) ...[
+          kit.text(ext!.declaration!, size: 8, bold: true, height: 1.5),
+          if (_has(ext.lutNo)) kit.text('LUT number: ${ext.lutNo}', size: 8),
+          if (_has(ext.shippingBillNo))
+            kit.text(
+              'Shipping bill ${ext.shippingBillNo}'
+              '${_has(ext.shippingBillDate) ? ' dated ${formatDate(ext.shippingBillDate)}' : ''}'
+              '${_has(ext.portCode) ? ', port code ${ext.portCode}' : ''}',
+              size: 8,
+            ),
+          if (_has(ext.country))
+            kit.text('Country of destination: ${ext.country}', size: 8),
+          pw.SizedBox(height: 6),
+        ],
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [

@@ -15,11 +15,16 @@ import { computeLine, type AdjustmentInput, type OverrideInput } from '../lib/pa
 import { establishmentAdmin, pfCeiling } from '../lib/payroll/epf.ts';
 import { round2 } from '../lib/payroll/money.ts';
 import { PT_RULES } from '../lib/payroll/pt.ts';
+import { basicFlags, companyRateRows, loadStatSettings, overtimeHours, wageRuleFor } from '../lib/payroll/load.ts';
+import { ratesInForce } from '../lib/payroll/rates.ts';
+import { monthlyWages, overtimePay } from '../lib/payroll/statutory.ts';
+import { daysInMonth } from '../lib/payroll/proration.ts';
 import { scopedLocationIds } from '../lib/scope.ts';
 import { nextNumber } from '../lib/series.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { ensureComponents, leaveInMonth, myEmployee, salaryFor } from './hr.ts';
+import { onPayrollApproved } from './claims-payroll.ts';
 import { documentRoute } from '../lib/openapi.ts';
 
 const monthField = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM').transform((v) => `${v}-01`);
@@ -28,7 +33,7 @@ const fyStartOf = (m: string) => (Number(m.slice(5, 7)) >= 4 ? `${m.slice(0, 4)}
 const paise = (n: number) => Math.round(n * 100);
 
 type Run = Awaited<ReturnType<typeof getRun>>;
-async function getRun(tx: Tx, ctx: RequestContext, id: string, lock = false) {
+export async function getRun(tx: Tx, ctx: RequestContext, id: string, lock = false) {
   let q = tx.selectFrom('payroll_runs').selectAll().where('id', '=', id).where('company_id', '=', ctx.companyId);
   if (lock) q = q.forUpdate();
   const r = await q.executeTakeFirst();
@@ -44,8 +49,8 @@ const runJson = (r: Run, extra: Record<string, unknown> = {}) => ({
   payDate: r.pay_date, paidAt: r.paid_at, payoutEntryId: r.payout_entry_id, createdAt: r.created_at, updatedAt: r.updated_at, ...extra,
 });
 
-type LineRow = Awaited<ReturnType<typeof loadLines>>[number];
-async function loadLines(tx: Tx, runId: string) {
+export type LineRow = Awaited<ReturnType<typeof loadLines>>[number];
+export async function loadLines(tx: Tx, runId: string) {
   return tx.selectFrom('payroll_lines as l').innerJoin('employees as e', 'e.id', 'l.employee_id')
     .selectAll('l').select(['e.code as emp_code', 'e.name as emp_name', 'e.department as emp_department', 'e.designation as emp_designation'])
     .where('l.run_id', '=', runId).orderBy('e.code').execute();
@@ -62,7 +67,7 @@ const lineJson = (l: LineRow) => ({
 });
 
 /** Builds every line of a run from current data. Adjustments and overrides entered for the run are kept. */
-async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
+export async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
   await ensureComponents(tx, ctx);
   const monthStart = run.month, monthEnd = lastDay(monthStart);
   const settings = await tx.selectFrom('payroll_settings').selectAll().where('company_id', '=', ctx.companyId).executeTakeFirst();
@@ -75,7 +80,15 @@ async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
 
   await tx.deleteFrom('payroll_lines').where('run_id', '=', run.id).execute();
   const taken = new Set((await tx.selectFrom('payroll_lines').select('employee_id').where('month', '=', monthStart).where('is_live', '=', true).execute()).map((r) => r.employee_id));
-  const elig = emps.filter((e) => !taken.has(e.id));
+  // Employees with an approved full and final settlement leave payroll from the exit month on.
+  const settled = new Set((await tx.selectFrom('fnf_settlements').select(['employee_id', 'exit_date']).where('company_id', '=', ctx.companyId)
+    .where('status', 'in', ['approved', 'paid']).execute()).filter((f) => f.exit_date.slice(0, 7) <= monthStart.slice(0, 7)).map((f) => f.employee_id));
+  const elig = emps.filter((e) => !taken.has(e.id) && !settled.has(e.id));
+  const stat = await loadStatSettings(tx, ctx.companyId);
+  const rateRows = await companyRateRows(tx, ctx.companyId);
+  const basics = await basicFlags(tx, ctx.companyId);
+  const otHours = await overtimeHours(tx, ctx.companyId, monthStart);
+  const rule = wageRuleFor(stat, monthStart);
   const leave = await leaveInMonth(tx, ctx.companyId, monthStart, elig);
   const att = await tx.selectFrom('attendance_summaries').selectAll().where('company_id', '=', ctx.companyId).where('month', '=', monthStart).execute();
   const adjs = await tx.selectFrom('payroll_adjustments').selectAll().where('run_id', '=', run.id).execute();
@@ -94,15 +107,22 @@ async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
     const adjustments: AdjustmentInput[] = adjs.filter((x) => x.employee_id === e.id).map((x) => ({ id: x.id, kind: x.kind as 'earning' | 'deduction', label: x.label, amount: x.amount, taxable: x.taxable, reason: x.reason }));
     const overrides: OverrideInput[] = ovs.filter((x) => x.employee_id === e.id).map((x) => ({ field: x.field as OverrideInput['field'], value: x.value, reason: x.reason }));
     const ptState = e.pt_state_code ?? e.loc_state ?? company.state_code;
+    const otH = otHours.get(e.id) ?? 0;
+    let otPay = 0;
+    if (otH > 0) {
+      const w = monthlyWages(sal.lines.filter((l) => l.kind === 'earning').map((l) => ({ code: l.code, amount: l.amount, isBasic: basics.get(l.component_id) ?? false })), rule);
+      otPay = overtimePay({ wages: w.wages, divisorDays: (settings?.lop_divisor ?? 'calendar') === 'calendar' ? daysInMonth(monthStart) : Number(settings!.lop_divisor), hoursPerDay: stat.hoursPerDay, hours: otH, multiplier: stat.otMultiplier });
+      if (otPay > 0) adjustments.push({ kind: 'earning', label: 'Overtime', amount: otPay, taxable: true, reason: `${otH} hours` });
+    }
     const r = computeLine({
       monthStart, joining: e.joining_date, leaving: e.leaving_date, sex: e.sex, lopDays, divisor: (settings?.lop_divisor ?? 'calendar') as 'calendar' | '30' | '26',
       components: sal.lines.map((l) => ({ componentId: l.component_id, code: l.code, name: l.name, kind: l.kind as 'earning' | 'deduction', amount: l.amount, taxable: l.taxable, pfWage: l.pf_wage, esiWage: l.esi_wage, proRata: l.pro_rata })),
       adjustments, overrides,
       settings: { pfEnabled: settings?.pf_enabled ?? true, esiEnabled: settings?.esi_enabled ?? true, lwfEnabled: settings?.lwf_enabled ?? false, ptEnabled: settings?.pt_enabled ?? true, pfRate: settings?.pf_rate ?? 12 },
       employee: { pfApplicable: e.pf_applicable, pfHigherWage: e.pf_higher_wage, esiApplicable: e.esi_applicable, esiCoveredUntil: e.esi_covered_until, taxRegime: e.tax_regime as 'new' | 'old', previousIncome: e.previous_income, previousTds: e.previous_tds },
-      ptStateCode: ptState, ytd,
+      ptStateCode: ptState, ytd, rates: ratesInForce(rateRows, monthStart, ptState), wageRule: rule,
     });
-    await tx.insertInto('payroll_lines').values({
+    const lineRow = await tx.insertInto('payroll_lines').values({
       tenant_id: ctx.tenantId, run_id: run.id, company_id: ctx.companyId, employee_id: e.id, month: monthStart, working_days: r.workingDays,
       paid_days: r.paidDays, lop_days: r.lopDays, earnings: JSON.stringify(r.earnings), adjustments: JSON.stringify(r.adjustments),
       other_deductions: JSON.stringify(r.otherDeductions), gross: r.gross, taxable_gross: r.taxableGross, pf_wage: r.pfWage, esi_wage: r.esiWage,
@@ -110,7 +130,10 @@ async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
       esi_employee: r.esiEmployee, esi_employer: r.esiEmployer, esi_covered_until: r.esiCoveredUntil, pt: r.pt, pt_state_code: ptState,
       lwf_employee: r.lwfEmployee, lwf_employer: r.lwfEmployer, tds: r.tds, tds_working: JSON.stringify(r.tdsWorking),
       other_ded_total: r.otherDedTotal, net: r.net, overrides: JSON.stringify(r.overrides), warnings: JSON.stringify(r.warnings),
-    }).execute();
+    }).returning('id').executeTakeFirstOrThrow();
+    if (r.wageRuleAddback > 0 || otH > 0) {
+      await tx.insertInto('payroll_line_extras').values({ line_id: lineRow.id, tenant_id: ctx.tenantId, wage_rule_addback: r.wageRuleAddback, ot_hours: otH, ot_pay: otPay }).execute();
+    }
     gross += r.gross; net += r.net; cost += r.employerCost; count += 1;
     ded += r.gross - r.net;
   }
@@ -121,7 +144,7 @@ async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
   return skipped;
 }
 
-async function ensureAccount(tx: Tx, ctx: RequestContext, name: string, type: 'expense' | 'liability', base: number): Promise<string> {
+export async function ensureAccount(tx: Tx, ctx: RequestContext, name: string, type: 'expense' | 'liability', base: number): Promise<string> {
   const ex = await tx.selectFrom('accounts').select('id').where('company_id', '=', ctx.companyId).where('name', '=', name).executeTakeFirst();
   if (ex) return ex.id;
   const used = new Set((await tx.selectFrom('accounts').select('code').where('company_id', '=', ctx.companyId).execute()).map((r) => r.code));
@@ -144,7 +167,7 @@ async function makers(tx: Tx, run: Run): Promise<Set<string>> {
   return s;
 }
 
-async function postAccrual(tx: Tx, ctx: RequestContext, run: Run, lines: LineRow[]): Promise<string> {
+export async function postAccrual(tx: Tx, ctx: RequestContext, run: Run, lines: LineRow[]): Promise<string> {
   const byComp = new Map<string, number>();
   let oneTime = 0, employerContrib = 0, pf = 0, esi = 0, pt = 0, lwf = 0, tds = 0, other = 0, net = 0;
   for (const l of lines) {
@@ -347,6 +370,7 @@ export async function payrollRoutes(app: FastifyInstance) {
       const lines = await loadLines(tx, id);
       if (!lines.length) throw conflict('The run has no employees.', 'RUN_EMPTY');
       const entry = await postAccrual(tx, ctx, run, lines);
+      await onPayrollApproved(tx, ctx, run, lines.map((l) => l.employee_id)); // claims and loans (migration 049)
       for (const l of lines) if (l.esi_covered_until) await tx.updateTable('employees').set({ esi_covered_until: l.esi_covered_until }).where('id', '=', l.employee_id).execute();
       await tx.updateTable('payroll_runs').set({ status: 'approved', approved_by: ctx.userId, approved_at: new Date(), accrual_entry_id: entry }).where('id', '=', id).execute();
       await writeAudit(tx, auditOf(ctx), 'payroll_run', id, 'approve', { status: 'computed' }, { status: 'approved', entryId: entry });
@@ -445,9 +469,10 @@ export async function payrollRoutes(app: FastifyInstance) {
         const rows = lines.filter((l) => l.pf_wage > 0 && l.pf_employee + l.pf_eps + l.pf_epf_employer > 0);
         const missing = rows.filter((l) => !emp(l.employee_id).uan);
         if (missing.length) throw conflict(`UAN is missing for ${missing.map((l) => l.emp_name).join(', ')}.`, 'MISSING_UAN', { employees: missing.map((l) => l.emp_name) });
+        const ecrCeiling = ratesInForce(await companyRateRows(tx, ctx.companyId), run.month, null).epf.ceiling;
         const text = rows.map((l) => {
           const e = emp(l.employee_id);
-          const ceiling = pfCeiling(run.month);
+          const ceiling = ecrCeiling;
           const epfWage = e.pf_higher_wage ? l.pf_wage : Math.min(l.pf_wage, ceiling);
           const epsWage = Math.min(l.pf_wage, ceiling);
           return [e.uan, l.emp_name.toUpperCase(), Math.round(l.gross), Math.round(epfWage), Math.round(epsWage), Math.round(epsWage), l.pf_employee, l.pf_eps, l.pf_epf_employer, Math.max(0, Math.round(l.working_days - l.paid_days)), 0].join('#~#');

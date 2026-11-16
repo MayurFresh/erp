@@ -20,6 +20,7 @@ Future<Uint8List> buildStatementPdf(
   Company company, {
   pw.ThemeData? theme,
   PdfBrand? brand,
+  List<(String, String)> extraDetails = const [],
 }) {
   final kit = PdfKit(brand: brand ?? pdfBrandFor(company), theme: theme);
   final period = '${formatDate(ledger.from)} to ${formatDate(ledger.to)}';
@@ -41,6 +42,7 @@ Future<Uint8List> buildStatementPdf(
         ('Period', period),
         ('Opening balance', formatMoney(ledger.openingBalance)),
         ('Closing balance', formatMoney(ledger.closingBalance)),
+        ...extraDetails,
       ],
       columns: const [
         PdfCol('Date', width: 58),
