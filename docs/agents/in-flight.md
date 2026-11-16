@@ -1,10 +1,10 @@
 # Work state
 
-Wave 2 is committed as 24435aa on `main` and pushed. Wave 3, the build order from `docs/research/coverage-review-2026-11.md`, was built and integrated on branch `idea/crm` on 2026-11-16. It is not committed. It adds CRM (layout A), quotations, purchase returns with credit limits, receivables, pricing, statutory payroll, claims and loans, GST compliance, TDS forms, finance reports, stock valuation, landed cost and RFQ, helpdesk and timesheets, export, currency, challans and TCS, and platform extras. The dev DB is migrated to 057. 55 backend files pass (590 tests). `flutter test` passes 941. Analyze is clean. No agents are running.
+Wave 2 is committed as 24435aa on `main` and pushed. Wave 3, the build order from `docs/research/coverage-review-2026-11.md`, was built and integrated on 2026-11-16, then committed as cfcffad, merged into `main` and pushed. It adds CRM (layout A), quotations, purchase returns with credit limits, receivables, pricing, statutory payroll, claims and loans, GST compliance, TDS forms, finance reports, stock valuation, landed cost and RFQ, helpdesk and timesheets, export, currency, challans and TCS, and platform extras. The dev DB is migrated to 057. 55 backend files pass (590 tests). `flutter test` passes 941. Analyze is clean. No agents are running.
 
 ## Next
 
-The owner decides whether to commit and merge `idea/crm`. Known gaps from wave 3:
+Known gaps from wave 3:
 - Stock: the unit picker is not in the line forms, and PDFs don't show the entered unit. Items have no MRP field. A transfer-in restarts stock age. Quotation convert drops the entered unit.
 - Payroll: the ECR export uses the built-in EPF ceiling (the owner declined that change). September 2026 uses the 15,000 ceiling, with no split month. There is no gratuity provision journal.
 - Claims and loans: recovery is not capped at net pay, and foreclosure takes principal only.
