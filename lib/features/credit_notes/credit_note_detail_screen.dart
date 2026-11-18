@@ -115,6 +115,8 @@ class CreditNoteDetailScreen extends ConsumerWidget {
               LabeledValue('Party', note.partyName),
               LabeledValue('Location', note.locationName),
               LabeledValue('Total', formatMoney(note.total)),
+              if (note.tcsReversed > 0)
+                LabeledValue('TCS reversed', formatMoney(note.tcsReversed)),
               if (note.createdBy != null)
                 LabeledValue(
                   'Created by',

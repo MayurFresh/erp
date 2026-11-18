@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/hr/fnf_pdf.dart';
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/hr/fnf_pdf.dart';
 
 import 'statutory_harness.dart';
 

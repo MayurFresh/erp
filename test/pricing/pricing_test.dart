@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/pricing/bill_discount.dart';
-import 'package:progen_erp/features/pricing/price_prefill.dart';
-import 'package:progen_erp/features/pricing/pricing_models.dart';
+import 'package:onematrix/features/pricing/bill_discount.dart';
+import 'package:onematrix/features/pricing/price_prefill.dart';
+import 'package:onematrix/features/pricing/pricing_models.dart';
 
 class _Line with PricedLine {
   _Line(this.priceItemId, this.priceQty, {String rate = '', double? auto})

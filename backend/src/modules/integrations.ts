@@ -168,7 +168,7 @@ export async function integrationRoutes(app: FastifyInstance, deps: AppDeps) {
     const id = await ctx.tx(async (tx) => {
       const ep = await tx.selectFrom('webhook_endpoints').select('id').where('id', '=', req.params.id).where('company_id', '=', ctx.companyId).executeTakeFirst();
       if (!ep) throw notFound('Webhook');
-      return queueDelivery(tx, ctx, ep.id, 'webhook.test', { message: 'This is a test delivery from Progen.' });
+      return queueDelivery(tx, ctx, ep.id, 'webhook.test', { message: 'This is a test delivery from OneMatrix.' });
     });
     return reply.status(202).send({ deliveryId: id });
   });

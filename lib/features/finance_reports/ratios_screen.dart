@@ -5,6 +5,7 @@ import '../../widgets/layout.dart';
 import '../reports/report_period.dart';
 import '../reports/report_widgets.dart';
 import 'cash_flow_screen.dart' show CompareSwitch;
+import 'finance_exports.dart';
 import 'finance_models.dart';
 import 'finance_repository.dart';
 
@@ -27,7 +28,7 @@ class _RatiosState extends ConsumerState<RatiosScreen> {
     return ReportPage(
       title: 'Ratio analysis',
       subtitle: 'Liquidity, leverage, profitability and efficiency',
-      export: null,
+      export: value.value == null ? null : ratiosExport(value.value!),
       controls: [
         PeriodButton(value: _range, onChanged: (r) => setState(() => _range = r)),
         CompareSwitch(value: _compare, onChanged: (v) => setState(() => _compare = v)),

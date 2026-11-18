@@ -66,11 +66,11 @@ Fiori apps run on phones and tablets (general knowledge). Native offline scannin
 - E-invoice enablement on Public Edition was questioned in a community thread (Jan 2025). May be fixed since.
 - Needs partners for rollout. Not a self-serve product.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Do not compete on enterprise scope. Use SAP as the upper bound and as a data export target.
 - Copy the e-document cockpit: one list showing every legal document and its portal status.
-- Plan an SAP-compatible CSV or OData export for customers who grow out of Progen.
+- Plan an SAP-compatible CSV or OData export for customers who grow out of OneMatrix.
 
 ## Unknowns needing a demo
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/india_states.dart';
+import 'package:onematrix/core/india_states.dart';
 
 void main() {
   test('state list covers 01–38 and 97', () {

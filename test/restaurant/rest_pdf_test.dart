@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/restaurant/rest_models.dart';
-import 'package:progen_erp/features/restaurant/rest_pdf.dart';
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/restaurant/rest_models.dart';
+import 'package:onematrix/features/restaurant/rest_pdf.dart';
 
 void main() {
   test('KOT and bill PDFs build on 80 mm paper', () async {

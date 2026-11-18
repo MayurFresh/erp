@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:progen_erp/core/dirty_registry.dart';
-import 'package:progen_erp/widgets/busy.dart';
-import 'package:progen_erp/widgets/layout.dart';
+import 'package:onematrix/core/dirty_registry.dart';
+import 'package:onematrix/widgets/busy.dart';
+import 'package:onematrix/widgets/layout.dart';
 
 void main() {
   testWidgets('BusyButton disables and shows progress while running', (

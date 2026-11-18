@@ -30,7 +30,7 @@ Checked 2026-11-03. Confidence: low to medium. Toast's own pricing and developer
 - Pay-as-you-go versus monthly plan choice tied to processing rates. It lowers the cost of trying the product.
 - One handheld for order, pay at table and kitchen send.
 - Peer benchmarking in reports (third-party description).
-- Cash-advance financing from sales data. Not relevant to Progen now.
+- Cash-advance financing from sales data. Not relevant to OneMatrix now.
 
 ## APIs and integrations
 
@@ -58,10 +58,10 @@ Checked 2026-11-03. Confidence: low to medium. Toast's own pricing and developer
 - Some products are country-locked (Toast Capital is US only).
 - Third-party sources disagree on prices. The vendor page was not readable.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Treat Toast as a reference for restaurant workflow, not a competitor in India.
-- Use its plan design: a free or low tier plus payments revenue. Progen has no payment rail yet, so UNVERIFIED value.
+- Use its plan design: a free or low tier plus payments revenue. OneMatrix has no payment rail yet, so UNVERIFIED value.
 - Copy the idea of an AI assistant over sales, labour and menu data, only after the POS data model is stable.
 - See docs/research/industry-workflows/restaurant-food.md.
 

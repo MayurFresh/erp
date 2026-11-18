@@ -6,13 +6,13 @@ Written 2026-11-03. Sources: master plan §1.3, §2.2, §2.3 (`/Users/freshcodes
 
 One system of record for a small or mid-size Indian business: books, tax, stock, orders and the people who run them, with industry packs added as the business needs them. The long-term shape is the master plan's three layers (platform, shared engines, industry apps). See `module-catalogue.md`.
 
-Progen is not a rewrite of that plan. It is an existing ERP (`backend/src/modules/` has 62 module files, `backend/src/db/migrations/` has 14 migrations) that grows toward the plan one release at a time.
+OneMatrix is not a rewrite of that plan. It is an existing ERP (`backend/src/modules/` has 62 module files, `backend/src/db/migrations/` has 14 migrations) that grows toward the plan one release at a time.
 
 ## Who we serve first
 
 Indian SMEs that hold stock and sell through several channels: marketplace sellers, D2C brands, distributors and wholesalers, small manufacturers with warehouses (plan §3, master plan §2.2). Construction and real-estate packs already exist and stay as packs, not the launch wedge.
 
-## What Progen offers today
+## What OneMatrix offers today
 
 - Books and Indian tax in one system: double-entry ledger, GST returns, e-invoice and e-way bill through a GSP adapter (sandbox only), TDS, bank reconciliation, fixed assets (`backend/src/modules/gst-returns.ts`, `einvoice.ts`, `tds.ts`, `bank.ts`, `fixed-assets.ts`).
 - Order to cash and procure to pay with stock reservations, pick and pack scans, three-way match and cycle counts (v1.8, `013_o2c.sql`, `014_p2p.sql`).
@@ -39,9 +39,9 @@ No "better than" claims against other products without measured evidence (master
 
 ## Differentiation hypotheses to test with pilots
 
-Master plan §2.3 lists nine. The four Progen can test soonest:
+Master plan §2.3 lists nine. The four OneMatrix can test soonest:
 
-1. One system for books and operations. Competitors in `docs/research/commerce-ops.md` §1 export to Tally; Progen is the books.
+1. One system for books and operations. Competitors in `docs/research/commerce-ops.md` §1 export to Tally; OneMatrix is the books.
 2. Settlement reconciliation posted straight to the ledger, with TCS and TDS (planned v1.9).
 3. India compliance already built (GST, TDS, e-invoice).
 4. Published pricing (`docs/research/commerce-ops.md` §5). Needs entitlements first (planned v1.11).

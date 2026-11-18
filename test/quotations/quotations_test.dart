@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/quotations/quotation_detail_screen.dart';
-import 'package:progen_erp/features/quotations/quotation_form_screen.dart';
-import 'package:progen_erp/features/quotations/quotation_models.dart';
-import 'package:progen_erp/features/quotations/quotation_pdf.dart';
-import 'package:progen_erp/features/quotations/quotation_routes.dart';
-import 'package:progen_erp/features/quotations/quotations_screen.dart';
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/quotations/quotation_detail_screen.dart';
+import 'package:onematrix/features/quotations/quotation_form_screen.dart';
+import 'package:onematrix/features/quotations/quotation_models.dart';
+import 'package:onematrix/features/quotations/quotation_pdf.dart';
+import 'package:onematrix/features/quotations/quotation_routes.dart';
+import 'package:onematrix/features/quotations/quotations_screen.dart';
 
 import 'quotation_fixtures.dart';
 
@@ -63,7 +63,7 @@ void main() {
   });
 
   test('PDF builds for a quotation and a proforma', () async {
-    const company = Company(id: 'c1', name: 'Progen Traders', stateCode: '29');
+    const company = Company(id: 'c1', name: 'OneMatrix Traders', stateCode: '29');
     for (final kind in ['quotation', 'proforma']) {
       final bytes = await buildQuotationPdf(
         Quotation.fromJson(qJson(kind: kind)),
@@ -424,7 +424,7 @@ void main() {
 
   test('WhatsApp text names number, total and validity', () {
     final text = quotationWhatsAppText(
-      companyName: 'Progen',
+      companyName: 'OneMatrix',
       quotation: Quotation.fromJson(qJson()),
       contactName: 'Meera',
     );

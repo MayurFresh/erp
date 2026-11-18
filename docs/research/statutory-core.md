@@ -2,7 +2,7 @@
 
 Checked 29 Oct 2026 (FY 2026-27). Every fact cites a source. Anything not confirmed from a primary or official source is marked **UNVERIFIED**.
 
-**Scope.** This note covers what any Progen tenant needs, whatever its industry. It does not repeat:
+**Scope.** This note covers what any OneMatrix tenant needs, whatever its industry. It does not repeat:
 - E-invoice and e-way bill: see [gst-einvoice-ewaybill.md](gst-einvoice-ewaybill.md).
 - The contractor TDS table (194C, 194M, 194H, 194-IA, 194J, "designated person", no-PAN): see the TDS section of [contractor-billing.md](contractor-billing.md). Section 3 below reuses it and adds the other sections.
 
@@ -75,7 +75,7 @@ Question from [docs/research/README.md](README.md) and [contractor-billing.md §
 - [Construction Placements' table](https://www.constructionplacements.com/gst-rates-on-construction-services-materials-india-sept-2025-update) lists the moved rows as: works contract for the Government that is predominantly earthwork (over 75%); sub-contractors to that contract; and offshore oil and gas exploration and production. All moved 12% to 18% with ITC.
 - That list is consistent with three changed items, but the mapping of item letters to descriptions is **UNVERIFIED**. It also does not mention local authorities.
 
-**Resolution for Progen.**
+**Resolution for OneMatrix.**
 - General works contract (SAC 9954, default entry): 18%, unchanged.
 - The three formerly 12% concessional entries above: 18% for supplies (time of supply) on or after 22 Sep 2025. Supplies before that date at 12% stay at 12%, including credit notes.
 - Affordable housing 1% (no ITC) and other residential 5% (no ITC): unchanged. Commercial apartments in a non-RREP project at 12%: no change found in 15/2025; **UNVERIFIED** against the full Sl. No. 3 text.
@@ -117,7 +117,7 @@ Rules:
 
 - GSTR-3B Tables 3.1 and 3.2 (outward supplies) are auto-populated from GSTR-1, IFF and GSTR-1A and are **not editable** from the July 2025 tax period (filed Aug 2025). Corrections go through GSTR-1A for the same period. Sources: [EY alert on the Oct 2024 advisory](https://ey.com/en_in/technical/alerts-hub/2024/10/gstn-issues-advisory-on-hard-locking-of-auto-populated-values-in-form-gstr-3b), [Munim explainer](https://themunim.com/blog/gstr-3b-autofill-facility/), [Taxscan on locked Table 3.2](https://www.taxscan.in/top-stories/gstn-issues-advisory-on-reporting-values-in-system-locked-table-32-of-gstr-3b-1439411). The effective period is from secondary sources, **UNVERIFIED** against the advisory text.
 - **Table 4 (ITC) hard-lock:** reported as proposed or expected from about July 2026. No GSTN advisory could be found. Treat as **UNVERIFIED** and not in force. Source: [TAXAJ, 20 Aug 2026](https://www.taxaj.com/learn/gstr-3b-table-4-itc-hard-locking-from-july-2026-no-manual-editing-surv/) (explicitly says unconfirmed). A Beancount blog (7 Oct 2026) claims it is already locked; unreliable.
-- Design consequence: Progen's own GSTR-3B workings must (a) tie to GSTR-1 data it exports, so no manual override is needed, and (b) keep ITC reversals (4B) and reclaims as separately evidenced entries, because they are the lines that will still need manual input.
+- Design consequence: OneMatrix's own GSTR-3B workings must (a) tie to GSTR-1 data it exports, so no manual override is needed, and (b) keep ITC reversals (4B) and reclaims as separately evidenced entries, because they are the lines that will still need manual input.
 
 ### 2.3 IMS and its effect on GSTR-2B
 
@@ -127,7 +127,7 @@ The Invoice Management System (live from Oct 2024) lets a recipient act on suppl
   - **Accept:** goes into the ITC Available part of GSTR-2B and auto-populates GSTR-3B.
   - **Reject:** shown under ITC Rejected in GSTR-2B and not in GSTR-3B. The supplier must amend.
   - **Pending:** excluded from GSTR-2B and from GSTR-3B for that month, and carried forward until acted upon.
-  - **No action:** per a GSTN FAQ summary, treated as accepted when 2B is generated. A secondary FAQ says the opposite, so this default is **UNVERIFIED**; design so Progen never assumes it.
+  - **No action:** per a GSTN FAQ summary, treated as accepted when 2B is generated. A secondary FAQ says the opposite, so this default is **UNVERIFIED**; design so OneMatrix never assumes it.
 - Timing: the recipient can act until filing GSTR-3B. Actions after the 14th mean GSTR-2B must be recomputed.
 - Credit notes: a "pending" option was added around Oct 2025 along with a declaration for ITC reversal. **UNVERIFIED** as to details; see [Taxscan](https://www.taxscan.in/top-stories/gstn-introduces-pending-option-for-credit-notes-and-itc-reversal-declaration-in-invoice-management-system-ims-1435215).
 - Sources: [GSTZen overview](https://gstzen.in/a/comprehensive-overview-of-invoice-management-system-ims.html), [Zoho Books explainer](https://www.zoho.com/in/books/academy/taxes-and-compliance/invoice-management-system-gst.html), [BDO alert](https://bdo.in/en-gb/insights/alerts-updates/gstn-to-introduce-invoice-management-system-functionality). None is a GSTN primary source. The GSTN IMS FAQ on gst.gov.in should be read before building (**UNVERIFIED**).
@@ -204,12 +204,12 @@ ITC is available only if all hold:
 - If the recipient has not paid the supplier (value plus tax) within **180 days from the invoice date**, ITC claimed must be reversed with interest under s.50 (18% p.a. from the date ITC was availed until reversal). The reversed credit can be re-availed on payment. Sources: [ClearTax on Rule 37](https://cleartax.in/s/rule-37-of-cgst-sgst-rules-itc-reversal-180-days).
 - Report in GSTR-3B Table 4B(2) and interest in Table 5.1. Source: same.
 - Does not apply where supply is on RCM, or where the value is part-paid (reversal is proportionate to the unpaid amount). Part-payment proportion is **UNVERIFIED**.
-- Relevant to Progen: set-off through credit notes, advances, or contra counts as payment (the Rule text covers "payment" including book adjustments, **UNVERIFIED**).
+- Relevant to OneMatrix: set-off through credit notes, advances, or contra counts as payment (the Rule text covers "payment" including book adjustments, **UNVERIFIED**).
 
 ### 3.4 Rule 37A
 
 - If a supplier has not filed GSTR-3B for the tax period by **30 September of the next FY** (or the annual return date), and the recipient availed ITC on the invoice, the recipient reverses ITC in the return for the period ending **30 November** (September-end deadline plus one return cycle). Re-availment when the supplier later files. Reported in Table 4B(2). Interest under s.50 if reversal is late. Sources: [Taxmann analysis](https://www.taxmann.com/post/blog/analysis-understanding-rule-37a-and-gstn-advisory/), [TaxGuru on Rule 37A](https://taxguru.in/goods-and-service-tax/rule-37a-cgst-rules-reversal-re-availment-input-tax-credit-itc.html). The exact date wording in the sources differs, so the 30 Nov date is **UNVERIFIED**.
-- Litigation: Taxmann argues the rule exceeds s.16(2)(c); Tripura HC limited it for bona fide recipients ([TaxGuru](https://taxguru.in/goods-and-service-tax/section-16-2-c-rule-37a-tripura-high-courts-protection-bona-fide-recipients-gst.html)). Not settled; Progen should flag, not decide.
+- Litigation: Taxmann argues the rule exceeds s.16(2)(c); Tripura HC limited it for bona fide recipients ([TaxGuru](https://taxguru.in/goods-and-service-tax/section-16-2-c-rule-37a-tripura-high-courts-protection-bona-fide-recipients-gst.html)). Not settled; OneMatrix should flag, not decide.
 
 ### 3.5 Rules 42 and 43, s.17(5), Rule 86B
 
@@ -249,7 +249,7 @@ ITC is available only if all hold:
 
 ### 4.3 Renting of immovable property
 - Renting of commercial property by an unregistered person to a registered person: RCM from 10 Jul 2022 ([notification 5/2022-CT(Rate)](https://taxguru.in/?p=852053), **UNVERIFIED** link). Residential rent to a registered person for use as residence: RCM-exempt on residential dwelling used for residence (partial; Notification 05/2022 as amended 2022 and 2025 changed this). Currently the safe default for the master: commercial rent from an unregistered lessor: RCM at 18%; flag residential cases.
-- Residential dwelling rented to a registered person (e.g. employer-hired accommodation): the rule was narrowed in 2022 and amended again from 10 Jul 2022; Progen should store `rent_type` as an input and let accounts choose, because the legal text could not be confirmed.
+- Residential dwelling rented to a registered person (e.g. employer-hired accommodation): the rule was narrowed in 2022 and amended again from 10 Jul 2022; OneMatrix should store `rent_type` as an input and let accounts choose, because the legal text could not be confirmed.
 
 ### 4.4 Goods under s.9(3)
 Cashew nuts (not shelled), bidi wrapper leaves (tendu), tobacco leaves, silk yarn, raw cotton from agriculturists, supply of lottery by state governments, used vehicles and old vehicles by registered persons, scrap by government, renewable energy devices by government, among others. Rates are from the goods RCM notification. **UNVERIFIED**.
@@ -308,7 +308,7 @@ Exports and imports use 8 digits. The B2C-for-small-taxpayers exception (no HSN 
 | Restaurants (not serving alcohol) | 5% | same |
 | Other service providers (s.10(2A)) | 6% | same |
 Turnover limit ₹1.5 crore (₹75 lakh in special-category states). Services-only limit ₹50 lakh. **UNVERIFIED**.
-Restrictions: no inter-state outward supply (except s.10(2A) services in some cases), no e-commerce supply (except restaurants), no ITC, no tax collected from customers (issue **bill of supply**, with "composition taxable person, not eligible to collect tax" written at the top), no supply of non-taxable goods like alcohol, and quarterly CMP-08 payment with annual GSTR-4. Works contract suppliers cannot be composition dealers unless in limited classes. Progen guardrail: the registration type of the supplier decides tax and ITC eligibility (see [contractor-billing.md §5](contractor-billing.md)).
+Restrictions: no inter-state outward supply (except s.10(2A) services in some cases), no e-commerce supply (except restaurants), no ITC, no tax collected from customers (issue **bill of supply**, with "composition taxable person, not eligible to collect tax" written at the top), no supply of non-taxable goods like alcohol, and quarterly CMP-08 payment with annual GSTR-4. Works contract suppliers cannot be composition dealers unless in limited classes. OneMatrix guardrail: the registration type of the supplier decides tax and ITC eligibility (see [contractor-billing.md §5](contractor-billing.md)).
 
 ---
 
@@ -452,7 +452,7 @@ Sources: Companies Act 2013 Schedule II and Income-tax Rules (not opened this se
 
 ---
 
-## 9. What Progen needs to build
+## 9. What OneMatrix needs to build
 
 All money is **integer paise**. Tax per line: `round_half_up(taxable_paise * bp / 10000)`. Journals balance (Dr = Cr) in the same transaction as the document. Every compliance action writes to an append-only audit log. Posting into a locked period is rejected.
 

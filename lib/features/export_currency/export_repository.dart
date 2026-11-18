@@ -247,6 +247,19 @@ class ExportRepository {
         body: withoutNulls({'asOf': asOf, 'rates': rates}),
       );
 
+  // Foreign payables.
+  Future<List<Json>> payables() async =>
+      asJsonList((await _api.getJson('/fx/payables'))['data']);
+
+  Future<Json> tagPayable(String purchaseId, String currency, double rate) =>
+      _api.patchJson('/fx/payables/$purchaseId', body: {'currency': currency, 'rate': rate});
+
+  Future<Json> revaluePayables(String asOf, {bool post = false, Map<String, double>? rates}) =>
+      _api.postJson(
+        post ? '/fx/payables/revaluation' : '/fx/payables/revaluation/preview',
+        body: withoutNulls({'asOf': asOf, 'rates': rates}),
+      );
+
   // TCS.
   Future<List<TcsNature>> natures() async => [
     for (final j in asJsonList((await _api.getJson('/tcs/natures'))['data']))

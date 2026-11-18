@@ -69,7 +69,7 @@ No native AI feature found in v16 sources. Third-party MCP servers and agents ex
 - No published implementation prices. Quality varies by partner (UNVERIFIED, general market view).
 - No native AI found.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Treat GST as a product surface, not a plugin: settings page, sandbox, failure queue.
 - Block edits to filed periods.

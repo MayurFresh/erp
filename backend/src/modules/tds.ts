@@ -207,8 +207,8 @@ function buildTxt(d: { fy: string; quarter: number; tan: string; pan: string | n
   const ay = `${Number(d.fy.slice(0, 4)) + 1}-${String(Number(d.fy.slice(5)) + 1).padStart(2, '0')}`;
   const ddmmyyyy = (x: string) => `${x.slice(8, 10)}${x.slice(5, 7)}${x.slice(0, 4)}`;
   const total = round2(d.rows.reduce((a, r) => a + r.amount, 0));
-  const lines = ['#PROGEN BETA: validate with FVU before upload'];
-  lines.push(['FH', 1, 'NS1', 'R', ddmmyyyy(todayIst()), 1, 'D', d.tan, 1, 'Progen ERP', '', '', '', '', '', ''].join('^'));
+  const lines = ['#ONEMATRIX BETA: validate with FVU before upload'];
+  lines.push(['FH', 1, 'NS1', 'R', ddmmyyyy(todayIst()), 1, 'D', d.tan, 1, 'OneMatrix', '', '', '', '', '', ''].join('^'));
   lines.push(['BH', 1, d.challans.length + d.rows.length, 1, '', d.tan, '', d.pan ?? '', ay, d.fy.replace('-', ''), `Q${d.quarter}`, d.name, d.rp.name, d.rp.designation, d.rp.pan,
     d.rp.mobile, d.rp.email, d.challans.length, total].join('^'));
   const idx = new Map(d.challans.map((c, i) => [c.id, i + 1]));

@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/platform/notifications_screen.dart'
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/platform/notifications_screen.dart'
     show bellPollIntervalProvider;
-import 'package:progen_erp/features/construction/data/construction_http.dart';
-import 'package:progen_erp/features/construction/data/photo_source.dart';
-import 'package:progen_erp/features/construction_routes.dart';
-import 'package:progen_erp/widgets/layout.dart';
+import 'package:onematrix/features/construction/data/construction_http.dart';
+import 'package:onematrix/features/construction/data/photo_source.dart';
+import 'package:onematrix/features/construction_routes.dart';
+import 'package:onematrix/widgets/layout.dart';
 
 import 'construction_fake_backend.dart';
 
@@ -131,7 +131,7 @@ class _TestShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= kWideLayout;
     return Scaffold(
-      appBar: AppBar(title: const Text('Progen ERP')),
+      appBar: AppBar(title: const Text('OneMatrix')),
       body: wide
           ? Row(
               children: [

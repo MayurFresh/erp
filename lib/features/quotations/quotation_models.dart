@@ -1,3 +1,4 @@
+import '../../core/entered_unit.dart';
 import '../../core/json.dart';
 
 const Map<String, String> quotationKinds = {
@@ -34,6 +35,7 @@ class QuotationLine {
     this.taxable = 0,
     this.tax = 0,
     this.total = 0,
+    this.entered,
   });
 
   factory QuotationLine.fromJson(Json j) => QuotationLine(
@@ -52,8 +54,10 @@ class QuotationLine {
     taxable: asDouble(j['taxable']),
     tax: asDouble(j['tax']),
     total: asDouble(j['total']),
+    entered: EnteredUnit.fromJson(j),
   );
 
+  final EnteredUnit? entered;
   final String id;
   final int lineNo;
   final String itemId;
@@ -216,6 +220,7 @@ class QuotationLineInput {
     this.discountPct = 0,
     this.discountAmount = 0,
     this.description,
+    this.unit,
   });
 
   final String itemId;
@@ -225,6 +230,9 @@ class QuotationLineInput {
   final double discountAmount;
   final String? description;
 
+  /// Alternate unit that [qty] and [rate] are in; null means the item's own unit.
+  final String? unit;
+
   Json toJson() => {
     'itemId': itemId,
     'qty': qty,
@@ -232,6 +240,7 @@ class QuotationLineInput {
     if (discountPct > 0) 'discountPct': discountPct,
     if (discountAmount > 0) 'discountAmount': discountAmount,
     if (description != null) 'description': description,
+    if (unit != null) 'unit': unit,
   };
 }
 

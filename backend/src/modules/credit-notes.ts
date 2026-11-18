@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
 import { lockItems } from '../accounting/costing.ts';
 import { postJournal, reverseVoucher } from '../accounting/journal.ts';
+import { tcsPayableAccount } from '../lib/export-currency.ts';
 import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
 import { financialYear, isValidDate, todayIst } from '../lib/dates.ts';
@@ -111,7 +112,7 @@ function preparedJson(ctx: RequestContext, p: Prepared, reason: string) {
     locationName: p.location.name, partyId: p.party.id, partyName: p.party.name, number: null, fy: p.fy,
     noteDate: p.noteDate, reason, restock: p.restock, placeOfSupply: p.invoice.place_of_supply, supplyType: p.gst.supplyType,
     status: 'posted', subtotal: p.gst.subtotal, cgst: p.gst.cgst, sgst: p.gst.sgst, igst: p.gst.igst,
-    taxTotal: p.gst.taxTotal, roundOff: p.gst.roundOff, total: p.gst.total, createdAt: new Date(),
+    taxTotal: p.gst.taxTotal, roundOff: p.gst.roundOff, total: p.gst.total, tcsReversed: 0, createdAt: new Date(),
     createdBy: { id: ctx.userId, name: ctx.userName }, cancelledAt: null, cancelReason: null,
     lines: p.lines.map((l, i) => ({
       id: null, invoiceLineId: l.src.id, itemId: l.src.item_id, description: l.src.description, hsnCode: l.src.hsn_code,
@@ -140,7 +141,7 @@ function noteJson(r: NoteRow) {
     status: r.status, subtotal: r.subtotal, cgst: r.cgst, sgst: r.sgst, igst: r.igst,
     taxTotal: round2(r.cgst + r.sgst + r.igst), roundOff: r.round_off, total: r.total, createdAt: r.created_at,
     createdBy: { id: r.created_by, name: r.created_by_name }, cancelledAt: r.cancelled_at, cancelReason: r.cancel_reason,
-    costCentreId: r.cost_centre_id,
+    costCentreId: r.cost_centre_id, tcsReversed: Number(r.tcs_reversed ?? 0),
   };
 }
 
@@ -168,7 +169,16 @@ export async function createCreditNote(
   const costCentreId = await resolveCostCentre(tx, ctx, body.costCentreId !== undefined ? body.costCentreId : p.invoice.cost_centre_id);
   const number = await nextNumber(tx, ctx, 'credit_note', p.fy);
   const due = round2(p.invoice.total - p.invoice.amount_paid);
-  const applied = round2(Math.min(p.gst.total, Math.max(due, 0)));
+  // TCS collected on the invoice is handed back in proportion to the value returned.
+  const ext = await tx.selectFrom('invoice_ext' as never).select(['tcs_amount'] as never).where('invoice_id' as never, '=', p.invoice.id as never).executeTakeFirst() as { tcs_amount: string } | undefined;
+  let tcsBack = 0;
+  if (ext && Number(ext.tcs_amount) > 0 && p.invoice.subtotal > 0) {
+    const prior = await tx.selectFrom('credit_notes' as never).select((eb: any) => eb.fn.sum('tcs_reversed').as('s'))
+      .where('invoice_id' as never, '=', p.invoice.id as never).where('status' as never, '=', 'posted' as never).executeTakeFirst() as { s: string | null } | undefined;
+    const left = round2(Number(ext.tcs_amount) - Number(prior?.s ?? 0));
+    tcsBack = Math.max(0, Math.min(left, round2(Number(ext.tcs_amount) * Math.min(p.gst.subtotal / p.invoice.subtotal, 1))));
+  }
+  const applied = round2(Math.min(p.gst.total + tcsBack, Math.max(due, 0)));
 
   const row = await tx.insertInto('credit_notes').values({
     tenant_id: ctx.tenantId, company_id: ctx.companyId, invoice_id: p.invoice.id, location_id: p.location.id,
@@ -179,6 +189,7 @@ export async function createCreditNote(
     applied_amount: applied, cost_centre_id: costCentreId, created_by: ctx.userId, cancelled_at: null, cancel_reason: null,
   }).returning('id').executeTakeFirstOrThrow();
 
+  if (tcsBack > 0) await tx.updateTable('credit_notes' as never).set({ tcs_reversed: tcsBack } as never).where('id' as never, '=', row.id as never).execute();
   await tx.insertInto('credit_note_lines').values(p.lines.map((l, i) => {
     const g = p.gst.lines[i]!;
     return {
@@ -228,14 +239,15 @@ export async function createCreditNote(
       { accountId: acc.output_sgst, amount: p.gst.sgst, locationId: loc },
       { accountId: acc.output_igst, amount: p.gst.igst, locationId: loc },
       { accountId: acc.round_off, amount: p.gst.roundOff, locationId: loc },
-      { accountId: acc.receivables, amount: -p.gst.total, partyId: p.party.id, locationId: loc },
+      ...(tcsBack > 0 ? [{ accountId: await tcsPayableAccount(tx, ctx), amount: tcsBack, locationId: loc }] : []),
+      { accountId: acc.receivables, amount: -round2(p.gst.total + tcsBack), partyId: p.party.id, locationId: loc },
       { accountId: acc.inventory, amount: round2(restockValue), locationId: loc },
       { accountId: acc.cogs, amount: -round2(restockValue), locationId: loc, costCentreId },
     ],
   });
   const saved = await loadNote(tx, ctx, row.id);
   await writeAudit(tx, auditOf(ctx), 'credit_note', row.id, 'create', null,
-    { number, invoiceId: p.invoice.id, total: p.gst.total, applied, restock: p.restock });
+    { number, invoiceId: p.invoice.id, total: p.gst.total, applied, tcsReversed: tcsBack, restock: p.restock });
   return saved;
 }
 

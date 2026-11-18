@@ -36,7 +36,7 @@ Checked 2026-11-03. Confidence: high for Business Central India features and pri
 
 ## Workflows worth copying
 
-- India feature list published page by page with status per scenario (purchase from composite vendor, RCM, SEZ, foreign vendor and so on). Good template for Progen's own coverage table.
+- India feature list published page by page with status per scenario (purchase from composite vendor, RCM, SEZ, foreign vendor and so on). Good template for OneMatrix's own coverage table.
 - Gate entry (inward and outward) tied to the GST flow.
 - F&SCM e-invoice status page: Created, Sent, Cancel, Canceled, with action log showing portal error code.
 - Direct IRP only for firms above the turnover threshold or registered on the e-way bill portal. Others go through a GSP (Microsoft doc).
@@ -74,7 +74,7 @@ Business Central has mobile apps (general knowledge, UNVERIFIED this pass). Offl
 - F&SCM e-invoice setup needs ER configurations, LCS packages and Key Vault. High implementation effort.
 - GSTN put the planned 2026-08-01 e-invoice and e-way bill changes on hold (Thomson Reuters via search). Watch for rule shifts.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Publish a scenario-by-scenario GST coverage table.
 - Build a tax rule engine with versioned rules.

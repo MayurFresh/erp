@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/claims/approval_queue_screen.dart';
-import 'package:progen_erp/features/claims/claim_categories_screen.dart';
-import 'package:progen_erp/features/claims/claim_detail_screen.dart';
-import 'package:progen_erp/features/claims/claim_form_screen.dart';
-import 'package:progen_erp/features/claims/loans_screens.dart';
-import 'package:progen_erp/features/claims/my_claims_screen.dart';
+import 'package:onematrix/features/claims/approval_queue_screen.dart';
+import 'package:onematrix/features/claims/claim_categories_screen.dart';
+import 'package:onematrix/features/claims/claim_detail_screen.dart';
+import 'package:onematrix/features/claims/claim_form_screen.dart';
+import 'package:onematrix/features/claims/loans_screens.dart';
+import 'package:onematrix/features/claims/my_claims_screen.dart';
 
 import '../controls/controls_harness.dart';
 

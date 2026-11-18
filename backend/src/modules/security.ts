@@ -119,7 +119,7 @@ export async function securityRoutes(app: FastifyInstance, deps: AppDeps): Promi
       await tx.updateTable('users').set({ two_factor_pending_enc: seal(secret) }).where('id', '=', ctx.userId).execute();
       return {
         secret,
-        otpauthUri: `otpauth://totp/Progen:${encodeURIComponent(u.email)}?secret=${secret}&issuer=Progen&digits=6&period=30`,
+        otpauthUri: `otpauth://totp/OneMatrix:${encodeURIComponent(u.email)}?secret=${secret}&issuer=OneMatrix&digits=6&period=30`,
       };
     });
   });

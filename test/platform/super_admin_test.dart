@@ -3,16 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/auth/auth_models.dart';
-import 'package:progen_erp/features/auth/session.dart';
-import 'package:progen_erp/features/platform/super_routes.dart';
-import 'package:progen_erp/features/shell/app_shell.dart';
-import 'package:progen_erp/features/shell/nav.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/auth/auth_models.dart';
+import 'package:onematrix/features/auth/session.dart';
+import 'package:onematrix/features/platform/super_routes.dart';
+import 'package:onematrix/features/shell/app_shell.dart';
+import 'package:onematrix/features/shell/nav.dart';
 
 import 'super_fake_backend.dart';
 

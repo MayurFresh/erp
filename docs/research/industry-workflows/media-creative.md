@@ -50,10 +50,10 @@ Checked 2026-11-03. Master plan: section 6.5. Profile: ../competitor-profiles/ad
 - Client changes scope after approval.
 - Asset deleted but still referenced by an invoice milestone.
 
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 - Approvals, files, projects, parties, invoices, custom fields, audit, notifications, cost centres.
 
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 - Project with deliverables, versioned file links, approval states, licence date tracker, invoice on approval. No markup tool.
 
 ## Rough effort and priority

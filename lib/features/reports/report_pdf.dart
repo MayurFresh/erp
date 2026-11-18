@@ -49,7 +49,7 @@ Future<Uint8List> buildReportPdf(
           : kit.compactHeader(report.title),
       footer: (context) => kit.footer(
         context,
-        left: 'Generated ${formatDateTime(stamp)}  |  Progen ERP',
+        left: 'Generated ${formatDateTime(stamp)}  |  OneMatrix',
       ),
       build: (context) => [
         if (kit.brand.companyName.isNotEmpty)

@@ -34,7 +34,7 @@ Checked 2026-11-03. Builds on ../industry-verticals.md section 1. Master plan: s
 ## India specifics
 - Job work: GST challan flow, time limits for return of inputs, ITC on job-work goods: ../industry-verticals.md section 1; challan and e-way bill handling: ../gst-einvoice-ewaybill.md.
 - Subcontracting vendors under the labour laws: ../labour-wages.md.
-- Many small units keep costing in Excel or Tally (section 1). Progen's ledger link is the hook.
+- Many small units keep costing in Excel or Tally (section 1). OneMatrix's ledger link is the hook.
 - BIS and industry-specific certificates: UNVERIFIED here; see section 1.
 
 ## Leading products
@@ -66,11 +66,11 @@ Checked 2026-11-03. Builds on ../industry-verticals.md section 1. Master plan: s
 - Rework creating a second production order.
 - Batch recall tracing to customers.
 
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 - Items, units, stock, locations, transfers, GRN, purchase orders, reorder, stock counts, fixed assets (for machines), work orders (construction pack's work orders are a different object), subcontract modules (subcontract-common.ts in construction pack), approvals, e-way bill.
 - Construction labour and subcontract billing patterns map to job-work vendors.
 
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 - BOM and production order with manual material issue and finished goods receipt, scrap, cost roll-up posted to the ledger, batch tracking.
 - Job-work challan out and in, with loss reconciliation.
 - No MRP engine at first; use reorder levels.

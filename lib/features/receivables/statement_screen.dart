@@ -58,7 +58,7 @@ class _StatementScreenState extends ConsumerState<StatementScreen> {
     final value = ref.watch(partyStatementFullProvider(_key));
     final party = ref.watch(partyProvider(widget.partyId)).value;
     final companyName =
-        ref.watch(sessionProvider).value?.company?.name ?? 'Progen';
+        ref.watch(sessionProvider).value?.company?.name ?? 'OneMatrix';
     return RGate(
       anyOf: const [Perm.partiesView],
       child: AsyncValueView<PartyStatement>(

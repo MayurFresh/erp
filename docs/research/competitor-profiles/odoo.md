@@ -75,7 +75,7 @@ Which features are in 19.0 versus later point releases is not confirmed from off
 - Light-user and implementation pricing needs a quote.
 - No evidence read of Indian marketplace settlement reconciliation (TCS 52 / TDS 194-O matching).
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Offer a free single-app tier with unlimited users to seed adoption.
 - Keep API and webhooks in a lower tier than Odoo does. That is an opening for SMBs.

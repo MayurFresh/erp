@@ -1,4 +1,4 @@
-# Commerce operations: what the market does and what Progen should build
+# Commerce operations: what the market does and what OneMatrix should build
 
 Research date 2026-11-03. Sources in source-register.md. Confidence is medium at best: many vendor pages show no detail, so see research-gaps.md. Data in competitor-master.csv, feature-matrix.csv, integration-matrix.csv, pricing-matrix.csv.
 
@@ -12,7 +12,7 @@ Research date 2026-11-03. Sources in source-register.md. Confidence is medium at
 | Shipping | Courier aggregation, labels, manifests, tracking, and NDR follow-up by WhatsApp or SMS (Unicommerce). Shiprocket is the common aggregator. |
 | Returns | Return and exchange portal (Unicommerce), RTO from couriers, QC then restock. |
 | Settlement | Match orders, payments and returns per marketplace (Unicommerce UniReco, EasyEcom reconciliation report). This is what pays for the tool. |
-| Books | Export to Tally or an ERP. This is Progen's opening: it already is the books. |
+| Books | Export to Tally or an ERP. This is OneMatrix's opening: it already is the books. |
 
 ## 2. Table stakes vs differentiators (Indian sellers)
 
@@ -48,9 +48,9 @@ v1.10 Warehouse depth: 1 batch and expiry with FEFO; 2 bins; 3 serials; 4 Shipro
 - Per user: Odoo (INR 580-1080 per user per month, page ambiguous).
 - Licence: Tally and Busy, one-time or annual, INR 8,000-24,300 a year (Tally).
 - Per shipment: Shiprocket, plan INR 0-799 per month.
-- Anchor: Zoho Inventory INR 999-7,499 per month with order caps. Enterprise vendors hide prices. Progen could publish prices, which most commerce vendors do not.
+- Anchor: Zoho Inventory INR 999-7,499 per month with order caps. Enterprise vendors hide prices. OneMatrix could publish prices, which most commerce vendors do not.
 
-## 6. What Progen should improve next (ranked)
+## 6. What OneMatrix should improve next (ranked)
 
 1. Finish v1.8 exits: reservations, no double dispatch, three-way match. Evidence: reservation and match are table stakes.
 2. Settlement reconciliation with TCS/TDS posting (v1.9). Only a few vendors show it, and none link it to books.

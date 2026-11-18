@@ -1,4 +1,5 @@
 import { assertFresh } from '../lib/stale.ts';
+import { convertUnits, enteredJson, enteredOf, enteredPreview, saveEntered } from '../lib/uom.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { RequestContext } from '../auth/context.ts';
@@ -28,6 +29,8 @@ export const poLineBody = z.object({
   rate: moneyField.optional(),
   discountPct: percentField.optional(),
   description: optionalText(300),
+  /** Unit the quantity and rate are entered in (an alternate unit of the item); omitted means the base unit. */
+  unit: z.string().trim().max(20).optional(),
 });
 const poBody = z.object({
   locationId: z.uuid(),
@@ -64,6 +67,7 @@ export async function preparePo(tx: Tx, ctx: RequestContext, body: PoBody) {
   if (body.expectedDate && body.expectedDate < orderDate) {
     throw badRequest('Expected date cannot be before the order date.', { expectedDate: 'Before order date' });
   }
+  await convertUnits(tx, ctx, body.lines);
   const ids = [...new Set(body.lines.map((l) => l.itemId))];
   const items = await tx.selectFrom('items').selectAll().where('company_id', '=', ctx.companyId).where('id', 'in', ids).execute();
   const byId = new Map(items.map((i) => [i.id, i]));
@@ -78,7 +82,7 @@ export async function preparePo(tx: Tx, ctx: RequestContext, body: PoBody) {
   })), ctx.companyId);
   const gst = computeGst(location.state_code, party.state_code ?? location.state_code,
     lines.map((l) => ({ qty: l.qty, rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate })));
-  return { location, party, orderDate, fy: financialYear(orderDate), lines, gst };
+  return { location, party, orderDate, fy: financialYear(orderDate), lines, gst, entered: enteredOf(body.lines) };
 }
 
 function lineValues(ctx: RequestContext, poId: string, p: Awaited<ReturnType<typeof preparePo>>) {
@@ -118,7 +122,7 @@ async function loadLines(tx: Tx, poId: string) {
   return tx.selectFrom('purchase_order_lines as l').innerJoin('items as i', 'i.id', 'l.item_id')
     .select(['l.id', 'l.line_no', 'l.item_id', 'i.name as item_name', 'i.sku', 'l.description', 'l.hsn_code', 'l.qty', 'l.unit',
       'l.rate', 'l.discount_pct', 'l.gst_rate', 'l.taxable_value', 'l.cgst', 'l.sgst', 'l.igst', 'l.line_total',
-      'l.received_qty', 'l.rejected_qty', 'l.billed_qty', 'l.cancelled_qty'])
+      'l.received_qty', 'l.rejected_qty', 'l.billed_qty', 'l.cancelled_qty', 'l.entered_unit', 'l.entered_qty'])
     .where('l.purchase_order_id', '=', poId).orderBy('l.line_no').execute();
 }
 
@@ -129,7 +133,7 @@ function linesJson(lines: Awaited<ReturnType<typeof loadLines>>) {
     id: l.id, lineNo: l.line_no, itemId: l.item_id, itemName: l.item_name, sku: l.sku, description: l.description, hsnCode: l.hsn_code,
     qty: l.qty, unit: l.unit, rate: l.rate, discountPct: l.discount_pct, gstRate: l.gst_rate, taxableValue: l.taxable_value,
     cgst: l.cgst, sgst: l.sgst, igst: l.igst, lineTotal: l.line_total, receivedQty: l.received_qty, rejectedQty: l.rejected_qty,
-    billedQty: l.billed_qty, cancelledQty: l.cancelled_qty, openQty: Math.max(0, r3(l.qty - l.cancelled_qty - l.received_qty)),
+    billedQty: l.billed_qty, cancelledQty: l.cancelled_qty, ...enteredJson(l), openQty: Math.max(0, r3(l.qty - l.cancelled_qty - l.received_qty)),
   }));
 }
 
@@ -168,6 +172,7 @@ export async function createPo(ctx: RequestContext, tx: Tx, body: PoBody) {
     approved_at: null, sent_at: null, cancelled_at: null, cancel_reason: null, created_by: ctx.userId,
   }).returning('id').executeTakeFirstOrThrow();
   await tx.insertInto('purchase_order_lines').values(lineValues(ctx, row.id, p)).execute();
+  await saveEntered(tx, 'purchase_order_lines', 'purchase_order_id', row.id, p.entered);
   await writeAudit(tx, auditOf(ctx), 'purchase_order', row.id, 'create', null,
     { number, total: p.gst.total, partyId: p.party.id, locationId: p.location.id });
   return loadPo(tx, ctx, row.id);
@@ -293,6 +298,7 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
           const g = p.gst.lines[i]!;
           return {
             itemId: l.item.id, description: l.description, hsnCode: l.item.hsn_code, qty: l.qty, unit: l.item.unit, rate: l.rate,
+            ...enteredPreview(p.entered[i], l.qty, l.rate),
             discountPct: l.discountPct, taxableValue: g.taxableValue, gstRate: l.item.gst_rate, cgst: g.cgst, sgst: g.sgst,
             igst: g.igst, lineTotal: g.lineTotal,
           };
@@ -318,6 +324,7 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
       }).where('id', '=', id).execute();
       await tx.deleteFrom('purchase_order_lines').where('purchase_order_id', '=', id).execute();
       await tx.insertInto('purchase_order_lines').values(lineValues(ctx, id, p)).execute();
+      await saveEntered(tx, 'purchase_order_lines', 'purchase_order_id', id, p.entered);
       await writeAudit(tx, auditOf(ctx), 'purchase_order', id, 'update', { total: po.total }, { total: p.gst.total });
       return loadPo(tx, ctx, id);
     });

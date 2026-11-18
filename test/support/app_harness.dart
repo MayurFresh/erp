@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:progen_erp/app.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/platform/notifications_screen.dart'
+import 'package:onematrix/app.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/platform/notifications_screen.dart'
     show bellPollIntervalProvider;
-import 'package:progen_erp/router.dart';
+import 'package:onematrix/router.dart';
 
 import 'fake_backend.dart';
 
@@ -80,12 +80,12 @@ Future<AppHarness> bootApp(
         tokenStoreProvider.overrideWithValue(store),
         apiClientProvider.overrideWithValue(api),
       ],
-      child: const ProgenApp(),
+      child: const OneMatrixApp(),
     ),
   );
   await tester.pumpAndSettle();
   final container = ProviderScope.containerOf(
-    tester.element(find.byType(ProgenApp)),
+    tester.element(find.byType(OneMatrixApp)),
   );
   return AppHarness(tester, container, fake);
 }

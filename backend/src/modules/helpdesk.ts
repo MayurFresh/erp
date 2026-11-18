@@ -10,7 +10,7 @@ import { registerJobHandler } from '../lib/jobs.ts';
 import { notify } from '../lib/notify.ts';
 import { likeTerm, pagingQuery } from '../lib/paging.ts';
 import { nextNumber } from '../lib/series.ts';
-import { DEFAULT_HOURS, DEFAULT_SLA, dueAt, type Hours } from '../lib/sla.ts';
+import { businessMillis, DEFAULT_HOURS, DEFAULT_SLA, dueAt, type Hours } from '../lib/sla.ts';
 import { assertFresh } from '../lib/stale.ts';
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
@@ -99,9 +99,33 @@ export async function loadHdSettings(tx: Tx, companyId: string): Promise<HdSetti
 const hoursOf = (s: HdSettings): Hours => ({ mode: s.hoursMode, workDays: s.workDays, startTime: s.startTime, endTime: s.endTime });
 
 /** First response and resolution due times for a priority, counted from `from`. */
-export function dueTimes(s: HdSettings, priority: string, from: Date) {
+export function dueTimes(s: HdSettings, priority: string, from: Date, pausedMs = 0) {
   const t = s.sla[priority] ?? DEFAULT_SLA.medium!;
-  return { firstResponseDue: dueAt(from, t.firstResponseHours, hoursOf(s)), resolutionDue: dueAt(from, t.resolutionHours, hoursOf(s)) };
+  const extra = pausedMs / 3600_000;
+  return { firstResponseDue: dueAt(from, t.firstResponseHours + extra, hoursOf(s)), resolutionDue: dueAt(from, t.resolutionHours + extra, hoursOf(s)) };
+}
+
+/** Records a status change and keeps the waiting clock: time waiting on the customer is added to both SLA targets. */
+async function applyStatus(tx: Tx, ctx: { tenantId: string; companyId: string; userId: string | null }, t: {
+  id: string; status: string; priority: string; created_at: Date; waiting_since: Date | null; paused_ms: string | number;
+}, to: Status, set: Record<string, unknown>, now = new Date()) {
+  const s = await loadHdSettings(tx, ctx.companyId);
+  set.status = to;
+  if (to === 'waiting' && t.status !== 'waiting') set.waiting_since = now;
+  if (t.status === 'waiting' && to !== 'waiting') {
+    const paused = Number(t.paused_ms) + (t.waiting_since ? businessMillis(t.waiting_since, now, hoursOf(s)) : 0);
+    const due = dueTimes(s, t.priority, t.created_at, paused);
+    set.paused_ms = paused; set.waiting_since = null;
+    set.first_response_due = due.firstResponseDue; set.resolution_due = due.resolutionDue;
+  }
+  await tx.insertInto('hd_status_history').values({ tenant_id: ctx.tenantId, ticket_id: t.id, status: to, at: now, changed_by: ctx.userId }).execute();
+}
+
+/** Due times as they stand now: while a ticket waits, the open wait is added too. */
+function liveDue(r: { status: string; waiting_since: Date | null; first_response_due: Date; resolution_due: Date }, s: HdSettings | null, now: Date) {
+  if (r.status !== 'waiting' || !r.waiting_since || !s) return { first: r.first_response_due, resolution: r.resolution_due };
+  const h = businessMillis(r.waiting_since, now, hoursOf(s)) / 3600_000;
+  return { first: dueAt(r.first_response_due, h, hoursOf(s)), resolution: dueAt(r.resolution_due, h, hoursOf(s)) };
 }
 
 // Ticket JSON -------------------------------------------------------------------------------------
@@ -122,8 +146,9 @@ function ticketQuery(tx: Tx) {
 }
 type TicketRow = Awaited<ReturnType<ReturnType<typeof ticketQuery>['executeTakeFirstOrThrow']>>;
 
-function ticketJson(r: TicketRow, now = new Date()) {
+function ticketJson(r: TicketRow, now = new Date(), s: HdSettings | null = null) {
   const done = r.resolved_at ?? r.closed_at;
+  const live = liveDue(r, s, now);
   return {
     id: r.id, number: r.number, partyId: r.party_id, partyName: r.party_name, contactName: r.contact_name, contactPhone: r.contact_phone,
     subject: r.subject, description: r.description, channel: r.channel, category: r.category, priority: r.priority, status: r.status,
@@ -131,9 +156,9 @@ function ticketJson(r: TicketRow, now = new Date()) {
     contractId: r.contract_id, contractNumber: r.contract_number,
     covered: !!r.contract_id && r.contract_status === 'active' && String(r.contract_end) >= todayIst(),
     assigneeId: r.assignee_id, assigneeName: r.assignee_name,
-    firstResponseDue: r.first_response_due, resolutionDue: r.resolution_due, firstResponseAt: r.first_response_at,
+    firstResponseDue: live.first, resolutionDue: live.resolution, slaPaused: r.status === 'waiting', pausedMinutes: Math.round(Number(r.paused_ms) / 60000), firstResponseAt: r.first_response_at,
     resolvedAt: r.resolved_at, closedAt: r.closed_at,
-    response: slaState(r.first_response_due, r.first_response_at, now), resolution: slaState(r.resolution_due, done, now),
+    response: slaState(live.first, r.first_response_at, now), resolution: slaState(live.resolution, done, now),
     createdBy: { id: r.created_by, name: r.created_by_name }, createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -153,7 +178,7 @@ async function detail(tx: Tx, ctx: RequestContext, id: string) {
   const fileIds = [...new Set(msgs.flatMap((m) => m.file_ids))];
   const files = fileIds.length ? await tx.selectFrom('files').select(['id', 'name', 'mime_type', 'size']).where('id', 'in', fileIds).execute() : [];
   return {
-    ...ticketJson(t),
+    ...ticketJson(t, new Date(), await loadHdSettings(tx, ctx.companyId)),
     messages: msgs.map((m) => ({
       id: m.id, kind: m.kind, body: m.body, author: m.author_id ? { id: m.author_id, name: m.author_name } : null,
       files: m.file_ids.map((f) => files.find((x) => x.id === f)).filter(Boolean).map((f) => fileRef(f!)), createdAt: m.created_at,
@@ -199,6 +224,7 @@ export async function runHelpdeskDaily(tx: Tx, who: { tenantId: string; companyI
       .where('status', '=', 'resolved').where('resolved_at', '<', cutoff).forUpdate().execute();
     for (const r of rows) {
       await tx.updateTable('hd_tickets').set({ status: 'closed', closed_at: new Date() }).where('id', '=', r.id).execute();
+      await tx.insertInto('hd_status_history').values({ tenant_id: who.tenantId, ticket_id: r.id, status: 'closed' }).execute();
       await addMessage(tx, { tenantId: who.tenantId, userId: null }, r.id, 'system', `Closed automatically after ${s.autoCloseDays} days resolved.`);
       closed += 1;
     }
@@ -287,7 +313,8 @@ export async function helpdeskRoutes(app: FastifyInstance): Promise<void> {
         .orderBy(sql`(t.status in ('resolved','closed'))`).orderBy('t.resolution_due').orderBy('t.number')
         .limit(q.limit).offset(q.offset).execute();
       const now = new Date();
-      return { data: rows.map((r) => ticketJson(r, now)), total: total.n };
+      const hs = await loadHdSettings(tx, ctx.companyId);
+      return { data: rows.map((r) => ticketJson(r, now, hs)), total: total.n };
     });
   });
 
@@ -327,6 +354,7 @@ export async function helpdeskRoutes(app: FastifyInstance): Promise<void> {
         invoice_id: b.invoiceId ?? null, contract_id: contractId, assignee_id: b.assigneeId ?? null,
         first_response_due: due.firstResponseDue, resolution_due: due.resolutionDue, created_by: ctx.userId,
       }).returning('id').executeTakeFirstOrThrow();
+      await tx.insertInto('hd_status_history').values({ tenant_id: ctx.tenantId, ticket_id: row.id, status: 'new', changed_by: ctx.userId }).execute();
       if (contractId) {
         await tx.insertInto('service_contract_links').values({ tenant_id: ctx.tenantId, contract_id: contractId, ref_type: 'ticket', ref_id: row.id })
           .onConflict((oc) => oc.doNothing()).execute();
@@ -362,7 +390,7 @@ export async function helpdeskRoutes(app: FastifyInstance): Promise<void> {
       for (const [k, col] of Object.entries(map)) if ((b as Record<string, unknown>)[k] !== undefined) set[col] = (b as Record<string, unknown>)[k];
       if (b.priority && b.priority !== t.priority) {
         const s = await loadHdSettings(tx, ctx.companyId);
-        const due = dueTimes(s, b.priority, t.created_at);
+        const due = dueTimes(s, b.priority, t.created_at, Number(t.paused_ms));
         set.priority = b.priority; set.first_response_due = due.firstResponseDue; set.resolution_due = due.resolutionDue;
       }
       if (typeof set.contract_id === 'string') {
@@ -393,9 +421,9 @@ export async function helpdeskRoutes(app: FastifyInstance): Promise<void> {
       const set: Record<string, unknown> = {};
       if (b.kind === 'reply') {
         if (!t.first_response_at) set.first_response_at = new Date();
-        if (t.status === 'new') set.status = 'open';
+        if (t.status === 'new') await applyStatus(tx, ctx, t, 'open', set);
       }
-      if (b.kind === 'customer' && t.status === 'waiting') set.status = 'open';
+      if (b.kind === 'customer' && t.status === 'waiting') await applyStatus(tx, ctx, t, 'open', set);
       if (Object.keys(set).length) await tx.updateTable('hd_tickets').set(set as never).where('id', '=', id).execute();
       else await tx.updateTable('hd_tickets').set({ updated_at: new Date() }).where('id', '=', id).execute();
       if (b.kind === 'reply') await tellCustomer(tx, ctx, id, 'has a new reply', b.body);
@@ -415,7 +443,8 @@ export async function helpdeskRoutes(app: FastifyInstance): Promise<void> {
       if (!NEXT[from].includes(status)) {
         throw conflict(`A ticket that is ${from} cannot move to ${status}.`, 'BAD_TRANSITION', { from, to: status, allowed: NEXT[from] });
       }
-      const set: Record<string, unknown> = { status };
+      const set: Record<string, unknown> = {};
+      await applyStatus(tx, ctx, t, status, set);
       if (status === 'resolved') set.resolved_at = new Date();
       if (status === 'closed') set.closed_at = new Date();
       if (status === 'open') { set.closed_at = null; set.resolved_at = null; }
@@ -450,10 +479,11 @@ export async function helpdeskRoutes(app: FastifyInstance): Promise<void> {
       const openByAge = buckets.map(([bucket, lo, hi]) => ({
         bucket, count: open.filter((r) => { const d = Math.floor(hrs(now, r.created_at) / 24); return d >= lo && d <= hi; }).length,
       }));
+      const hdSettings = await loadHdSettings(tx, ctx.companyId);
       const breachList: { id: string; number: string; subject: string; partyName: string; kind: string; dueAt: Date }[] = [];
       let response = 0; let resolution = 0;
       for (const r of rows) {
-        const j = ticketJson(r, now);
+        const j = ticketJson(r, now, hdSettings);
         const base = { id: r.id, number: r.number, subject: r.subject, partyName: r.party_name };
         if (j.response.state === 'breached') { response += 1; breachList.push({ ...base, kind: 'response', dueAt: r.first_response_due }); }
         if (j.resolution.state === 'breached') { resolution += 1; breachList.push({ ...base, kind: 'resolution', dueAt: r.resolution_due }); }
@@ -467,7 +497,7 @@ export async function helpdeskRoutes(app: FastifyInstance): Promise<void> {
       };
       const byCategory = [...group((r) => r.category ?? 'Uncategorised')].map(([category, rs]) => ({
         category, total: rs.length, open: rs.filter((r) => r.status !== 'resolved' && r.status !== 'closed').length,
-        breached: rs.filter((r) => ticketJson(r, now).resolution.state === 'breached' || ticketJson(r, now).response.state === 'breached').length,
+        breached: rs.filter((r) => ticketJson(r, now, hdSettings).resolution.state === 'breached' || ticketJson(r, now, hdSettings).response.state === 'breached').length,
       })).sort((a, b) => b.total - a.total);
       const byAgent = [...group((r) => (r.assignee_id ?? '') as string)].map(([assigneeId, rs]) => ({
         assigneeId: assigneeId || null, name: rs[0]!.assignee_name ?? 'Unassigned', total: rs.length,

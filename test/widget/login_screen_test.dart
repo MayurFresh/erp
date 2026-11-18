@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/features/auth/login_screen.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/features/auth/login_screen.dart';
 
 void main() {
   Future<void> pumpLogin(WidgetTester tester, {Size? size}) async {
@@ -20,7 +20,7 @@ void main() {
 
   testWidgets('renders the sign-in form', (tester) async {
     await pumpLogin(tester);
-    expect(find.text('Progen'), findsOneWidget);
+    expect(find.text('OneMatrix'), findsOneWidget);
     expect(find.text('Sign in'), findsWidgets);
     expect(find.byKey(const Key('login.email')), findsOneWidget);
     expect(find.byKey(const Key('login.password')), findsOneWidget);

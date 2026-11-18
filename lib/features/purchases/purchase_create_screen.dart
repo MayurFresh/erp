@@ -1,4 +1,5 @@
 import '../controls/cost_centre_widgets.dart';
+import '../stock_tools/unit_picker.dart';
 import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -143,10 +144,14 @@ class _PurchaseCreateScreenState extends ConsumerState<PurchaseCreateScreen>
     final item = await pickItem(context, ref);
     if (item == null) return;
     // Without items.view_cost the price is absent and the server applies it.
+    final (unit, factor) = await defaultUnitFor(ref, item.id, purchase: true);
     if (mounted) {
-      setState(
-        () => _lines.add(LineDraft(item, defaultRate: item.purchasePrice)),
-      );
+      final line = LineDraft(item, defaultRate: item.purchasePrice);
+      if (unit != null) {
+        line.unit = unit;
+        line.rate.text = scaleRateText(line.rate.text, factor);
+      }
+      setState(() => _lines.add(line));
     }
     schedulePreview();
   }

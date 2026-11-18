@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/settings/integrations_screen.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/settings/integrations_screen.dart';
 
 class IntegrationsFake implements HttpClientAdapter {
   final requests = <RequestOptions>[];

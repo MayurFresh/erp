@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/features/finance_reports/budgets_screen.dart';
-import 'package:progen_erp/features/finance_reports/cash_flow_screen.dart';
-import 'package:progen_erp/features/finance_reports/cheque_pdf.dart';
-import 'package:progen_erp/features/finance_reports/finance_models.dart';
-import 'package:progen_erp/features/finance_reports/ratios_screen.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/features/finance_reports/budgets_screen.dart';
+import 'package:onematrix/features/finance_reports/cash_flow_screen.dart';
+import 'package:onematrix/features/finance_reports/cheque_pdf.dart';
+import 'package:onematrix/features/finance_reports/finance_models.dart';
+import 'package:onematrix/features/finance_reports/ratios_screen.dart';
 
 Map<String, dynamic> _flow({double profit = 11000, double diff = 0}) => {
   'from': '2026-04-01',

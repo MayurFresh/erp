@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/legal/legal_models.dart';
-import 'package:progen_erp/features/legal/matter_pdf.dart';
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/legal/legal_models.dart';
+import 'package:onematrix/features/legal/matter_pdf.dart';
 
 import 'legal_harness.dart';
 

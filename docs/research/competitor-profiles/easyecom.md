@@ -70,11 +70,11 @@ No AI evidence found on official pages read.
 - No AI evidence.
 - Mobile app unverified.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Webhooks per business event, including GRN and manifest.
 - Per-location inventory events.
-- Show webhook trigger history in the panel. Progen should keep it longer than 2 days.
+- Show webhook trigger history in the panel. OneMatrix should keep it longer than 2 days.
 
 ## Unknowns needing a demo
 

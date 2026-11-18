@@ -5,7 +5,7 @@ import pg from 'pg';
 export const SUPERADMIN_EMAIL = 'superadmin@demo.in';
 
 /**
- * Creates the "Progen Platform" tenant (no company) with one platform admin. Safe to run twice.
+ * Creates the "OneMatrix Platform" tenant (no company) with one platform admin. Safe to run twice.
  * Needs the owner connection because platform_admins is closed to the app role.
  */
 export async function seedPlatformAdmin(ownerUrl: string, password = 'Demo@1234'): Promise<'created' | 'exists'> {
@@ -19,7 +19,7 @@ export async function seedPlatformAdmin(ownerUrl: string, password = 'Demo@1234'
     }
     await client.query('begin');
     const tenantId = randomUUID();
-    await client.query('insert into tenants (id, name) values ($1, $2)', [tenantId, 'Progen Platform']);
+    await client.query('insert into tenants (id, name) values ($1, $2)', [tenantId, 'OneMatrix Platform']);
     const u = await client.query(
       'insert into users (tenant_id, name, email, password_hash) values ($1, $2, $3, $4) returning id',
       [tenantId, 'Platform Admin', SUPERADMIN_EMAIL, await bcrypt.hash(password, 10)]);

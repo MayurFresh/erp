@@ -16,9 +16,9 @@ GST on venue rental and on event services; entertainment tax by state: UNVERIFIE
 Table stakes: calendar with holds, quote, advance, QR ticket scan, vendor payables. Differentiators: settlement and profit per event in the ledger, multi-day holds with clash checks.
 ## Edge cases to test
 Double booking of one hall; hold expiry; refund after partial entry scan; sponsor invoice with TDS; vendor paid before event.
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 Bookings module (real-estate pack calendar pattern), parties, invoices, advances, projects and cost centres, approvals, POS (once built).
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 Venue calendar with holds, quote to invoice, advance, event cost centre and profit report.
 ## Rough effort and priority
 S to M. Priority: low.

@@ -1,3 +1,4 @@
+import '../../core/entered_unit.dart';
 import '../../core/json.dart';
 import '../documents/document_models.dart';
 
@@ -40,6 +41,7 @@ class PoLine {
     this.billedQty = 0,
     this.cancelledQty = 0,
     this.openQty = 0,
+    this.entered,
   });
 
   factory PoLine.fromJson(Json json) => PoLine(
@@ -65,8 +67,10 @@ class PoLine {
     billedQty: asDouble(json['billedQty']),
     cancelledQty: asDouble(json['cancelledQty']),
     openQty: asDouble(json['openQty']),
+    entered: EnteredUnit.fromJson(json),
   );
 
+  final EnteredUnit? entered;
   final String? id;
   final int lineNo;
   final String itemId;
@@ -113,6 +117,7 @@ class PoLine {
     sgst: sgst,
     igst: igst,
     lineTotal: lineTotal,
+    entered: entered,
   );
 }
 

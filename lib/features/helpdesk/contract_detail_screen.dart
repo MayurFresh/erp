@@ -14,6 +14,8 @@ import '../construction/common/c_widgets.dart' show CGate, showSuccess;
 import 'contract_list_screen.dart' show contractTone;
 import 'helpdesk_models.dart';
 import 'helpdesk_repository.dart';
+import 'visit_dialog.dart';
+import '../construction/data/photo_source.dart' show PickedPhoto;
 
 /// `/service-contracts/:id`: terms, covered items, visit calendar, bills.
 class ContractDetailScreen extends ConsumerStatefulWidget {
@@ -43,72 +45,78 @@ class _ContractDetailScreenState extends ConsumerState<ContractDetailScreen> {
   }
 
   Future<void> _complete(Visit v) async {
-    final notes = TextEditingController();
-    final parts = TextEditingController();
-    final sign = TextEditingController();
-    final ok = await showFormDialog<bool>(
+    final r = await showFormDialog<VisitResult>(
+      context: context,
+      builder: (ctx) => VisitDialog(dueDate: v.dueDate),
+    );
+    if (r == null) return;
+    await _run(() async {
+      final repo = ref.read(helpdeskRepositoryProvider);
+      String? signatureFileId;
+      if (r.signaturePng != null) {
+        signatureFileId = await repo.uploadImage(
+          PickedPhoto(
+            name: 'signature.png',
+            mimeType: 'image/png',
+            bytes: r.signaturePng!,
+          ),
+        );
+      }
+      final photoIds = [for (final p in r.photos) await repo.uploadImage(p)];
+      await repo.completeVisit(v.id, {
+        'notes': r.notes,
+        'signatureName': r.signatureName,
+        'signatureFileId': ?signatureFileId,
+        'photoFileIds': photoIds,
+        'locationId': ?r.locationId,
+        'partsUsed': r.parts,
+      });
+    }, 'Visit marked done');
+  }
+
+  Future<void> _editParts(Visit v) async {
+    final r = await showFormDialog<VisitResult>(
+      context: context,
+      builder: (ctx) => VisitDialog(
+        dueDate: v.dueDate,
+        partsOnly: true,
+        initialParts: v.partsUsed,
+        initialLocationId: v.partsLocationId,
+      ),
+    );
+    if (r == null) return;
+    await _run(() async {
+      await ref.read(helpdeskRepositoryProvider).changeVisitParts(v.id, {
+        'partsUsed': r.parts,
+        'locationId': ?r.locationId,
+      });
+    }, 'Parts updated');
+  }
+
+  Future<void> _cancelVisit(Visit v) async {
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Visit due ${v.dueDate}'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: notes,
-                minLines: 2,
-                maxLines: 4,
-                decoration: const InputDecoration(labelText: 'Work done'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: parts,
-                minLines: 1,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: 'Parts used, one per line, such as Fan x 2',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: sign,
-                decoration: const InputDecoration(
-                  labelText: 'Customer name (signed by)',
-                ),
-              ),
-            ],
-          ),
+        title: const Text('Cancel this visit'),
+        content: const Text(
+          'The visit goes back to cancelled and any parts used return to stock.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).maybePop(),
-            child: const Text('Cancel'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Mark done'),
+            child: const Text('Cancel visit'),
           ),
         ],
       ),
     );
     if (ok != true) return;
     await _run(() async {
-      await ref.read(helpdeskRepositoryProvider).completeVisit(v.id, {
-        'notes': trimmedOrNull(notes.text),
-        'signatureName': trimmedOrNull(sign.text),
-        'partsUsed': [
-          for (final line in parts.text.split('\n'))
-            if (line.trim().isNotEmpty) _part(line.trim()),
-        ],
-      });
-    }, 'Visit marked done');
-  }
-
-  Json _part(String line) {
-    final m = RegExp(r'^(.*?)\s*[xX]\s*(\d+(\.\d+)?)$').firstMatch(line);
-    return m == null
-        ? {'name': line, 'qty': 1}
-        : {'name': m.group(1)!.trim(), 'qty': double.parse(m.group(2)!)};
+      await ref.read(helpdeskRepositoryProvider).cancelVisit(v.id);
+    }, 'Visit cancelled');
   }
 
   Future<void> _cancel(Contract c) async {
@@ -270,6 +278,12 @@ class _ContractDetailScreenState extends ConsumerState<ContractDetailScreen> {
                             onDone: manage && v.status == 'scheduled' && !_busy
                                 ? () => _complete(v)
                                 : null,
+                            onEditParts: manage && v.status == 'done' && !_busy
+                                ? () => _editParts(v)
+                                : null,
+                            onCancel: manage && v.status == 'done' && !_busy
+                                ? () => _cancelVisit(v)
+                                : null,
                           ),
                       ],
                     ),
@@ -322,10 +336,17 @@ class _ContractDetailScreenState extends ConsumerState<ContractDetailScreen> {
 }
 
 class _VisitRow extends StatelessWidget {
-  const _VisitRow({required this.visit, required this.onDone});
+  const _VisitRow({
+    required this.visit,
+    required this.onDone,
+    this.onCancel,
+    this.onEditParts,
+  });
 
   final Visit visit;
   final VoidCallback? onDone;
+  final VoidCallback? onCancel;
+  final VoidCallback? onEditParts;
 
   @override
   Widget build(BuildContext context) {
@@ -341,12 +362,41 @@ class _VisitRow extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       minVerticalPadding: 8,
       title: Text(v.dueDate),
-      subtitle: Text(
-        [
-          if (v.doneDate != null) 'Done ${v.doneDate}',
-          if (v.technicianName != null) v.technicianName!,
-          if (v.notes != null) v.notes!,
-        ].join('  ·  '),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              if (v.doneDate != null) 'Done ${v.doneDate}',
+              if (v.technicianName != null) v.technicianName!,
+              if (v.notes != null) v.notes!,
+              if (v.partsUsed.isNotEmpty) '${v.partsUsed.length} parts',
+              if (v.photoFileIds.isNotEmpty) '${v.photoFileIds.length} photos',
+              if (v.signatureFileId != null)
+                'Signed${v.signatureName != null ? ' by ${v.signatureName}' : ''}'
+              else if (v.signatureName != null)
+                'Signed by ${v.signatureName}',
+            ].join('  ·  '),
+          ),
+          if (onEditParts != null)
+            TextButton(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                padding: EdgeInsets.zero,
+              ),
+              onPressed: onEditParts,
+              child: const Text('Edit parts'),
+            ),
+          if (onCancel != null)
+            TextButton(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                padding: EdgeInsets.zero,
+              ),
+              onPressed: onCancel,
+              child: const Text('Cancel visit'),
+            ),
+        ],
       ),
       trailing: onDone != null
           ? OutlinedButton(

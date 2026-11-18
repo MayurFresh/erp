@@ -22,6 +22,7 @@ import '../parties/party_picker.dart';
 import '../items/items_repository.dart';
 import '../pricing/bill_discount.dart';
 import '../pricing/price_prefill.dart';
+import '../stock_tools/unit_picker.dart';
 import 'quotation_models.dart';
 import 'quotation_repository.dart';
 
@@ -59,6 +60,9 @@ class _Line with PricedLine {
   final TextEditingController discount;
   final TextEditingController description;
 
+  /// Alternate unit the quantity and rate are entered in; null is the item's own unit.
+  String? altUnit;
+
   /// The discount is a rupee amount instead of a percentage.
   bool fixedDiscount;
 
@@ -94,6 +98,7 @@ class _Line with PricedLine {
     discountPct: fixedDiscount ? 0 : discountValue,
     discountAmount: fixedDiscount ? discountValue : 0,
     description: trimmedOrNull(description.text),
+    unit: altUnit,
   );
 
   void dispose() {
@@ -216,12 +221,12 @@ class _QuotationFormState extends ConsumerState<_QuotationForm>
             name: l.itemName,
             unit: l.unit,
             gstRate: l.gstRate,
-            qty: l.qty,
-            rate: l.rate,
+            qty: l.entered?.qty ?? l.qty,
+            rate: l.entered?.rate ?? l.rate,
             discountPct: l.discountPct,
             discountAmount: l.discountAmount,
             description: l.description == l.itemName ? '' : l.description,
-          ),
+          )..altUnit = l.entered?.unit,
         );
       }
     } else {
@@ -295,16 +300,21 @@ class _QuotationFormState extends ConsumerState<_QuotationForm>
   Future<void> _addItem() async {
     final item = await pickItem(context, ref);
     if (item == null || !mounted) return;
+    final (altUnit, factor) = await defaultUnitFor(ref, item.id, purchase: false);
+    if (!mounted) return;
+    final line = _Line(
+      itemId: item.id,
+      name: item.name,
+      unit: item.unit,
+      gstRate: item.gstRate,
+      rate: item.salePrice,
+    )..autoRate = item.salePrice;
+    if (altUnit != null) {
+      line.altUnit = altUnit;
+      line.rate.text = scaleRateText(line.rate.text, factor);
+    }
     setState(() {
-      _lines.add(
-        _Line(
-          itemId: item.id,
-          name: item.name,
-          unit: item.unit,
-          gstRate: item.gstRate,
-          rate: item.salePrice,
-        )..autoRate = item.salePrice,
-      );
+      _lines.add(line);
       _linesError = null;
     });
     markDirty();
@@ -386,6 +396,7 @@ class _QuotationFormState extends ConsumerState<_QuotationForm>
           discountPct: 0,
           discountAmount: fixed[i],
           description: trimmedOrNull(l.description.text),
+          unit: l.altUnit,
         ),
     ];
   }
@@ -762,13 +773,25 @@ class _LineEditor extends StatelessWidget {
               ),
             ],
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: LineUnitPicker(
+              itemId: line.itemId,
+              value: line.altUnit,
+              onChanged: (u) => line.altUnit = u,
+              onRateScale: (r) {
+                line.rate.text = scaleRateText(line.rate.text, r);
+                onChanged();
+              },
+            ),
+          ),
           const SizedBox(height: 8),
           FormRow(
             breakpoint: 480,
             children: [
               field(
                 line.qty,
-                'Quantity (${line.unit})',
+                'Quantity (${line.altUnit ?? line.unit})',
                 required: true,
                 decimals: 3,
               ),

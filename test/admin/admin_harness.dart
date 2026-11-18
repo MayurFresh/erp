@@ -1,16 +1,16 @@
-import 'package:progen_erp/features/platform/notifications_screen.dart'
+import 'package:onematrix/features/platform/notifications_screen.dart'
     show bellPollIntervalProvider;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/admin_routes.dart';
-import 'package:progen_erp/features/shell/app_shell.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/admin_routes.dart';
+import 'package:onematrix/features/shell/app_shell.dart';
 
 import 'admin_fake_backend.dart';
 

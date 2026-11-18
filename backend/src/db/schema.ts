@@ -63,6 +63,7 @@ export interface ItemTable {
   purchase_price: Generated<number>; track_stock: Generated<boolean>; reorder_level: Generated<number>;
   is_active: Generated<boolean>; created_at: Generated<Date>; updated_at: Generated<Date>; custom: Generated<CustomValues>;
   default_purchase_unit: Generated<string | null>; default_sale_unit: Generated<string | null>;
+  mrp: Generated<number | null>;
 }
 export interface ItemUnitTable { id: Generated<string>; tenant_id: string; company_id: string; item_id: string; name: string; factor: number; created_at: Generated<Date> }
 
@@ -100,6 +101,7 @@ export interface StockMoveTable {
   id: Generated<string>; tenant_id: string; company_id: string; location_id: string; item_id: string;
   qty: number; rate: number | null; ref_type: string; ref_id: string | null; note: string | null;
   created_by: string | null; created_at: Generated<Date>; cost_rate: number | null; value: number;
+  layer_date: string | null;
 }
 
 export interface InvoiceSeriesTable { tenant_id: string; company_id: string; fy: string; next_no: number }
@@ -208,6 +210,7 @@ export interface CreditNoteTable extends DocTotals {
   id: Generated<string>; tenant_id: string; company_id: string; invoice_id: string; location_id: string;
   party_id: string; number: string; fy: string; note_date: string; reason: string; restock: boolean;
   place_of_supply: string; supply_type: string; status: Generated<string>; applied_amount: Generated<number>;
+  tcs_reversed: Generated<number>;
   created_by: string; created_at: Generated<Date>; cancelled_at: Date | null; cancel_reason: string | null;
   cost_centre_id: string | null;
 }
@@ -221,7 +224,7 @@ export interface TransferTable {
 
 export interface TransferLineTable {
   id: Generated<string>; tenant_id: string; transfer_id: string; line_no: number; item_id: string; qty: number;
-  cost_rate: number; value: number;
+  cost_rate: number; value: number; layers: unknown;
 }
 
 export interface ExpenseTable {
@@ -755,6 +758,7 @@ export interface PurchaseOrderTable {
 export interface PurchaseOrderLineTable extends DocLineTable {
   purchase_order_id: string; received_qty: Generated<number>; rejected_qty: Generated<number>;
   billed_qty: Generated<number>; cancelled_qty: Generated<number>;
+  entered_unit: Generated<string | null>; entered_qty: Generated<number | null>;
 }
 export interface GoodsReceiptTable {
   id: Generated<string>; tenant_id: string; company_id: string; purchase_order_id: string; party_id: string; location_id: string;
@@ -1067,7 +1071,7 @@ export interface ServiceContractBillTable {
 export interface ServiceVisitTable {
   id: Generated<string>; tenant_id: string; company_id: string; contract_id: string; due_date: string; status: Generated<string>;
   technician_id: string | null; done_date: string | null; notes: string | null; parts_used: Generated<unknown>; signature_name: string | null;
-  signature_file_id: string | null; photo_file_ids: Generated<string[]>; skip_reason: string | null;
+  signature_file_id: string | null; photo_file_ids: Generated<string[]>; skip_reason: string | null; parts_location_id: string | null;
   created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface ServiceContractLinkTable {
@@ -1080,6 +1084,10 @@ export interface HdTicketTable {
   priority: Generated<string>; status: Generated<string>; item_id: string | null; serial_no: string | null; invoice_id: string | null;
   contract_id: string | null; assignee_id: string | null; first_response_due: Date; resolution_due: Date; first_response_at: Date | null;
   resolved_at: Date | null; closed_at: Date | null; created_by: string; created_at: Generated<Date>; updated_at: Generated<Date>;
+  waiting_since: Date | null; paused_ms: Generated<string | number>;
+}
+export interface HdStatusHistoryTable {
+  id: Generated<string>; tenant_id: string; ticket_id: string; status: string; at: Generated<Date>; changed_by: string | null;
 }
 export interface HdMessageTable {
   id: Generated<string>; tenant_id: string; ticket_id: string; kind: string; body: string; author_id: string | null;
@@ -1420,6 +1428,7 @@ export interface Database {
   expense_claim_lines: ExpenseClaimLineTable;
   employee_loans: EmployeeLoanTable;
   loan_installments: LoanInstallmentTable;
+  gratuity_provisions: GratuityProvisionTable;
   payroll_overrides: PayrollOverrideTable;
   payroll_rate_rows: PayrollRateRowTable;
   payroll_statutory_settings: PayrollStatutorySettingsTable;
@@ -1548,6 +1557,7 @@ export interface Database {
   service_contract_links: ServiceContractLinkTable;
   service_contract_reminders: ServiceContractReminderTable;
   hd_tickets: HdTicketTable;
+  hd_status_history: HdStatusHistoryTable;
   hd_messages: HdMessageTable;
   ts_settings: TsSettingsTable;
   ts_rates: TsRateTable;
@@ -1872,11 +1882,15 @@ export interface EmployeeLoanTable {
   amount: number; interest_rate: Generated<number>; instalment: number; start_month: string; tenure: number;
   total_interest: Generated<number>; status: Generated<string>; disbursed_on: string; disburse_account_id: string | null;
   disburse_entry_id: string | null; ca_review: Generated<boolean>; foreclosed_on: string | null; foreclose_amount: number | null;
-  foreclose_entry_id: string | null; closed_on: string | null; created_by: string; created_at: Generated<Date>; updated_at: Generated<Date>;
+  foreclose_principal: number | null; foreclose_interest: number | null; foreclose_entry_id: string | null; closed_on: string | null; created_by: string; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface LoanInstallmentTable {
   id: Generated<string>; tenant_id: string; loan_id: string; seq: number; due_month: string; principal: number; interest: Generated<number>;
-  amount: number; status: Generated<string>; run_id: string | null; adjustment_id: string | null; recovered_on: string | null;
+  amount: number; status: Generated<string>; run_id: string | null; adjustment_id: string | null; recovered_on: string | null; paid_amount: Generated<number>;
+}
+export interface GratuityProvisionTable {
+  id: Generated<string>; tenant_id: string; company_id: string; as_of: string; total: number; prior_balance: number; posted_amount: number;
+  employee_count: Generated<number>; entry_id: string | null; created_by: string; created_at: Generated<Date>;
 }
 export interface PayrollAdjustmentTable {
   id: Generated<string>; tenant_id: string; run_id: string; employee_id: string; kind: string; label: string; amount: number;

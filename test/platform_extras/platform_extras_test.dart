@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/platform_extras/extras_repository.dart';
-import 'package:progen_erp/features/platform_extras/platform_extras_routes.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/platform_extras/extras_repository.dart';
+import 'package:onematrix/features/platform_extras/platform_extras_routes.dart';
 
 import '../support/fake_backend.dart';
 
@@ -62,9 +62,14 @@ class Backend implements HttpClientAdapter {
     'PATCH /sms/settings' => (200, {'driver': 'log', 'enabled': true, 'dltEntityId': '1101234567890', 'senderId': null, 'templates': <Object?>[]}),
     'GET /payment-gateways' => (200, {'data': [{
       'id': 'g1', 'provider': 'razorpay', 'isActive': false, 'accountId': null, 'mode': 'test',
-      'credentials': [{'key': 'keyId', 'label': 'Key id', 'secret': false, 'set': true}, {'key': 'keySecret', 'label': 'Key secret', 'secret': true, 'set': true}],
+      'credentials': [{'key': 'keyId', 'label': 'Key id', 'secret': false, 'set': true}, {'key': 'keySecret', 'label': 'Key secret', 'secret': true, 'set': true}, {'key': 'webhookSecret', 'label': 'Webhook secret', 'secret': true, 'set': false}],
       'webhookUrl': 'http://x/api/v1/webhooks/payment-gateways/g1',
+    }, {
+      'id': 'g2', 'provider': 'cashfree', 'isActive': false, 'accountId': null, 'mode': null,
+      'credentials': [{'key': 'keyId', 'label': 'App id', 'secret': false, 'set': false}, {'key': 'keySecret', 'label': 'Secret key', 'secret': true, 'set': false}],
+      'webhookUrl': 'http://x/api/v1/webhooks/payment-gateways/g2',
     }]}),
+    'PATCH /payment-gateways/cashfree' => (200, {'id': 'g2', 'provider': 'cashfree', 'isActive': false, 'credentials': <Object?>[]}),
     'PATCH /payment-gateways/razorpay' => (200, {'id': 'g1', 'isActive': false, 'credentials': <Object?>[]}),
     'GET /payment-links' => (200, {'data': [linkJson], 'total': 1}),
     _ => null,
@@ -94,7 +99,7 @@ Future<(WidgetTester, Backend, GoRouter)> boot(WidgetTester tester, Size size, S
     initialLocation: location,
     routes: [
       ShellRoute(
-        builder: (context, state, child) => Scaffold(appBar: AppBar(title: const Text('Progen'), actions: const [SizedBox(width: 200, child: GlobalSearchField())]), body: child),
+        builder: (context, state, child) => Scaffold(appBar: AppBar(title: const Text('OneMatrix'), actions: const [SizedBox(width: 200, child: GlobalSearchField())]), body: child),
         routes: platformExtrasRoutes(),
       ),
     ],
@@ -182,6 +187,25 @@ void main() {
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 6));
       expect(backend.body('PATCH', '/sms/settings')['dltEntityId'], '1101234567890');
+      clean(tester);
+    });
+
+    testWidgets('Cashfree keys are saved to their own route at $w px', (tester) async {
+      final (_, backend, _) = await boot(tester, size, '/settings/payment-gateway');
+      await tester.tap(find.byKey(const ValueKey('gw-provider-cashfree')));
+      await tester.pumpAndSettle();
+      expect(find.text('App id'), findsOneWidget);
+      expect(find.byKey(const ValueKey('gw-webhook-secret')), findsNothing);
+      expect(find.textContaining('payment-gateways/g2', skipOffstage: false), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey('gw-key-id')), 'TEST1234abcd');
+      await tester.enterText(find.byKey(const ValueKey('gw-key-secret')), 'cf_secret_123456');
+      await tester.tap(find.text('Save settings'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 6));
+      final sent = backend.body('PATCH', '/payment-gateways/cashfree');
+      expect(sent['keyId'], 'TEST1234abcd');
+      expect(sent['keySecret'], 'cf_secret_123456');
+      expect(backend.count('PATCH', '/payment-gateways/razorpay'), 0);
       clean(tester);
     });
 

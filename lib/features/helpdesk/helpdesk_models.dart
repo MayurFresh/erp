@@ -77,6 +77,7 @@ class Ticket {
       assigneeName = asStringOrNull(j['assigneeName']),
       response = SlaState.fromJson(j['response']),
       resolution = SlaState.fromJson(j['resolution']),
+      slaPaused = asBool(j['slaPaused']),
       updatedAt = asString(j['updatedAt']),
       messages = asJsonList(j['messages']).map(TicketMessage.fromJson).toList();
 
@@ -99,6 +100,9 @@ class Ticket {
   final String? assigneeName;
   final SlaState response;
   final SlaState resolution;
+
+  /// True while the ticket waits on the customer; the SLA clock is stopped.
+  final bool slaPaused;
   final String updatedAt;
   final List<TicketMessage> messages;
 
@@ -132,8 +136,20 @@ class Visit {
       overdue = asBool(j['overdue']),
       technicianName = asStringOrNull(j['technicianName']),
       doneDate = asStringOrNull(j['doneDate']),
-      notes = asStringOrNull(j['notes']);
+      notes = asStringOrNull(j['notes']),
+      partsUsed = asJsonList(j['partsUsed']),
+      partsLocationId = asStringOrNull(j['partsLocationId']),
+      signatureName = asStringOrNull(j['signatureName']),
+      signatureFileId = asStringOrNull(j['signatureFileId']),
+      photoFileIds = [
+        for (final f in (j['photoFileIds'] as List? ?? const [])) asString(f),
+      ];
 
+  final List<Json> partsUsed;
+  final String? partsLocationId;
+  final String? signatureName;
+  final String? signatureFileId;
+  final List<String> photoFileIds;
   final String id;
   final String contractId;
   final String contractNumber;

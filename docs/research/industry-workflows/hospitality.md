@@ -62,17 +62,17 @@ Checked 2026-11-03. Builds on ../industry-verticals.md section 4 (restaurants an
 - Night audit run twice or on a back date.
 - Advance receipt before the invoice, with GST on advance.
 
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 - Parties (guests, companies), invoices and credit notes, journal engine, receipts, items for services, approvals, audit, file storage for ID scans, cost centres.
 - Bookings module in the real-estate pack (bookings.ts) has a calendar-like reservation pattern, but it models unit sales, not nights. Reuse is limited.
 
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 - Room master, reservation calendar, check-in and out, folio with GST invoice, housekeeping status board, night audit report, receipt reconciliation.
 - Connector to one channel manager later (no own channel manager).
 - Restaurant charge posting to room as the first cross-pack link.
 
 ## Rough effort and priority
-- Slice: M to L. Channel manager connector: M each. Priority: low to medium. Hotels in India already have cheap local PMS products, so Progen needs the books and restaurant link as its hook.
+- Slice: M to L. Channel manager connector: M each. Priority: low to medium. Hotels in India already have cheap local PMS products, so OneMatrix needs the books and restaurant link as its hook.
 
 ## Open questions
 - What do 20-60 room Indian hotels pay today for a PMS?

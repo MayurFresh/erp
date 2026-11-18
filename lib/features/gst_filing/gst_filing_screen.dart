@@ -411,7 +411,7 @@ class _File3bTab extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Do this after you file on the portal. Progen records the '
+                  'Do this after you file on the portal. OneMatrix records the '
                   'filing and posts the GST set-off in your books.',
                 ),
                 const SizedBox(height: 8),

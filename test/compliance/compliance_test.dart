@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/features/compliance/alerts_card.dart';
-import 'package:progen_erp/features/compliance/compliance_models.dart';
-import 'package:progen_erp/features/compliance/compliance_repository.dart';
-import 'package:progen_erp/features/compliance/compliance_widgets.dart';
-import 'package:progen_erp/features/compliance/gst_returns_screen.dart';
-import 'package:progen_erp/features/compliance/itc_ageing_screen.dart';
-import 'package:progen_erp/features/compliance/setup_health_screen.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/features/compliance/alerts_card.dart';
+import 'package:onematrix/features/compliance/compliance_models.dart';
+import 'package:onematrix/features/compliance/compliance_repository.dart';
+import 'package:onematrix/features/compliance/compliance_widgets.dart';
+import 'package:onematrix/features/compliance/gst_returns_screen.dart';
+import 'package:onematrix/features/compliance/itc_ageing_screen.dart';
+import 'package:onematrix/features/compliance/setup_health_screen.dart';
 
 const _rates = [
   {'rate': 18, 'taxable': 1000, 'igst': 0, 'cgst': 90, 'sgst': 90},

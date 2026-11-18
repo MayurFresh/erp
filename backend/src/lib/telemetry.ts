@@ -14,9 +14,9 @@ export async function setupTelemetry(app: FastifyInstance, config: Config): Prom
     const api = await load('@opentelemetry/api');
     const { NodeTracerProvider, BatchSpanProcessor } = await load('@opentelemetry/sdk-trace-node');
     const { OTLPTraceExporter } = await load('@opentelemetry/exporter-trace-otlp-http');
-    process.env.OTEL_SERVICE_NAME ??= 'progen-api';
+    process.env.OTEL_SERVICE_NAME ??= 'onematrix-api';
     new NodeTracerProvider({ spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())] }).register();
-    const tracer = api.trace.getTracer('progen-api');
+    const tracer = api.trace.getTracer('onematrix-api');
     const spans = new WeakMap<object, any>();
     app.addHook('onRequest', async (req) => {
       const route = req.routeOptions.url ?? req.url.split('?')[0];

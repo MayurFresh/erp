@@ -1,9 +1,9 @@
-# Progen ERP
+# OneMatrix
 
 One ERP for Indian businesses: GST billing, inventory, multi-site operations and role-based access, with Construction, E-commerce and Organisation packs to follow (see the [functionality spec](docs/Progen_ERP_Functionality_Specification.pdf)).
 
 ```
-progen_erp/
+onematrix/
 ├── backend/        Node.js + TypeScript API (Fastify, PostgreSQL)
 ├── lib/            Flutter app — one codebase for web, Android, iOS and desktop
 ├── test/           Flutter tests
@@ -101,10 +101,10 @@ All use password `Demo@1234`:
 cd backend && npm test && npm run typecheck   # API: GST, accounting, construction, roles, tenant isolation
 flutter analyze && flutter test               # app
 # End-to-end check that the app's API client works against the running backend:
-PROGEN_API=http://localhost:8080/api/v1 flutter test test/live_api_test.dart
+ONEMATRIX_API=http://localhost:8080/api/v1 flutter test test/live_api_test.dart
 ```
 
-On Windows PowerShell, set the variable first: `$env:PROGEN_API="http://localhost:8080/api/v1"; flutter test test/live_api_test.dart`.
+On Windows PowerShell, set the variable first: `$env:ONEMATRIX_API="http://localhost:8080/api/v1"; flutter test test/live_api_test.dart`.
 
 ## Production notes
 

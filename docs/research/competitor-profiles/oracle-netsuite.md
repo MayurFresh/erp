@@ -67,9 +67,9 @@ NetSuite has a mobile app (general knowledge). UNVERIFIED this pass.
 - No published price. Setup goes through an account manager.
 - NetSuite Next not evidenced for India.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
-- Treat the MCP connector as a pattern. Progen should expose its data to Claude and ChatGPT through MCP early.
+- Treat the MCP connector as a pattern. OneMatrix should expose its data to Claude and ChatGPT through MCP early.
 - Ship tax localisation as versioned, installable bundles.
 - Do not copy the CSV-upload e-way bill path. Direct API is the baseline.
 

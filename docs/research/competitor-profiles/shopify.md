@@ -45,7 +45,7 @@ POS Pro add-on is 7,000 per location per month. The page does not mention GST.
 2. Order is created. Webhook fires.
 3. Fulfilment is created per location, with tracking.
 4. Refunds and returns are managed in admin.
-5. Payout reports show settlement. Matching to a ledger needs an app or Progen.
+5. Payout reports show settlement. Matching to a ledger needs an app or OneMatrix.
 
 ## APIs, webhooks and integrations
 
@@ -77,9 +77,9 @@ UNVERIFIED this round. Do not rely on any Shopify AI claim until checked on shop
 
 - No GST invoice or e-invoice in core. Apps needed.
 - Plan-level API limits are hard to confirm.
-- Subscription deleted after 8 failures, so Progen must watch health.
+- Subscription deleted after 8 failures, so OneMatrix must watch health.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Verify HMAC on the raw body before parsing.
 - Keep a webhook inbox keyed by Webhook-Id.

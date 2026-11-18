@@ -67,11 +67,11 @@ Checked 2026-11-03. Builds on ../industry-verticals.md section 4. Master plan wo
 - Table transfer with a running KOT.
 - Power cut mid-bill; sync of offline bills.
 
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 - Items, units, locations, stock, transfers, indents (construction module has indents), purchase orders, GRN, parties, approvals, audit, invoices and the journal engine.
 - Batch and expiry (planned core building block, see ../industry-verticals.md summary).
 
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 - Single-outlet dine-in and takeaway: tables, KOT print, GST bill, split bill, shift close, daily posting to ledger, recipe-based stock deduction.
 - No aggregator, no KDS, no reservations.
 - Add the aggregator inbox through one middleware (UrbanPiper) once the slice works.

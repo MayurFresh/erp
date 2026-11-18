@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/money.dart';
-import 'package:progen_erp/features/insights/analytics_models.dart';
-import 'package:progen_erp/features/insights/insights_rules.dart';
+import 'package:onematrix/core/money.dart';
+import 'package:onematrix/features/insights/analytics_models.dart';
+import 'package:onematrix/features/insights/insights_rules.dart';
 
 Analytics make({
   double sales = 112000,

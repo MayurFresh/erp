@@ -171,7 +171,7 @@ NIC's pages now show placeholders. The versioned paths below are confirmed throu
 - `Typ`: INV/CRN/DBN.
 - `Dt`: `dd/mm/yyyy`. Document dates from 01/04/2025 only.
 - `No`: at most 16 characters, regex `^([a-zA-Z1-9]{1}[a-zA-Z0-9\/-]{0,15})$`. It cannot start with 0, `/` or `-`, and letters must be **upper case**.
-  - **Progen impact:** our `INV/26-27/00001` is 15 characters and passes.
+  - **OneMatrix impact:** our `INV/26-27/00001` is 15 characters and passes.
 
 ### Seller and buyer
 - `Gstin`: 15 characters.
@@ -215,7 +215,7 @@ Each amount is accepted between (its rupee part − ₹1) and (rounded up + ₹1
 ### UQC codes
 BAG, BAL, BDL, BKL, BOU, BOX, BTL, BUN, CAN, CBM, CCM, CMS, CTN, DOZ, DRM, GGK, GMS, GRS, GYD, KGS, KLR, KME, LTR, MLT, MTR, MTS, NOS, OTH, PAC, PCS, PRS, QTL, ROL, SET, SQF, SQM, SQY, TBS, TGM, THD, TON, TUB, UGS, UNT, YDS.
 
-**Progen impact:** items need a UQC mapping for their free-text unit (bag → BAG, kg → KGS, ton → TON, nos → NOS, box → BOX, bucket → OTH or PCS).
+**OneMatrix impact:** items need a UQC mapping for their free-text unit (bag → BAG, kg → KGS, ton → TON, nos → NOS, box → BOX, bucket → OTH or PCS).
 
 ## 7. Error codes worth handling
 
@@ -278,7 +278,7 @@ Under Notification 20/2025, errors 2194, 2234 and 2235 are suppressed for retail
 **Signed QR**
 - Format: an RS256 JWT issued by NIC.
 - Payload fields: `SellerGstin`, `BuyerGstin`, `DocNo`, `DocTyp`, `DocDt`, `TotInvVal`, `ItemCnt`, `MainHsnCode`, `Irn`, `IrnDt`.
-- **Progen impact:** the invoice PDF must print this QR code and the IRN once they are generated.
+- **OneMatrix impact:** the invoice PDF must print this QR code and the IRN once they are generated.
 
 ## 9. E-way bill rules
 
@@ -333,7 +333,7 @@ Public pricing is mostly unavailable.
 - GSTZen was not checked.
 - **UNVERIFIED:** IRN generation is said to be free of charge at the IRPs.
 
-## What Progen needs to build (summary)
+## What OneMatrix needs to build (summary)
 
 1. **Company settings:** e-invoice applicability (AATO band), GSP credentials (stored encrypted on the server) and the IRP choice.
 2. **Item master:** a mapping from item unit to UQC code, and validation of six-digit HSN codes when AATO is over ₹5 crore.

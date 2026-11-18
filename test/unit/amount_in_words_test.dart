@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/amount_in_words.dart';
+import 'package:onematrix/core/amount_in_words.dart';
 
 void main() {
   group('amountInWords', () {

@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
-import 'package:progen_erp/core/json.dart';
-import 'package:progen_erp/features/education/education_models.dart';
-import 'package:progen_erp/features/education/receipt_pdf.dart';
-import 'package:progen_erp/widgets/picker_field.dart';
+import 'package:onematrix/core/json.dart';
+import 'package:onematrix/features/education/education_models.dart';
+import 'package:onematrix/features/education/receipt_pdf.dart';
+import 'package:onematrix/widgets/picker_field.dart';
 
 import 'education_harness.dart';
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/clinic/clinic_models.dart';
-import 'package:progen_erp/widgets/picker_field.dart';
-import 'package:progen_erp/features/clinic/rx_pdf.dart';
+import 'package:onematrix/features/clinic/clinic_models.dart';
+import 'package:onematrix/widgets/picker_field.dart';
+import 'package:onematrix/features/clinic/rx_pdf.dart';
 
 import 'clinic_harness.dart';
 

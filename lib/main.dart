@@ -16,7 +16,7 @@ void main() {
       overrides: [
         photoSourceProvider.overrideWithValue(ImagePickerPhotoSource()),
       ],
-      child: const ProgenApp(),
+      child: const OneMatrixApp(),
     ),
   );
 }

@@ -18,9 +18,9 @@ GST on parts and labour at different rates, insurance claim and surveyor flow, v
 Table stakes: job card, estimate, parts issue, invoice, vehicle history, reminders. Differentiators: serial and VIN tracking, insurance claim steps, books built in, WhatsApp estimate approval.
 ## Edge cases to test
 Estimate changed after approval; part returned after invoice; warranty job billed to the OEM; two jobs on one vehicle; customer pays in parts.
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 Items with serial, stock, issues, parties, invoices, approvals, notifications, fixed assets.
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 Vehicle master, job card with estimate approval, parts issue, invoice, service reminder.
 ## Rough effort and priority
 M. Priority: low to medium.

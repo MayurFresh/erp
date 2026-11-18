@@ -186,6 +186,18 @@ class FinanceRepository {
   Future<void> chequeAction(String id, String action, [Json? body]) =>
       _api.post('/cheques/$id/$action', body: body ?? <String, dynamic>{});
 
+  /// Prints the cheque for a bank payment. Uses the cheque already linked to
+  /// the payment, or takes the next leaf of the bank account's cheque book.
+  Future<({String chequeNo, ChequePrint data})> chequeForPayment(
+    String paymentId,
+  ) async {
+    final got = await _api.getJson('/payments/$paymentId/cheque');
+    var cheque = got['cheque'];
+    cheque ??= await _api.post('/payments/$paymentId/cheque', body: <String, dynamic>{});
+    final c = Cheque.fromJson(asJson(cheque));
+    return (chequeNo: c.chequeNo, data: await chequePrint(c.id));
+  }
+
   Future<ChequePrint> chequePrint(String id) async =>
       ChequePrint.fromJson(await _api.getJson('/cheques/$id/print'));
 

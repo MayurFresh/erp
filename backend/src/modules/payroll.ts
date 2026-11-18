@@ -11,7 +11,8 @@ import { AppError, badRequest, conflict, forbidden, notFound } from '../lib/erro
 import { optionalText } from '../lib/india.ts';
 import { moneyField } from '../lib/numbers.ts';
 import { pagingQuery } from '../lib/paging.ts';
-import { computeLine, type AdjustmentInput, type OverrideInput } from '../lib/payroll/compute.ts';
+import { computeLine, type AdjustmentInput, type LineInput, type OverrideInput } from '../lib/payroll/compute.ts';
+import { capLoanDeductions } from '../lib/payroll/loan-cap.ts';
 import { establishmentAdmin, pfCeiling } from '../lib/payroll/epf.ts';
 import { round2 } from '../lib/payroll/money.ts';
 import { PT_RULES } from '../lib/payroll/pt.ts';
@@ -92,6 +93,8 @@ export async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
   const leave = await leaveInMonth(tx, ctx.companyId, monthStart, elig);
   const att = await tx.selectFrom('attendance_summaries').selectAll().where('company_id', '=', ctx.companyId).where('month', '=', monthStart).execute();
   const adjs = await tx.selectFrom('payroll_adjustments').selectAll().where('run_id', '=', run.id).execute();
+  const loanAdj = new Map((await tx.selectFrom('loan_installments as i').innerJoin('employee_loans as l', 'l.id', 'i.loan_id').select(['i.adjustment_id', 'l.number'])
+    .where('i.run_id', '=', run.id).where('i.adjustment_id', 'is not', null).execute()).map((x) => [x.adjustment_id!, x.number]));
   const ovs = await tx.selectFrom('payroll_overrides').selectAll().where('run_id', '=', run.id).execute();
   const skipped: { employeeId: string; name: string; reason: string }[] = [];
   let gross = 0, ded = 0, net = 0, cost = 0, count = 0;
@@ -114,14 +117,23 @@ export async function computeRun(tx: Tx, ctx: RequestContext, run: Run) {
       otPay = overtimePay({ wages: w.wages, divisorDays: (settings?.lop_divisor ?? 'calendar') === 'calendar' ? daysInMonth(monthStart) : Number(settings!.lop_divisor), hoursPerDay: stat.hoursPerDay, hours: otH, multiplier: stat.otMultiplier });
       if (otPay > 0) adjustments.push({ kind: 'earning', label: 'Overtime', amount: otPay, taxable: true, reason: `${otH} hours` });
     }
-    const r = computeLine({
+    const lineInput: LineInput = {
       monthStart, joining: e.joining_date, leaving: e.leaving_date, sex: e.sex, lopDays, divisor: (settings?.lop_divisor ?? 'calendar') as 'calendar' | '30' | '26',
       components: sal.lines.map((l) => ({ componentId: l.component_id, code: l.code, name: l.name, kind: l.kind as 'earning' | 'deduction', amount: l.amount, taxable: l.taxable, pfWage: l.pf_wage, esiWage: l.esi_wage, proRata: l.pro_rata })),
       adjustments, overrides,
       settings: { pfEnabled: settings?.pf_enabled ?? true, esiEnabled: settings?.esi_enabled ?? true, lwfEnabled: settings?.lwf_enabled ?? false, ptEnabled: settings?.pt_enabled ?? true, pfRate: settings?.pf_rate ?? 12 },
       employee: { pfApplicable: e.pf_applicable, pfHigherWage: e.pf_higher_wage, esiApplicable: e.esi_applicable, esiCoveredUntil: e.esi_covered_until, taxRegime: e.tax_regime as 'new' | 'old', previousIncome: e.previous_income, previousTds: e.previous_tds },
       ptStateCode: ptState, ytd, rates: ratesInForce(rateRows, monthStart, ptState), wageRule: rule,
-    });
+    };
+    let r = computeLine(lineInput);
+    // Loan recovery stops at net pay of zero; the rest stays due on the loan (migration 059).
+    if (r.net < 0 && loanAdj.size) {
+      const cap = capLoanDeductions(adjustments, new Set(loanAdj.keys()), r.net);
+      if (cap.cuts.length) {
+        r = computeLine({ ...lineInput, adjustments: cap.adjustments });
+        for (const c of cap.cuts) r.warnings.push(`Loan recovery limited by net pay: ${c.cut.toFixed(2)} of ${loanAdj.get(c.adjustmentId)} stays due.`);
+      }
+    }
     const lineRow = await tx.insertInto('payroll_lines').values({
       tenant_id: ctx.tenantId, run_id: run.id, company_id: ctx.companyId, employee_id: e.id, month: monthStart, working_days: r.workingDays,
       paid_days: r.paidDays, lop_days: r.lopDays, earnings: JSON.stringify(r.earnings), adjustments: JSON.stringify(r.adjustments),

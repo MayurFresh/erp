@@ -36,13 +36,17 @@ export async function sendSms(m: SmsMessage, cfg: Config, log?: { info: (msg: st
   if (cfg.SMS_DRIVER === 'msg91') {
     if (!cfg.SMS_AUTH_KEY) throw new Error('SMS_AUTH_KEY is not set');
     if (!m.dlt?.templateId) throw new Error('No DLT template id for this message');
-    // MSG91 flow API: the approved template is filled from var1, var2, ... of each recipient.
+    // MSG91 flow API (https://control.msg91.com/apidoc/textsms/send-sms-flow.php): the approved flow is filled from
+    // VAR1, VAR2, ... of each recipient; the names must match the variables of the flow. `template_id` is what
+    // MSG91's newer v5 requests use for the same id, so both keys carry it.
     const recipient: Record<string, string> = { mobiles: to };
-    (m.variables ?? [m.text]).forEach((v, i) => { recipient[`var${i + 1}`] = v; });
+    (m.variables ?? [m.text]).forEach((v, i) => { recipient[`VAR${i + 1}`] = v; });
     const res = await f('https://control.msg91.com/api/v5/flow/', {
       method: 'POST',
       headers: { authkey: cfg.SMS_AUTH_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ template_id: m.dlt.templateId, short_url: '0', recipients: [recipient] }),
+      body: JSON.stringify({
+        flow_id: m.dlt.templateId, template_id: m.dlt.templateId, ...(sender ? { sender } : {}), short_url: '0', recipients: [recipient],
+      }),
       signal: AbortSignal.timeout(15_000),
     });
     const json = await res.json().catch(() => ({})) as { type?: string; message?: string };

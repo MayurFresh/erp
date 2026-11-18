@@ -2,6 +2,7 @@
 /// receipts and payments, expenses).
 library;
 
+import '../../core/entered_unit.dart';
 import '../../core/json.dart';
 
 class UserRef {
@@ -132,6 +133,7 @@ class TaxLine {
     this.lineTotal = 0,
     this.returnedQty = 0,
     this.returnedTaxable = 0,
+    this.entered,
   });
 
   factory TaxLine.fromJson(Json json) => TaxLine(
@@ -152,6 +154,7 @@ class TaxLine {
     lineTotal: asDouble(json['lineTotal']),
     returnedQty: asDouble(json['returnedQty']),
     returnedTaxable: asDouble(json['returnedTaxable']),
+    entered: EnteredUnit.fromJson(json),
   );
 
   static List<TaxLine>? listOrNull(Object? value) =>
@@ -182,6 +185,9 @@ class TaxLine {
   /// Purchase bill detail only: taxable value already given back on debit notes.
   final double returnedTaxable;
 
+  /// Set when the line was entered in an alternate unit; [qty] and [rate] stay in the item's own unit.
+  final EnteredUnit? entered;
+
   double get taxTotal => cgst + sgst + igst;
 
   /// Quantity that can still be returned.
@@ -201,6 +207,7 @@ class DraftLine {
     this.discountPct,
     this.discountAmount,
     this.description,
+    this.unit,
   });
 
   final String itemId;
@@ -212,8 +219,12 @@ class DraftLine {
   final double? discountAmount;
   final String? description;
 
+  /// Alternate unit that [qty] and [rate] are in; null means the item's own unit.
+  final String? unit;
+
   Json toJson() => withoutNulls({
     'itemId': itemId,
+    'unit': unit,
     'qty': qty,
     'rate': rate,
     'discountPct': discountAmount == null ? discountPct : null,

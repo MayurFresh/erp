@@ -1,6 +1,6 @@
 # System architecture
 
-Progen ERP is a modular monolith: one Fastify API process, one PostgreSQL 16 database, one Flutter client (web, mobile, desktop). A job worker runs inside the API process.
+OneMatrix is a modular monolith: one Fastify API process, one PostgreSQL 16 database, one Flutter client (web, mobile, desktop). A job worker runs inside the API process.
 
 ## Diagram
 

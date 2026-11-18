@@ -1,5 +1,5 @@
 # Runs on every push and pull request: backend typecheck, migrations and tests against PostgreSQL 16,
-# a dependency audit, then Flutter analyze, tests and a web build. Live API tests are skipped (no PROGEN_API).
+# a dependency audit, then Flutter analyze, tests and a web build. Live API tests are skipped (no ONEMATRIX_API).
 name: CI
 
 on:
@@ -67,4 +67,4 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t progen-api backend
+      - run: docker build -t onematrix-api backend

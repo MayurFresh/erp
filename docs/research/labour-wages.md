@@ -321,9 +321,9 @@ Code on Wages (Central) Rules r.51–52, forms at https://egazette.gov.in/WriteR
 
 ---
 
-## 8. What Progen needs to build
+## 8. What OneMatrix needs to build
 
-Progen already has workers, attendance with OT, and wage sheets (OT = otHours × dailyRate ÷ 8 × 2, plus advance recovery). The gaps are below.
+OneMatrix already has workers, attendance with OT, and wage sheets (OT = otHours × dailyRate ÷ 8 × 2, plus advance recovery). The gaps are below.
 
 ### 1. Rate master by state, zone, skill and period
 - Store basic and VDA separately, with valid-from and valid-to dates. VDA changes every 1 Apr / 1 Oct in Gujarat and 1 Jan / 1 Jul in Maharashtra.

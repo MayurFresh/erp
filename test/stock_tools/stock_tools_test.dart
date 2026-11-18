@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:progen_erp/features/stock_tools/label_pdf.dart';
-import 'package:progen_erp/features/stock_tools/stock_tools_models.dart';
-import 'package:progen_erp/features/stock_tools/unit_picker.dart';
+import 'package:onematrix/features/stock_tools/label_pdf.dart';
+import 'package:onematrix/features/stock_tools/stock_tools_models.dart';
+import 'package:onematrix/features/stock_tools/unit_picker.dart';
 
 void main() {
   group('units', () {

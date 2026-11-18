@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/parties/party_model.dart';
-import 'package:progen_erp/features/parties/statement_pdf.dart';
-import 'package:progen_erp/features/receivables/receivables_models.dart';
-import 'package:progen_erp/features/receivables/receivables_routes.dart';
-import 'package:progen_erp/features/company/company_model.dart';
+import 'package:onematrix/features/parties/party_model.dart';
+import 'package:onematrix/features/parties/statement_pdf.dart';
+import 'package:onematrix/features/receivables/receivables_models.dart';
+import 'package:onematrix/features/receivables/receivables_routes.dart';
+import 'package:onematrix/features/company/company_model.dart';
 
 import 'receivables_harness.dart';
 

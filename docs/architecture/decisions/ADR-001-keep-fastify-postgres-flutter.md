@@ -3,7 +3,7 @@
 Status: Accepted (confirms plan section 1.2)
 
 ## Context
-The master plan suggests a platform with many services, queues and a web framework of its own choosing. Progen ERP already runs on Node 24 with TypeScript, Fastify 5, Kysely, PostgreSQL 16 and zod 4 on the server, and Flutter 3.44 with Riverpod 3 and go_router on the client. It has 14 migrations, about 62 route modules, 91 permissions and a test suite covering isolation, concurrency and idempotency. The next releases (channels, warehouse depth) need reliability more than a new stack.
+The master plan suggests a platform with many services, queues and a web framework of its own choosing. OneMatrix already runs on Node 24 with TypeScript, Fastify 5, Kysely, PostgreSQL 16 and zod 4 on the server, and Flutter 3.44 with Riverpod 3 and go_router on the client. It has 14 migrations, about 62 route modules, 91 permissions and a test suite covering isolation, concurrency and idempotency. The next releases (channels, warehouse depth) need reliability more than a new stack.
 
 ## Decision
 Keep the stack. Extend it. Do not rewrite the backend or client for v1.8 to v1.11.

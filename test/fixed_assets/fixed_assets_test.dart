@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/features/auth/session.dart';
-import 'package:progen_erp/features/compliance/compliance_repository.dart';
-import 'package:progen_erp/features/compliance/tax_perms.dart';
-import 'package:progen_erp/features/fixed_assets/fa_depreciation_tab.dart';
-import 'package:progen_erp/features/fixed_assets/fa_detail_screen.dart';
-import 'package:progen_erp/features/fixed_assets/fa_form_screen.dart';
-import 'package:progen_erp/features/fixed_assets/fa_models.dart';
-import 'package:progen_erp/features/fixed_assets/fa_register_screen.dart';
-import 'package:progen_erp/features/fixed_assets/fa_repository.dart';
-import 'package:progen_erp/features/locations/locations_repository.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/features/auth/session.dart';
+import 'package:onematrix/features/compliance/compliance_repository.dart';
+import 'package:onematrix/features/compliance/tax_perms.dart';
+import 'package:onematrix/features/fixed_assets/fa_depreciation_tab.dart';
+import 'package:onematrix/features/fixed_assets/fa_detail_screen.dart';
+import 'package:onematrix/features/fixed_assets/fa_form_screen.dart';
+import 'package:onematrix/features/fixed_assets/fa_models.dart';
+import 'package:onematrix/features/fixed_assets/fa_register_screen.dart';
+import 'package:onematrix/features/fixed_assets/fa_repository.dart';
+import 'package:onematrix/features/locations/locations_repository.dart';
 
 const assetJson = <String, dynamic>{
   'id': 'a1',

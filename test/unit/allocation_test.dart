@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/expenses/expense_model.dart';
-import 'package:progen_erp/features/payments/allocation.dart';
-import 'package:progen_erp/features/payments/payment_model.dart';
+import 'package:onematrix/features/expenses/expense_model.dart';
+import 'package:onematrix/features/payments/allocation.dart';
+import 'package:onematrix/features/payments/payment_model.dart';
 
 void main() {
   const docs = [

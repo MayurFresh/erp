@@ -6,10 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/core/token_store.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/core/token_store.dart';
 
 import '../support/fake_backend.dart';
 
@@ -78,7 +78,7 @@ Future<HdBackend> bootHd(
     routes: [
       ShellRoute(
         builder: (context, state, child) => Scaffold(
-          appBar: AppBar(title: const Text('Progen')),
+          appBar: AppBar(title: const Text('OneMatrix')),
           body: child,
         ),
         routes: [

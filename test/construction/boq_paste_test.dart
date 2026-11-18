@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/construction/models/boq_paste.dart';
-import 'package:progen_erp/features/construction/models/project_models.dart';
+import 'package:onematrix/features/construction/models/boq_paste.dart';
+import 'package:onematrix/features/construction/models/project_models.dart';
 
 void main() {
   group('BOQ paste', () {

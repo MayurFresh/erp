@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/pdf_kit.dart';
-import 'package:progen_erp/core/pdf_fonts.dart';
-import 'package:progen_erp/features/insights/analytics_models.dart';
-import 'package:progen_erp/features/insights/insights_rules.dart';
-import 'package:progen_erp/features/reports/client_report/client_report_model.dart';
-import 'package:progen_erp/features/reports/client_report/client_report_pdf.dart';
-import 'package:progen_erp/features/reports/report_models.dart';
+import 'package:onematrix/core/pdf_kit.dart';
+import 'package:onematrix/core/pdf_fonts.dart';
+import 'package:onematrix/features/insights/analytics_models.dart';
+import 'package:onematrix/features/insights/insights_rules.dart';
+import 'package:onematrix/features/reports/client_report/client_report_model.dart';
+import 'package:onematrix/features/reports/client_report/client_report_pdf.dart';
+import 'package:onematrix/features/reports/report_models.dart';
 
 import '../support/fake_backend.dart';
 

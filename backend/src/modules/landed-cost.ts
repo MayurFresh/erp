@@ -117,6 +117,9 @@ async function prepareCharges(tx: Tx, ctx: RequestContext, acc: Acc, charges: Bo
     let creditTo: PreparedCharge['creditTo'] | null = null;
     if (sourceType === 'expense' || sourceType === 'vendor_bill') {
       if (!c.sourceId) throw badRequest(`Charge ${i + 1}: choose the ${sourceType === 'expense' ? 'expense' : 'vendor bill'}.`, { [`charges.${i}.sourceId`]: 'Required' });
+      if (charges.findIndex((x) => x.sourceId === c.sourceId && (x.sourceType ?? 'direct') === sourceType) !== i) {
+        throw badRequest(`Charge ${i + 1}: that ${sourceType === 'expense' ? 'expense' : 'bill'} is already used on another charge.`, { [`charges.${i}.sourceId`]: 'Used twice' });
+      }
       const used = await tx.selectFrom('landed_cost_charges as c').innerJoin('landed_costs as h', 'h.id', 'c.landed_cost_id')
         .select('h.number').where('c.source_id', '=', c.sourceId).where('c.source_type', '=', sourceType).where('h.status', '=', 'posted')
         .executeTakeFirst();
@@ -129,9 +132,10 @@ async function prepareCharges(tx: Tx, ctx: RequestContext, acc: Acc, charges: Bo
         if (c.amount > e.amount + 0.001) throw badRequest(`Charge ${i + 1}: more than the expense of ${e.amount}.`, { [`charges.${i}.amount`]: 'Too high' });
         creditTo = { accountId: e.account_id };
       } else {
-        const p = await tx.selectFrom('purchases').select(['status']).where('id', '=', c.sourceId).where('company_id', '=', ctx.companyId).executeTakeFirst();
+        const p = await tx.selectFrom('purchases').select(['status', 'subtotal']).where('id', '=', c.sourceId).where('company_id', '=', ctx.companyId).executeTakeFirst();
         if (!p) throw notFound('Vendor bill');
         if (p.status !== 'posted') throw conflict('That bill is cancelled.', 'INVALID_STATE');
+        if (c.amount > p.subtotal + 0.001) throw badRequest(`Charge ${i + 1}: more than the bill of ${p.subtotal}.`, { [`charges.${i}.amount`]: 'Too high' });
         creditTo = { accountId: acc.purchases_nonstock };
       }
     } else if (c.creditAccountId) {
@@ -296,6 +300,32 @@ export async function createLandedCost(ctx: RequestContext, tx: Tx, b: Body) {
 }
 
 export async function landedCostRoutes(app: FastifyInstance) {
+  // Expenses or vendor bills not yet allocated to a posted landed cost, to pick as a charge source.
+  app.get('/landed-costs/sources', async (req) => {
+    const ctx = req.ctx;
+    ctx.require('purchases.create');
+    const q = parse(z.object({ type: z.enum(['expense', 'vendor_bill']), q: z.string().trim().max(60).optional(), limit: z.coerce.number().int().min(1).max(50).default(30) }), req.query);
+    return ctx.tx(async (tx) => {
+      const used = tx.selectFrom('landed_cost_charges as c').innerJoin('landed_costs as h', 'h.id', 'c.landed_cost_id')
+        .select('c.source_id').where('c.source_type', '=', q.type).where('h.status', '=', 'posted').where('c.source_id', 'is not', null);
+      const like = q.q ? `%${q.q.replace(/[%_\\]/g, '')}%` : null;
+      if (q.type === 'expense') {
+        let b = tx.selectFrom('expenses as e').innerJoin('accounts as a', 'a.id', 'e.account_id')
+          .select(['e.id', 'e.number', 'e.expense_date', 'e.description', 'e.amount', 'e.total', 'a.name as account'])
+          .where('e.company_id', '=', ctx.companyId).where('e.status', '=', 'posted').where('e.id', 'not in', used as never);
+        if (like) b = b.where((eb) => eb.or([eb('e.number', 'ilike', like), eb('e.description', 'ilike', like)]));
+        const rows = await b.orderBy('e.expense_date', 'desc').limit(q.limit).execute();
+        return { data: rows.map((r) => ({ id: r.id, number: r.number, date: String(r.expense_date).slice(0, 10), description: r.description, amount: Number(r.amount), total: Number(r.total), account: r.account })) };
+      }
+      let b = tx.selectFrom('purchases as p').innerJoin('parties as v', 'v.id', 'p.party_id')
+        .select(['p.id', 'p.number', 'p.bill_date', 'p.subtotal', 'p.total', 'v.name as vendor'])
+        .where('p.company_id', '=', ctx.companyId).where('p.status', '=', 'posted').where('p.id', 'not in', used as never);
+      if (like) b = b.where((eb) => eb.or([eb('p.number', 'ilike', like), eb('v.name', 'ilike', like)]));
+      const rows = await b.orderBy('p.bill_date', 'desc').limit(q.limit).execute();
+      return { data: rows.map((r) => ({ id: r.id, number: r.number, date: String(r.bill_date).slice(0, 10), description: r.vendor, amount: Number(r.subtotal), total: Number(r.total), vendor: r.vendor })) };
+    });
+  });
+
   app.post('/landed-costs/preview', async (req) => {
     const ctx = req.ctx;
     ctx.require('purchases.create');

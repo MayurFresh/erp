@@ -4,24 +4,24 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/api_exception.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/auth/auth_repository.dart';
-import 'package:progen_erp/features/filings/filings_repository.dart';
-import 'package:progen_erp/features/fixed_assets/fa_repository.dart';
-import 'package:progen_erp/features/gst_filing/gst_filing_repository.dart';
-import 'package:progen_erp/features/income_tax/it_repository.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/api_exception.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/auth/auth_repository.dart';
+import 'package:onematrix/features/filings/filings_repository.dart';
+import 'package:onematrix/features/fixed_assets/fa_repository.dart';
+import 'package:onematrix/features/gst_filing/gst_filing_repository.dart';
+import 'package:onematrix/features/income_tax/it_repository.dart';
 
 /// v1.6 client models against the real API and the seeded demo company. The models parse
 /// leniently, so these tests check seeded values, not just that nothing threw.
 void main() {
-  final baseUrl = Platform.environment['PROGEN_API'];
+  final baseUrl = Platform.environment['ONEMATRIX_API'];
 
   group(
     'live self-filing',
     skip: baseUrl == null || baseUrl.isEmpty
-        ? 'Set PROGEN_API (e.g. http://localhost:8080/api/v1) to run'
+        ? 'Set ONEMATRIX_API (e.g. http://localhost:8080/api/v1) to run'
         : false,
     () {
       late ApiClient api;

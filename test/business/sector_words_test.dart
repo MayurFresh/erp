@@ -1,8 +1,8 @@
 import 'dart:ui' show Size;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/business_profile.dart';
-import 'package:progen_erp/core/money.dart';
+import 'package:onematrix/core/business_profile.dart';
+import 'package:onematrix/core/money.dart';
 
 import '../support/app_harness.dart';
 import '../support/fake_backend.dart';

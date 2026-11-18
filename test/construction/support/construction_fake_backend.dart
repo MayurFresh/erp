@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:progen_erp/features/construction/common/c_perms.dart';
+import 'package:onematrix/features/construction/common/c_perms.dart';
 
 import '../../support/fake_backend.dart';
 

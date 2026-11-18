@@ -70,10 +70,10 @@ UNVERIFIED. No claim recorded.
 - Integration caps can force a plan upgrade.
 - Omni price is quote only.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Limits by orders per year and integrations is a simple model, but caps on channels would hurt a multichannel buyer.
-- Keep Progen channel count uncapped, or cap by order volume only.
+- Keep OneMatrix channel count uncapped, or cap by order volume only.
 
 ## Unknowns needing a demo
 

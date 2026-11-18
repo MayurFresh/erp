@@ -20,7 +20,7 @@ import '../../core/app_colors.dart';
 
 const tdsFileSteps = <String>[
   'Pay the challan.',
-  'Record it in Progen (TDS, Challans).',
+  'Record it in OneMatrix (TDS, Challans).',
   'Download the .txt file below.',
   'Run the FVU (Protean) with the challan CSI file.',
   'Upload the zip on incometax.gov.in.',

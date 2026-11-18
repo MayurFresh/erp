@@ -164,7 +164,7 @@ class AppShell extends ConsumerWidget {
       appBar: AppBar(
         leading: back,
         title: Text(
-          selected == null ? 'Progen' : entries[selected].label,
+          selected == null ? 'OneMatrix' : entries[selected].label,
           overflow: TextOverflow.ellipsis,
         ),
         actions: actions,

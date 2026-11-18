@@ -125,7 +125,7 @@ describe('sms', () => {
     const b = await biz();
     expect((await b.api('PATCH', '/sms/settings', { templates: { password_reset: { dltTemplateId: '1107123456789' } } })).status).toBe(400);
     const set = await b.api('PATCH', '/sms/settings', {
-      enabled: true, dltEntityId: '1101234567890', senderId: 'PROGEN',
+      enabled: true, dltEntityId: '1101234567890', senderId: 'ONEMTX',
       templates: { payment_link: { dltTemplateId: '1107123456789', text: 'Pay {#var#} for {#var#}: {#var#}' } },
     });
     expect(set.status, JSON.stringify(set.body)).toBe(200);
@@ -152,7 +152,7 @@ describe('sms', () => {
     setSmsFetch((async (url: string, init: any) => { calls.push({ url, body: JSON.parse(init.body), headers: init.headers }); return new Response('{"type":"success","message":"abc"}', { status: 200 }); }) as never);
     const cfg = loadConfig({ ...process.env, SMS_DRIVER: 'msg91', SMS_AUTH_KEY: 'k' });
     expect(await sendSms({ to: '9000000050', text: 't', dlt: { templateId: 'T1' }, variables: ['a', 'b'] }, cfg)).toBe('abc');
-    expect(calls[0]!.body).toEqual({ template_id: 'T1', short_url: '0', recipients: [{ mobiles: '919000000050', var1: 'a', var2: 'b' }] });
+    expect(calls[0]!.body).toEqual({ flow_id: 'T1', template_id: 'T1', short_url: '0', recipients: [{ mobiles: '919000000050', VAR1: 'a', VAR2: 'b' }] });
     expect(calls[0]!.headers.authkey).toBe('k');
     const cfg2 = loadConfig({ ...process.env, SMS_DRIVER: 'http', SMS_HTTP_URL: 'https://sms.test/send', SMS_HTTP_BODY: '{"to":"{to}","m":"{message}","t":"{templateId}"}' });
     await sendSms({ to: '9000000050', text: 'hi "x"', dlt: { templateId: 'T2' } }, cfg2);

@@ -4,13 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
 import 'router.dart';
 
-class ProgenApp extends ConsumerWidget {
-  const ProgenApp({super.key});
+class OneMatrixApp extends ConsumerWidget {
+  const OneMatrixApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: 'Progen ERP',
+      title: 'OneMatrix',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

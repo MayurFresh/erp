@@ -81,7 +81,7 @@ describe('two-factor sign-in', () => {
     const b = await signup();
     expect((await b.api('GET', '/me/security')).body).toMatchObject({ twoFactorEnabled: false, recoveryCodesLeft: 0 });
     const setup = (await b.api('POST', '/me/2fa/setup', {})).body;
-    expect(setup.otpauthUri).toContain('otpauth://totp/Progen:');
+    expect(setup.otpauthUri).toContain('otpauth://totp/OneMatrix:');
     const bad = await b.api('POST', '/me/2fa/enable', { code: '000000' });
     expect(bad.status).toBe(400);
     expect(bad.body.error.code).toBe('MFA_INVALID');
@@ -214,7 +214,7 @@ describe('single sign-on', () => {
   let idp: Server;
   let issuer: string;
   let kp: Awaited<ReturnType<typeof generateKeyPair>>;
-  const state = { nonce: '', email: '', emailVerified: true, clientId: 'progen-client' };
+  const state = { nonce: '', email: '', emailVerified: true, clientId: 'onematrix-client' };
 
   beforeAll(async () => {
     kp = await generateKeyPair('RS256');

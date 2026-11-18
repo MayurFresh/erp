@@ -26,7 +26,7 @@ import { getLocation } from './locations.ts';
 import { requireStock } from './stock.ts';
 import { withDatedRates } from '../lib/gst-compliance.ts';
 import { warehouseIssue, warehouseReverse, whLineFields } from './warehouse.ts';
-import { convertUnits, enteredJson, enteredOf, saveEntered } from '../lib/uom.ts';
+import { convertUnits, enteredJson, enteredOf, enteredPreview, saveEntered } from '../lib/uom.ts';
 import { extShape, loadExt, resolveExt, saveExt, tcsOn, tcsPayableAccount, toInrRate } from '../lib/export-currency.ts';
 
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
@@ -150,6 +150,7 @@ function preparedJson(ctx: RequestContext, p: Prepared) {
     lines: p.lines.map((l, i) => ({
       id: null, itemId: l.item.id, description: l.description, hsnCode: l.item.hsn_code, qty: l.qty, unit: l.item.unit,
       rate: l.rate, discountPct: l.discountPct, gstRate: l.item.gst_rate, ...p.gst.lines[i]!, returnedQty: 0,
+      ...enteredPreview(p.entered[i], l.qty, l.rate),
     })),
   };
 }

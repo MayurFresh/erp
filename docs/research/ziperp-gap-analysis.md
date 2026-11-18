@@ -2,11 +2,11 @@
 
 **Checked:** 3 Nov 2026, against 15 pages of https://www.ziperp.com/: home, ERP solutions, the accounting, sales, purchase, job work, inventory, production, quality control, CRM, HRMS and reports module pages, pricing, POS and the customer portal. The 8 industry pages were not read.
 
-These are ZipERP's marketing claims. They have not been checked in the product. The Progen side was checked against `backend/src/modules`, the migrations and `lib/features` on the same date.
+These are ZipERP's marketing claims. They have not been checked in the product. The OneMatrix side was checked against `backend/src/modules`, the migrations and `lib/features` on the same date.
 
-## Where Progen is already ahead
+## Where OneMatrix is already ahead
 
-ZipERP's site doesn't mention any of the following, all of which Progen has:
+ZipERP's site doesn't mention any of the following, all of which OneMatrix has:
 - **Construction:** BOQ, indents, issues, DPR, labour attendance and wages, subcontract work orders, RA bills, retention.
 - **Real estate:** units, bookings, construction-linked payment plans, demands, possession, the RERA 70% account.
 - **GST self-filing:** prefile checks, GSTR-1 JSON, the 3B worksheet, Rule 88A set-off, PMT-06, GSTR-2B reconciliation, ITC Rule 37, GSTR-9 pack, filing register and calendar.
@@ -18,9 +18,9 @@ ZipERP's site doesn't mention any of the following, all of which Progen has:
 
 ZipERP's site says only "advanced security protocols". It names no audit trail, SSO, 2FA or certification.
 
-## Gaps: ZipERP lists it, Progen lacks it
+## Gaps: ZipERP lists it, OneMatrix lacks it
 
-| Area | ZipERP feature | Progen today | Priority |
+| Area | ZipERP feature | OneMatrix today | Priority |
 | --- | --- | --- | --- |
 | Sales cycle | Quotation, sales order, proforma, delivery note, invoice against delivery, receipt against order, sales return | Direct invoice; credit notes | High |
 | Sales control | Price lists, credit control, sales targets, WhatsApp and email notifications | Item sale price only; WhatsApp share link | High |
@@ -37,7 +37,7 @@ ZipERP's site says only "advanced security protocols". It names no audit trail, 
 | Integrations | Live e-invoice and e-way bill, WhatsApp integration, biometric devices | E-invoice sandbox or manual IRN entry; no GSP chosen | High, but needs a GSP account |
 | Editions | Starter at ₹500 and Professional at ₹1,500 per user per month; Enterprise custom; 30-day trial | No plans or billing | Business decision |
 
-## Enterprise readiness: what Progen still needs
+## Enterprise readiness: what OneMatrix still needs
 
 Neither product shows these on its site. Enterprise buyers ask for them in security reviews and RFPs.
 
@@ -86,7 +86,7 @@ Neither product shows these on its site. Enterprise buyers ask for them in secur
 - An external VAPT or penetration test.
 - ISO 27001 or SOC 2 readiness: policies, access reviews, vendor list.
 
-## What Progen needs to build
+## What OneMatrix needs to build
 
 1. **Enterprise platform:**
    - 2FA, password reset, SSO

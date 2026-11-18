@@ -257,7 +257,11 @@ class LoanDetailScreen extends ConsumerWidget {
                     if (!context.mounted) return;
                     final id = await pickAccount(context, accounts);
                     if (id == null || !context.mounted) return;
-                    if (await guarded(context, () => repo.loanAction(l.id, 'foreclose', {'accountId': id}))) bump();
+                    final quote = await repo.foreclosureQuote(l.id);
+                    if (!context.mounted) return;
+                    if (!await confirmForeclosure(context, quote)) return;
+                    if (!context.mounted) return;
+                    if (await guarded(context, () => repo.loanAction(l.id, 'foreclose', {'accountId': id, 'payDate': quote['payDate']}))) bump();
                   },
                   child: const Text('Foreclose'),
                 ),
@@ -286,7 +290,10 @@ class LoanDetailScreen extends ConsumerWidget {
             ListTile(
               dense: true,
               title: Text('${r.seq}. ${r.dueMonth}'),
-              subtitle: Text('Principal ${formatMoney(r.principal)}, interest ${formatMoney(r.interest)}'),
+              subtitle: Text(
+                'Principal ${formatMoney(r.principal)}, interest ${formatMoney(r.interest)}'
+                '${r.paidAmount > 0 ? ', ${formatMoney(r.paidAmount)} already recovered' : ''}',
+              ),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -297,4 +304,43 @@ class LoanDetailScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Shows what closing the loan costs, split into principal and interest to the payment date. True when accepted.
+Future<bool> confirmForeclosure(BuildContext context, Map<String, Object?> q) async {
+  Widget row(String label, Object? v, {bool bold = false}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        Expanded(child: Text(label, style: TextStyle(fontWeight: bold ? FontWeight.w700 : null))),
+        MoneyText(asDouble(v)),
+      ],
+    ),
+  );
+  return await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text('Foreclose on ${formatDate(q['payDate'])}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              row('Principal', q['principal']),
+              row('Interest to date', q['interest']),
+              const Divider(),
+              row('To collect', q['total'], bold: true),
+              const SizedBox(height: Space.sm),
+              Text(
+                'Interest is worked out on the reducing balance up to this date. Later instalments are cancelled.',
+                style: Theme.of(c).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(c).pop(true), child: const Text('Foreclose')),
+          ],
+        ),
+      ) ??
+      false;
 }

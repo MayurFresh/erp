@@ -353,6 +353,8 @@ export async function quotationRoutes(app: FastifyInstance) {
       const locationId = body.locationId ?? q.location_id;
       let salesOrderId: string | null = null;
       let invoiceId: string | null = null;
+      // Quantity and rate stay in the base unit; the unit the customer was quoted in is copied across afterwards.
+      const entered = lines.map((l) => (l.entered_unit && Number(l.entered_qty) > 0 ? { unit: l.entered_unit, qty: Number(l.entered_qty) } : null));
       if (body.to === 'sales_order') {
         const services = lines.filter((l) => !l.track_stock);
         if (services.length) {
@@ -364,6 +366,7 @@ export async function quotationRoutes(app: FastifyInstance) {
           createdNote: `Created from quotation ${q.number}`,
           lines: lines.map((l) => ({ itemId: l.item_id, qty: l.qty, rate: l.rate, discountPct: l.discount_pct, description: l.description })),
         }, { creditCheck: { allowOver: body.allowOverLimit } });
+        await saveEntered(tx, 'sales_order_lines', 'order_id', salesOrderId, entered);
       } else {
         // Invoices always take the customer's state (else the location's) as place of supply, so a quotation made
         // for another place would change its tax on the way. Refuse instead of changing the figures silently.
@@ -384,6 +387,7 @@ export async function quotationRoutes(app: FastifyInstance) {
           })),
         } as Parameters<typeof createInvoice>[2], { creditCheck: { allowOver: body.allowOverLimit } });
         invoiceId = inv.id;
+        await saveEntered(tx, 'invoice_lines', 'invoice_id', inv.id, entered);
       }
       await tx.updateTable('quotations').set({
         status: 'converted', sales_order_id: salesOrderId, invoice_id: invoiceId, updated_at: new Date(),

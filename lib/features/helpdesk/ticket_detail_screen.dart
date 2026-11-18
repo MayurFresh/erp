@@ -284,6 +284,11 @@ class _Header extends StatelessWidget {
           const SizedBox(height: 8),
           sla('First response', t.response),
           sla('Resolution', t.resolution),
+          if (t.slaPaused)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 4),
+              child: Text('The SLA clock is paused while we wait on the customer.'),
+            ),
           if (t.serialNo != null) Text('Serial number ${t.serialNo}'),
           if (t.contractNumber != null)
             InkWell(

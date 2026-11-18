@@ -1,5 +1,5 @@
 # Construction and real estate workflows
-Checked 2026-11-03. Compares Progen's existing packs with global products. Real-estate sales rules: ../real-estate-sales.md. Contractor billing: ../contractor-billing.md. Labour: ../labour-wages.md.
+Checked 2026-11-03. Compares OneMatrix's existing packs with global products. Real-estate sales rules: ../real-estate-sales.md. Contractor billing: ../contractor-billing.md. Labour: ../labour-wages.md.
 ## Scope
 Builders and contractors: BOQ, indents, material, labour, subcontract, RA bills, DPR, sales bookings. Property management (lease and rent) is a later extension.
 ## End-to-end workflow
@@ -15,12 +15,12 @@ RERA 70 percent account, GST on works contract and on under-construction units, 
 | CMiC | ERP-first construction | An Indian blog calls it an ERP-first Procore alternative; India sales UNVERIFIED | Financials plus project management | n | constructionestimatorindia.com |
 | Yardi Voyager | Property and construction management | India customer in 2016 (Karle Infra, Bengaluru, commercial property) | Construction management module | n | yardi.com news |
 ## Table stakes vs differentiators
-Progen has in code: indents, work orders, GRN, labour, labour advances, subcontracts, RA bills, DPRs, projects, bookings. Gaps against the products above: drawings and RFIs, safety and quality checklists, equipment, lease and rent, BOQ estimating (UNVERIFIED whether present in Progen). Differentiators: RA bill to GST invoice to ledger in one system, labour wages and subcontract TDS, RERA-aware receipts.
+OneMatrix has in code: indents, work orders, GRN, labour, labour advances, subcontracts, RA bills, DPRs, projects, bookings. Gaps against the products above: drawings and RFIs, safety and quality checklists, equipment, lease and rent, BOQ estimating (UNVERIFIED whether present in OneMatrix). Differentiators: RA bill to GST invoice to ledger in one system, labour wages and subcontract TDS, RERA-aware receipts.
 ## Edge cases to test
 RA bill with retention and advance recovery; GST rate change mid-project; unit cancellation after receipts; labour paid by two contractors; material transfer between sites.
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 Everything above is already built in the construction pack and core ledger.
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 Already shipped. Next: BOQ, equipment log and lease or rent for property management.
 ## Rough effort and priority
 Gap closure: M. Priority: high, since it extends a pack that exists.

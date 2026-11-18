@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/core/providers.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/auth/session.dart';
-import 'package:progen_erp/core/api_client.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/core/providers.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/auth/session.dart';
+import 'package:onematrix/core/api_client.dart';
 
-import 'package:progen_erp/features/controls/controls_perms.dart';
+import 'package:onematrix/features/controls/controls_perms.dart';
 import '../controls/controls_harness.dart';
 
 export '../controls/controls_harness.dart'

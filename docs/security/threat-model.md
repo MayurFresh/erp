@@ -1,6 +1,6 @@
 # Threat model
 
-Scope: the Progen API (`backend/`), its PostgreSQL database, the job worker and the Flutter client, as of v1.8 (2026-11-03). Written from code, not from a test of a running deployment. Method: STRIDE per trust boundary.
+Scope: the OneMatrix API (`backend/`), its PostgreSQL database, the job worker and the Flutter client, as of v1.8 (2026-11-03). Written from code, not from a test of a running deployment. Method: STRIDE per trust boundary.
 
 ## Assets
 

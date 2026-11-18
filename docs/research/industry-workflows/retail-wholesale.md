@@ -71,11 +71,11 @@ B2B and distributor:
 - Back-dated invoice after a period lock.
 - Offline bills with duplicate numbers on sync.
 
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 - Invoices, credit notes, e-invoice, items, units, locations, stock, transfers, reorder, GRN, purchase orders, parties, approvals, sales orders, shipments, fulfilment (all present in backend/src/modules).
 - Series numbering per outlet (backend/src/lib/series.ts).
 
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 - Counter billing screen: scan, tender, GST bill, held bills, return with credit note, shift close posting to the ledger. Use existing invoice and stock engines.
 - Price lists and credit limit on parties for B2B.
 - Defer the salesman app, schemes and DMS claims.

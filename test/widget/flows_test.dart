@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/money.dart';
+import 'package:onematrix/core/money.dart';
 
 import '../support/app_harness.dart';
 import '../support/fake_backend.dart';

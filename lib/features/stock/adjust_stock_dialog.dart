@@ -137,7 +137,7 @@ class _AdjustStockDialogState extends ConsumerState<AdjustStockDialog>
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Opening stock'),
                 subtitle: const Text(
-                  'Stock you had before using Progen; booked to opening '
+                  'Stock you had before using OneMatrix; booked to opening '
                   'balances instead of other income',
                 ),
                 value: _opening,

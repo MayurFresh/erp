@@ -1,7 +1,7 @@
-# Progen API. Node runs the TypeScript sources directly, so there is no build step.
-# Build: docker build -t progen-api backend
-# Run:   docker run --env-file backend/.env -p 8080:8080 -v progen-uploads:/data/uploads progen-api
-# Migrate first with the same image: docker run --env-file backend/.env progen-api node src/db/migrate.ts
+# OneMatrix API. Node runs the TypeScript sources directly, so there is no build step.
+# Build: docker build -t onematrix-api backend
+# Run:   docker run --env-file backend/.env -p 8080:8080 -v onematrix-uploads:/data/uploads onematrix-api
+# Migrate first with the same image: docker run --env-file backend/.env onematrix-api node src/db/migrate.ts
 FROM node:24-slim
 
 ENV NODE_ENV=production \

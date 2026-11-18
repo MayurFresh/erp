@@ -71,7 +71,7 @@ Note: per [Taxscan](https://www.taxscan.in/gst/gst-portal-enables-gstr-99c-annua
 | ITC-04 | Offline utility and JSON (background, **unverified**) | Yes | Yes |
 | LUT, DRC-03 | No | none | Yes, online forms |
 
-Design rule: **use the official offline utility or the portal's own preview as the final validator.** Progen exports are "portal-ready" only if they pass the portal's JSON upload validation, which we cannot test without a taxpayer login. Ship a "Validate on portal" checklist step.
+Design rule: **use the official offline utility or the portal's own preview as the final validator.** OneMatrix exports are "portal-ready" only if they pass the portal's JSON upload validation, which we cannot test without a taxpayer login. Ship a "Validate on portal" checklist step.
 
 ### 2.2 Signing, verification and OTP
 
@@ -85,20 +85,20 @@ Design rule: **use the official offline utility or the portal's own preview as t
 Common start: log in at gst.gov.in > Services > Returns > Returns Dashboard > choose financial year and period > open the tile.
 
 **GSTR-1 (monthly or quarterly)**
-1. In Progen: Reports > GSTR-1 for the period; fix every warning; export `gstr1_YYYYMM.json`.
+1. In OneMatrix: Reports > GSTR-1 for the period; fix every warning; export `gstr1_YYYYMM.json`.
 2. Portal: GSTR-1 tile > Prepare Offline > Upload > Choose file. Wait for "Processed" (refresh the page).
-3. Open each table; check counts and values against the Progen summary.
+3. Open each table; check counts and values against the OneMatrix summary.
 4. Generate summary > Submit (freezes data) > File with EVC or DSC > enter OTP. Quarterly filers: also upload B2B to IFF in months 1 and 2 if buyers need credit earlier.
-5. Download the filed PDF into Progen's document store for the audit trail.
+5. Download the filed PDF into OneMatrix's document store for the audit trail.
 
 **GSTR-3B (monthly or quarterly)**
-1. Wait for 2B (about the 14th). Fetch from the portal: Returns > Auto-drafted ITC Statement (2B) > Download JSON; import into Progen (`POST /gst/2b-imports`). Act on IMS first (see 7).
-2. Open the 3B tile. Tables 3.1/3.2 and 4 appear pre-filled. Compare with Progen's 3B workings (table map below). Edit only editable cells (3.1(d) RCM, 4B reversals, 4D, 5, 5.1) and anything not locked.
+1. Wait for 2B (about the 14th). Fetch from the portal: Returns > Auto-drafted ITC Statement (2B) > Download JSON; import into OneMatrix (`POST /gst/2b-imports`). Act on IMS first (see 7).
+2. Open the 3B tile. Tables 3.1/3.2 and 4 appear pre-filled. Compare with OneMatrix's 3B workings (table map below). Edit only editable cells (3.1(d) RCM, 4B reversals, 4D, 5, 5.1) and anything not locked.
 3. Table 6.1: shows tax payable. If cash is short, use "Create Challan" (PMT-06) inside the return, pay, wait for the cash-ledger credit, then click "Set off liability".
 4. Preview > Submit > Make payment > File with EVC or DSC. **A filed 3B cannot be revised.**
 
 **PMT-06 (QRMP, months 1 and 2)**
-1. Services > Payments > Create Challan. For QRMP the 35% option shows after the previous quarterly 3B: the challan pre-fills with 35% of last quarter's cash tax if the last return was quarterly, or 100% if it was monthly ([Studycafe](https://studycafe.in/gst-pmt-06-35-option-challan-enabled-on-gst-portal-94346.html)). Or use the self-assessment method with Progen's computed liability.
+1. Services > Payments > Create Challan. For QRMP the 35% option shows after the previous quarterly 3B: the challan pre-fills with 35% of last quarter's cash tax if the last return was quarterly, or 100% if it was monthly ([Studycafe](https://studycafe.in/gst-pmt-06-35-option-challan-enabled-on-gst-portal-94346.html)). Or use the self-assessment method with OneMatrix's computed liability.
 2. Pay by net banking, card, UPI (**unverified**), NEFT/RTGS (generate challan, pay at bank) or over the counter. Challan valid 15 days. Details: [Zoho](https://www.zoho.com/in/books/gst/pmt-06-payment-challan.html), [ClearTax](https://cleartax.in/s/gst-payment).
 3. CPIN is created at challan generation; the bank returns a CIN on payment. Cash-ledger credit is usually the same day for online modes (**unverified**).
 
@@ -112,13 +112,13 @@ Common start: log in at gst.gov.in > Services > Returns > Returns Dashboard > ch
 
 **DRC-03**: portal path **unverified** (Services > Payments area). Choose the Act and the cause (for example "ITC mismatch GSTR-2B to 3B", "Others" for voluntary), amounts per head, pay from the cash ledger; file on or after the notice date if answering a notice ([TaxGuru](https://taxguru.in/goods-and-service-tax/respond-drc-01c-notice-itc-mismatch-gstr-2b-vs-gstr-3b.html)).
 
-**ITC-04**: Progen would need a job-work challan register (items sent, received back, scrapped, balance). Does not exist yet; low priority.
+**ITC-04**: OneMatrix would need a job-work challan register (items sent, received back, scrapped, balance). Does not exist yet; low priority.
 
-### 2.4 Which Progen number goes into which GSTR-3B table
+### 2.4 Which OneMatrix number goes into which GSTR-3B table
 
 Existing `GET /gst/gstr3b` fields on the left. "Gap" means the report needs extending.
 
-| Portal table | Content | Progen source | Status |
+| Portal table | Content | OneMatrix source | Status |
 | --- | --- | --- | --- |
 | 3.1(a) | Outward taxable (not zero-rated) | `outward` | present; will be overwritten by the locked auto-population |
 | 3.1(b) | Outward zero-rated (exports, SEZ), taxable value and IGST if paid | none | **gap**, needs export/SEZ invoice flag |
@@ -139,7 +139,7 @@ Existing `GET /gst/gstr3b` fields on the left. "Gap" means the report needs exte
 
 ### 2.5 CMP-08 and GSTR-4 number map
 
-| Portal field | Progen source |
+| Portal field | OneMatrix source |
 | --- | --- |
 | CMP-08 outward supplies (excluding inward RCM), by rate class | Bill-of-supply total for the quarter by category, net of credit notes |
 | CMP-08 inward supplies attracting RCM, tax | RCM report (composition taxpayers still pay RCM; **unverified**) |
@@ -155,18 +155,18 @@ Existing `GET /gst/gstr3b` fields on the left. "Gap" means the report needs exte
 ### 3.1 Who can call GSTN APIs
 
 - GSTN gives direct API access only to **GSTN-approved GST Suvidha Providers (GSPs)**. Eligibility is a company registered in India or a PSU with infrastructure to handle at least 1 lakh GST transactions a month ([Medianama, 2016](https://www.medianama.com/2016/10/223-gst-network-apis-eligibility-criteria/)). The 2016 criteria may have changed.
-- An **Application Service Provider (ASP)** is a software vendor (Progen) that uses a GSP's API. No GSTN approval is needed for an ASP; the ASP contracts with a GSP and gets credentials from it. Sources: [Tally ASP vs GSP](https://tallysolutions.com/gst/asp-vs-gsp-in-gst-what-is-the-difference-and-how-do-they-work-together/), [Deskera](https://www.deskera.com/blog/why-has-the-goods-and-services-tax-gst-network-created-apis/). The GSTN API developer portal `developer.gst.gov.in/apiportal` lists Taxpayer API groups (Returns and Ledger, Authentication, Registration, Payment, E-Invoice) but **no detail is public to non-GSPs** (page fetched, nav only).
-- Onboarding steps with a GSP (typical; **unverified**, vendor-specific): sign API agreement; get sandbox keys; build against sandbox with test GSTINs; UAT sign-off; production keys. The GSP lists Progen as an ASP with a name that the taxpayer later selects on the portal.
+- An **Application Service Provider (ASP)** is a software vendor (OneMatrix) that uses a GSP's API. No GSTN approval is needed for an ASP; the ASP contracts with a GSP and gets credentials from it. Sources: [Tally ASP vs GSP](https://tallysolutions.com/gst/asp-vs-gsp-in-gst-what-is-the-difference-and-how-do-they-work-together/), [Deskera](https://www.deskera.com/blog/why-has-the-goods-and-services-tax-gst-network-created-apis/). The GSTN API developer portal `developer.gst.gov.in/apiportal` lists Taxpayer API groups (Returns and Ledger, Authentication, Registration, Payment, E-Invoice) but **no detail is public to non-GSPs** (page fetched, nav only).
+- Onboarding steps with a GSP (typical; **unverified**, vendor-specific): sign API agreement; get sandbox keys; build against sandbox with test GSTINs; UAT sign-off; production keys. The GSP lists OneMatrix as an ASP with a name that the taxpayer later selects on the portal.
 - Cost: no public rate card. One GSP (SahiGST) estimated about Rs 125 a month per GSTIN (up to 2,000 B2B documents) plus about Rs 10 per eSign ([SahiGST](https://sahigst.freshdesk.com/support/solutions/articles/31000131736-understanding-gsp-charges)); this is an older estimate. SaaS tools charge about Rs 149 to 199 per GSTIN per month, which bounds what end users accept. Ask each GSP for a quote. **Treat cost as unknown.**
 
 ### 3.2 Taxpayer consent flow
 
 Per [Quicko](https://learn.quicko.com/gst-portal-manage-api-access), [Tally](https://tallysolutions.com/gst/gst-asp-consent-what-is-it-and-how-will-it-work-for-taxpayers/), [IRIS](https://irisgst.com/?p=36420):
 1. Taxpayer logs in at gst.gov.in > My Profile > **Manage API Access** > Enable API Request = Yes.
-2. Selects the **GSP and ASP pair** (Progen under its GSP) and a duration (minimum 6 hours, up to 30 days). Repeat per GSTIN.
+2. Selects the **GSP and ASP pair** (OneMatrix under its GSP) and a duration (minimum 6 hours, up to 30 days). Repeat per GSTIN.
 3. Software calls Generate OTP; GSTN sends an OTP to the taxpayer's registered mobile; software calls Verify OTP and receives an auth token and session key.
 4. Token life: 6 hours by default; the IRIS page says it can be extended without a new OTP within 24 hours, and a new OTP is needed after the chosen window (single source, **unverified**). The taxpayer can see 30 days of token logs and revoke a token at any time ([Tally](https://tallysolutions.com/gst/gst-portal-to-notify-taxpayers-about-asp-access-what-changes-for-businesses/)).
-5. UX consequence: the owner must re-enter an OTP at least once per session window. Progen must keep a "session expires in X" banner and fall back to the file-pack route.
+5. UX consequence: the owner must re-enter an OTP at least once per session window. OneMatrix must keep a "session expires in X" banner and fall back to the file-pack route.
 
 ### 3.3 APIs that exist (via GSPs)
 
@@ -252,11 +252,11 @@ Notes for the implementer:
 - The case of choice: when IGST credit exceeds IGST liability and both CGST and SGST are due, the owner may choose the split. Default CGST first is a heuristic. Optimise instead to **leave the larger carry-forward in the head that is more likely to be needed**, and show both options. The portal 3B screen takes the owner's chosen split.
 - v1.4 `payable` currently floors per head with no cross-utilisation. This algorithm replaces it. Keep the old figure as `payableNoCross` for diff.
 - Test cases: IGST credit 100, IGST due 40, CGST due 50, SGST due 30 gives IGST 40, then CGST 50 pays from the remaining 60 IGST credit, SGST 10 from the rest, SGST due remaining 20 from SGST credit or cash.
-- The portal screen allows the user to edit the split in Table 6.1. Progen's set-off page should show the **suggested split** the owner types in, plus the numbers that must match.
+- The portal screen allows the user to edit the split in Table 6.1. OneMatrix's set-off page should show the **suggested split** the owner types in, plus the numbers that must match.
 
 ### 4.3 PMT-06 helper data
 
-Challan needs: GSTIN, period or free text, amounts per head split by tax, interest, penalty, fee, other; payment mode. A pre-filled helper in Progen should compute the **cash shortfall per head** from section 4.2 and show "Pay this much on PMT-06 under these heads". Add a reminder that net-banking credit may take hours and challans lapse after 15 days.
+Challan needs: GSTIN, period or free text, amounts per head split by tax, interest, penalty, fee, other; payment mode. A pre-filled helper in OneMatrix should compute the **cash shortfall per head** from section 4.2 and show "Pay this much on PMT-06 under these heads". Add a reminder that net-banking credit may take hours and challans lapse after 15 days.
 
 ---
 
@@ -264,9 +264,9 @@ Challan needs: GSTIN, period or free text, amounts per head split by tax, intere
 
 Table numbers are the standard GSTR-9 layout (background); **check against the FY 2025-26 offline utility**, which GSTN changes yearly (see [Taxscan FY24-25 changes](https://www.taxscan.in/top-stories/key-changes-in-gstr-9-and-gstr-9c-for-fy-2024-25-everything-you-should-know-1437208)).
 
-| GSTR-9 table | Content | Progen source | Gap |
+| GSTR-9 table | Content | OneMatrix source | Gap |
 | --- | --- | --- | --- |
-| 4 | Outward taxable supplies, by B2C, B2B, exports, SEZ, deemed, advances, inward RCM, amendments | GSTR-1 totals for the FY plus amendments | auto-populated from GSTR-1; Progen needs FY roll-up and post-FY amendment tracker |
+| 4 | Outward taxable supplies, by B2C, B2B, exports, SEZ, deemed, advances, inward RCM, amendments | GSTR-1 totals for the FY plus amendments | auto-populated from GSTR-1; OneMatrix needs FY roll-up and post-FY amendment tracker |
 | 5 | Non-taxable outward (zero-rated, exempt, nil, non-GST) | nil/exempt/export flags | export flag gap |
 | 6 | ITC availed (inputs, capital goods, services, imports, RCM) | purchases, expenses, ITC by type | **capital goods flag gap**, import flag gap |
 | 7 | ITC reversed (Rules 37, 39, 42, 43, s.17(5)) | reversal entries | gap (4B not built) |
@@ -279,14 +279,14 @@ Table numbers are the standard GSTR-9 layout (background); **check against the F
 | 17, 18 | HSN summary of outward and inward (Table 17/18 optional up to Rs 5 crore per one source, **unverified**) | HSN data exists for outward in GSTR-1; **inward HSN gap** | inward HSN gap |
 | 19 | Late fee on 9 | none | computed |
 
-**Turnover reconciliation**: Annual-return turnover must reconcile to books. Progen can show: (a) revenue per ledger, (b) invoices in GSTR-1, (c) differences with reason codes (unbilled revenue, advances, credit notes after year end, exempt, other). This feeds GSTR-9C Table 5.
+**Turnover reconciliation**: Annual-return turnover must reconcile to books. OneMatrix can show: (a) revenue per ledger, (b) invoices in GSTR-1, (c) differences with reason codes (unbilled revenue, advances, credit notes after year end, exempt, other). This feeds GSTR-9C Table 5.
 
 **GSTR-9C (above Rs 5 crore, self-certified)** needs (background, **unverified table numbers**):
 - Part A: reconcile turnover per audited financial statements to GSTR-9 (Tables 5 to 8), taxable turnover reconciliation (Table 7), tax paid reconciliation (Table 9 to 10), ITC reconciliation (Tables 11 to 12: expenses vs ITC, with reasons), and additional liability (Table 14).
 - Part B: the taxpayer's own certification (replaced the CA's) of the reconciliation, signed by DSC or EVC.
-- Needs **audited financial statements** (P&L, balance sheet for the FY); Progen can supply ledger-based unaudited versions and variance lists, but the owner must have the audited figures.
+- Needs **audited financial statements** (P&L, balance sheet for the FY); OneMatrix can supply ledger-based unaudited versions and variance lists, but the owner must have the audited figures.
 
-Time: GSTR-9 is a significant yearly job. A Progen "annual pack" would be an XLSX with the table map above and every difference listed, which the owner then keys into the offline utility.
+Time: GSTR-9 is a significant yearly job. A OneMatrix "annual pack" would be an XLSX with the table map above and every difference listed, which the owner then keys into the offline utility.
 
 ---
 
@@ -303,7 +303,7 @@ Time: GSTR-9 is a significant yearly job. A Progen "annual pack" would be an XLS
 - Tax is **not collected from the customer**: bill of supply only (see statutory-core 5.5).
 - **GSTR-4**: annual; reconciles to CMP-08 (Table 5, auto-populated); confirm inward supplies split and outward by rate class; interest and late fee fields for late CMP-08.
 - Cannot do inter-state outward goods (statutory-core 5.5).
-- Progen status: nothing exists for composition returns. Needs a company-level `registrationType: 'composition'` flag (see contractor-billing.md section 5), category rate, bill-of-supply numbering, and a quarterly CMP-08 report.
+- OneMatrix status: nothing exists for composition returns. Needs a company-level `registrationType: 'composition'` flag (see contractor-billing.md section 5), category rate, bill-of-supply numbering, and a quarterly CMP-08 report.
 
 ---
 
@@ -317,9 +317,9 @@ Time: GSTR-9 is a significant yearly job. A Progen "annual pack" would be an XLS
 | DRC-01C (Rule 88D, Notification 38/2023-CT, 4 Aug 2023) | ITC in 3B exceeds ITC in 2B beyond a threshold (about Rs 25,000 and 20%, background, **unverified**) | GSTR-1/IFF blocked if no Part B reply in 7 days (Rule 59(6)) | Reverse via DRC-03 (cause: ITC mismatch) with interest, or reconcile invoice-wise and reply in Part B. GSTR-1 unblocks on filing the reply | [TaxGuru Rule 88D](https://taxguru.in/goods-and-service-tax/rule-88d-form-drc-01c-itc-differences-gstr-2b-vs-gstr-3b.html), [ClearTax Rule 88D](https://cleartax.in/s/rule-88d-cgst-itc-mismatch-gstr-2b-vs-gstr-3b) |
 | ASMT-10 | Officer's scrutiny of a return: difference between returns and 2B/e-invoice/e-way bill data, or other discrepancies (s.61) | Reply in ASMT-11 within 30 days (background, **unverified**); failure leads to adjudication (s.73/74/74A) | Explain or pay | background, no source |
 
-### 7.2 Pre-filing checks Progen should run
+### 7.2 Pre-filing checks OneMatrix should run
 
-Check list (each is a pure query on Progen data):
+Check list (each is a pure query on OneMatrix data):
 
 1. **GSTR-1 vs 3B liability**: after GSTR-1 export, compare 1 totals (tax) with the ledger and the 3B tax payable; flag any difference above Rs 1 (DRC-01B guard). Already partially covered by `variance` in `Gstr1`.
 2. **ITC vs 2B**: 3B `itc.others` must not exceed 2B accepted ITC for the period (DRC-01C guard). Show "excess ITC" before filing; show the DRC-01C threshold (once confirmed).
@@ -337,7 +337,7 @@ Check list (each is a pure query on Progen data):
 
 ---
 
-## Build recommendation for Progen
+## Build recommendation for OneMatrix
 
 Priority order. Assumes the file-pack route is the default and direct filing is an upgrade.
 
@@ -351,7 +351,7 @@ Priority order. Assumes the file-pack route is the default and direct filing is 
 7. Store every filed ARN and PDF, plus the SHA-256 of every export (as statutory-core 2.5 says).
 
 **(b) Set-off calculator and challan helper**
-- Implement section 4.2 as `POST /gst/setoff-preview?period=` returning the matrix, carry-forward credit and cash shortfall by head. Add cash and credit ledger **opening balance entry** (manual entry from the portal ledger, with a "last synced" date) because Progen has no ledger feed without the API.
+- Implement section 4.2 as `POST /gst/setoff-preview?period=` returning the matrix, carry-forward credit and cash shortfall by head. Add cash and credit ledger **opening balance entry** (manual entry from the portal ledger, with a "last synced" date) because OneMatrix has no ledger feed without the API.
 - PMT-06 helper: amounts per head and a step list for QRMP (35% or self-assessed). Journal for challan payment: Dr GST cash ledger (new asset account), Cr bank; on set-off, move between GST liability, ITC and cash accounts.
 - Interest and late-fee estimator (section 1.2).
 

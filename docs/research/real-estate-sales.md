@@ -118,7 +118,7 @@ Status: research for the real-estate sales pack, as of 28 Oct 2026. Facts marked
 
 **Current rate.**
 - SBI MCLR "With Effect From 15th October 2026": Overnight 7.85, 1M 7.85, 3M 8.40, 6M 8.75, 1Y 8.85, 2Y 8.90, **3Y 8.95** (highest tenor). "Last Updated On : Thursday, 15-10-2026". Re-checked 28 Oct 2026. Source: SBI MCLR.
-- So the Maharashtra rule-18 rate is **10.95% p.a.** from 15 Oct 2026. Progen must store this as a dated rate table, not a constant.
+- So the Maharashtra rule-18 rate is **10.95% p.a.** from 15 Oct 2026. OneMatrix must store this as a dated rate table, not a constant.
 
 **Gujarat, rule 16 of the Gujarat RERA (General) Rules 2017.** **UNVERIFIED.** The official text could not be opened (gujrera.gujarat.gov.in/Acts returned 404). Secondary sources say rule 16 sets a contractual rate "as may be mutually agreed" between promoter and allottee, defaulting to SBI MCLR + 2%. Its wording differs from Maharashtra's "highest MCLR". Confirm the exact text before coding the Gujarat rate.
 
@@ -137,7 +137,7 @@ Status: research for the real-estate sales pack, as of 28 Oct 2026. Facts marked
 - This applies "at the time of every withdrawal ... till occupancy certificate". After the completion certificate, "the entire balance amount lying in the separate account can be withdrawn".
 - Source: MH Rules 2017.
 
-**Withdrawal formula Progen should implement:**
+**Withdrawal formula OneMatrix should implement:**
 - max cumulative withdrawal = total estimated project cost × (land cost + construction cost incurred, per CA) ÷ (total estimated cost)
 - available now = max cumulative withdrawal − amounts already withdrawn
 
@@ -209,7 +209,7 @@ Current circular list: https://www.maharera.maharashtra.gov.in/circular
 
 **No GST after the completion certificate.** Items (i), (ia) and (ib) apply to apartments "intended for sale to a buyer, wholly or partly, except where the entire consideration has been received after issuance of completion certificate, where required, by the competent authority or after its first occupation, whichever is earlier". Source: GST N.11/2017.
 - The underlying law is CGST Act Schedule II para 5(b) and Schedule III para 5 ("sale of building", subject to Schedule II para 5(b), is neither a supply of goods nor of services). **UNVERIFIED** in this pass; the Act text was not opened.
-- Progen rule: if any instalment was received before the CC or first occupation, GST applies to the instalments. If the entire consideration is received after the CC, no GST.
+- OneMatrix rule: if any instalment was received before the CC or first occupation, GST applies to the instalments. If the entire consideration is received after the CC, no GST.
 
 **GST 2.0 (rate rationalisation w.e.f. 22 Sep 2025, Notification 15/2025-CT(Rate) dated 17 Sep 2025).** **UNVERIFIED.** Secondary sources say the residential 1%/5% no-ITC entries were not changed. The official CBIC text (https://taxinformation.cbic.gov.in/view-pdf/1010453/ENG/Notifications) loads through JavaScript and could not be read.
 
@@ -272,7 +272,7 @@ All from the RERA Act.
 
 ---
 
-## What Progen needs to build
+## What OneMatrix needs to build
 
 **Inventory and booking**
 - [ ] Unit master with carpet area (s.2(k)) and separate fields for exclusive balcony, verandah and open terrace. Keep RERA carpet area apart from any marketing "super built-up" figure.

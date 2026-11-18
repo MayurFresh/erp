@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/validators.dart';
+import 'package:onematrix/core/validators.dart';
 
 TextEditingValue _type(TextInputFormatter f, String from, String to) =>
     f.formatEditUpdate(

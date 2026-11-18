@@ -42,7 +42,7 @@ const schema = z.object({
   DATA_KEY: z.string().optional(),
   EMAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
   SMTP_URL: z.string().optional(),
-  EMAIL_FROM: z.string().default('Progen <no-reply@localhost>'),
+  EMAIL_FROM: z.string().default('OneMatrix <no-reply@localhost>'),
   WHATSAPP_DRIVER: z.enum(['log', 'cloud_api']).default('log'),
   WHATSAPP_TOKEN: z.string().optional(),
   WHATSAPP_PHONE_ID: z.string().optional(),

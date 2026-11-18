@@ -47,13 +47,19 @@ export function enteredOf(lines: object[]): (Entered | null)[] {
 }
 
 /** Stores the entered unit on the saved lines (line_no is the 1-based position). */
-export async function saveEntered(tx: Tx, table: 'invoice_lines' | 'purchase_lines' | 'sales_order_lines' | 'quotation_lines',
-  key: 'invoice_id' | 'purchase_id' | 'order_id' | 'quotation_id', docId: string, entered: (Entered | null)[]): Promise<void> {
+export async function saveEntered(tx: Tx, table: 'invoice_lines' | 'purchase_lines' | 'sales_order_lines' | 'quotation_lines' | 'purchase_order_lines',
+  key: 'invoice_id' | 'purchase_id' | 'order_id' | 'quotation_id' | 'purchase_order_id', docId: string, entered: (Entered | null)[]): Promise<void> {
   for (let i = 0; i < entered.length; i++) {
     const e = entered[i];
     if (!e) continue;
     await sql`update ${sql.table(table)} set entered_unit = ${e.unit}, entered_qty = ${e.qty} where ${sql.ref(key)} = ${docId} and line_no = ${i + 1}`.execute(tx);
   }
+}
+
+/** The same JSON fields for a line that is not saved yet (previews). */
+export function enteredPreview(e: Entered | null | undefined, baseQty: number, rate: number) {
+  if (!e || e.qty <= 0) return { enteredUnit: null, enteredQty: null, enteredRate: null };
+  return { enteredUnit: e.unit, enteredQty: e.qty, enteredRate: Math.round(((rate * baseQty) / e.qty) * 10_000) / 10_000 };
 }
 
 /** JSON fields for a stored line: the quantity and rate in the entered unit, or nulls. */

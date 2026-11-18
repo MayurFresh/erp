@@ -84,7 +84,7 @@ Management says the company is becoming AI-first. Treat all items as announced u
 - Needs a user password to get an API token. This is a weak fit for service accounts.
 - Wave picking is only on a marketing page.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Facility code on every warehouse-level API call.
 - A status push per channel with clear result codes.

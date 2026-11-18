@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/clinic/ipd_models.dart';
-import 'package:progen_erp/features/clinic/ipd_pdf.dart';
-import 'package:progen_erp/widgets/layout.dart';
+import 'package:onematrix/features/clinic/ipd_models.dart';
+import 'package:onematrix/features/clinic/ipd_pdf.dart';
+import 'package:onematrix/widgets/layout.dart';
 
 import 'clinic_harness.dart';
 

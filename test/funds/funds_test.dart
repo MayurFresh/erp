@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/funds/funds_models.dart';
-import 'package:progen_erp/features/funds/funds_pdf.dart';
+import 'package:onematrix/features/funds/funds_models.dart';
+import 'package:onematrix/features/funds/funds_pdf.dart';
 
 import 'funds_harness.dart';
 

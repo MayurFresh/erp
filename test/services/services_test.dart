@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/business_profile.dart';
-import 'package:progen_erp/features/job_cards/job_models.dart';
-import 'package:progen_erp/features/job_cards/job_pdf.dart';
-import 'package:progen_erp/features/memberships/memberships_models.dart';
+import 'package:onematrix/core/business_profile.dart';
+import 'package:onematrix/features/job_cards/job_models.dart';
+import 'package:onematrix/features/job_cards/job_pdf.dart';
+import 'package:onematrix/features/memberships/memberships_models.dart';
 
 import 'services_harness.dart';
 

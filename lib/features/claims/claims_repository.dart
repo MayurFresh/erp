@@ -133,6 +133,10 @@ class ClaimsRepository {
   Future<void> loanAction(String id, String action, [Json? body]) =>
       _api.post('/loans/$id/$action', body: body);
 
+  /// Principal and interest to close a loan on [payDate] (today when null).
+  Future<Json> foreclosureQuote(String id, [String? payDate]) =>
+      _api.getJson('/loans/$id/foreclosure', query: {'payDate': ?payDate});
+
   /// Employees for the loan form.
   Future<List<(String, String)>> employees() async => asJsonList(
     (await _api.getJson('/employees', query: {'status': 'active', 'limit': 200}))['data'],

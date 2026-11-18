@@ -70,7 +70,7 @@ No official AI evidence found. Mark unverified.
 - Wave picking is a vendor claim only.
 - Older reviews note mobile limits.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - A webhook form with source, category, events, headers and payload size.
 - Camera scan for serial numbers.

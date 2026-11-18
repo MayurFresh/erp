@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/business_profile.dart';
-import 'package:progen_erp/core/money.dart';
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/features/settings/role_matrix.dart';
-import 'package:progen_erp/features/shell/nav.dart';
+import 'package:onematrix/core/business_profile.dart';
+import 'package:onematrix/core/money.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/features/settings/role_matrix.dart';
+import 'package:onematrix/features/shell/nav.dart';
 
 PermissionSet _everything() => PermissionSet({
   for (final g in navGroups)

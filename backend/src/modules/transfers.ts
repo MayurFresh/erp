@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { systemAccounts } from '../accounting/accounts.ts';
 import { issue, lockItems, positions } from '../accounting/costing.ts';
+import { locationLayers, takeSlices } from '../accounting/fifo.ts';
 import { postJournal, reverseVoucher } from '../accounting/journal.ts';
 import type { RequestContext } from '../auth/context.ts';
 import type { Tx } from '../db/database.ts';
@@ -21,6 +22,25 @@ import { documentRoute } from '../lib/openapi.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dateField = z.string().refine(isValidDate, 'Use YYYY-MM-DD');
+
+/** One stock move per source layer date, so the age survives the transfer; value is split by quantity and the last piece takes the rounding. */
+function datedMoves(l: { qty: number; value: number; layers: unknown }): { qty: number; value: number; date: string | null }[] {
+  const slices = (Array.isArray(l.layers) ? l.layers : []) as { qty: number; date: string; rate?: number }[];
+  const total = slices.reduce((s, x) => s + Number(x.qty), 0);
+  if (!slices.length || total > Number(l.qty) + 0.0005) return [{ qty: l.qty, value: l.value, date: null }];
+  // The line's value is shared by each layer's own cost, so a cheap old layer stays cheap at the destination.
+  const weight = (x: { qty: number; rate?: number }) => Number(x.qty) * (x.rate ?? 0);
+  const weights = slices.reduce((s, x) => s + weight(x), 0);
+  const parts = slices.map((x) => ({
+    qty: Number(x.qty), date: x.date as string | null,
+    value: round2(weights > 0 ? Number(l.value) * weight(x) / weights * (total / Number(l.qty)) : Number(l.value) * Number(x.qty) / Number(l.qty)),
+  }));
+  const rest = Math.round((Number(l.qty) - total) * 1000) / 1000;
+  if (rest > 0.0005) parts.push({ qty: rest, value: 0, date: null });
+  const used = parts.reduce((s, p) => s + p.value, 0);
+  parts[parts.length - 1]!.value = round2(parts[parts.length - 1]!.value + Number(l.value) - used);
+  return parts;
+}
 
 const createBody = z.object({
   fromLocationId: z.uuid(),
@@ -129,14 +149,19 @@ export async function transferRoutes(app: FastifyInstance) {
         return { ...l, costRate: out.costRate, value: out.value };
       });
 
+      // Stock keeps its age across the move: note which source layers (by date) each line takes.
+      const srcLayers = await locationLayers(tx, ctx.companyId, from.id, ids);
+      const sliced = costed.map((c) => ({ ...c, layers: takeSlices(srcLayers.get(c.itemId)!, c.qty) }));
+
       const number = await nextNumber(tx, ctx, 'transfer', financialYear(date));
       const row = await tx.insertInto('transfers').values({
         tenant_id: ctx.tenantId, company_id: ctx.companyId, number, from_location_id: from.id, to_location_id: to.id,
         transfer_date: date, notes: body.notes ?? null, created_by: ctx.userId, received_by: null, received_at: null,
         cancelled_at: null, cancel_reason: null, indent_id: body.indentId ?? null,
       }).returning('id').executeTakeFirstOrThrow();
-      await tx.insertInto('transfer_lines').values(costed.map((c, i) => ({
+      await tx.insertInto('transfer_lines').values(sliced.map((c, i) => ({
         tenant_id: ctx.tenantId, transfer_id: row.id, line_no: i + 1, item_id: c.itemId, qty: c.qty, cost_rate: c.costRate, value: c.value,
+        layers: JSON.stringify(c.layers),
       }))).execute();
       await tx.insertInto('stock_moves').values(costed.map((c) => ({
         tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: from.id, item_id: c.itemId, qty: -c.qty, rate: null,
@@ -170,10 +195,10 @@ export async function transferRoutes(app: FastifyInstance) {
 
       const lines = await tx.selectFrom('transfer_lines').selectAll().where('transfer_id', '=', id).execute();
       await lockItems(tx, ctx.companyId, lines.map((l) => l.item_id));
-      await tx.insertInto('stock_moves').values(lines.map((l) => ({
-        tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: t.to_location_id, item_id: l.item_id, qty: l.qty, rate: null,
-        cost_rate: l.cost_rate, value: l.value, ref_type: 'transfer_in', ref_id: id, note: t.number, created_by: ctx.userId,
-      }))).execute();
+      await tx.insertInto('stock_moves').values(lines.flatMap((l) => datedMoves(l).map((p) => ({
+        tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: t.to_location_id, item_id: l.item_id, qty: p.qty, rate: null,
+        cost_rate: l.cost_rate, value: p.value, ref_type: 'transfer_in', ref_id: id, note: t.number, created_by: ctx.userId, layer_date: p.date,
+      })))).execute();
       await tx.updateTable('transfers').set({ status: 'received', received_by: ctx.userId, received_at: new Date() }).where('id', '=', id).execute();
       if (t.indent_id) {
         await fulfilIndent(tx, ctx, t.indent_id, { type: 'transfer', id, locationId: t.to_location_id },
@@ -208,10 +233,10 @@ export async function transferRoutes(app: FastifyInstance) {
 
       const lines = await tx.selectFrom('transfer_lines').selectAll().where('transfer_id', '=', id).execute();
       await lockItems(tx, ctx.companyId, lines.map((l) => l.item_id));
-      await tx.insertInto('stock_moves').values(lines.map((l) => ({
-        tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: t.from_location_id, item_id: l.item_id, qty: l.qty, rate: null,
-        cost_rate: l.cost_rate, value: l.value, ref_type: 'transfer_cancel', ref_id: id, note: `Cancelled ${t.number}`, created_by: ctx.userId,
-      }))).execute();
+      await tx.insertInto('stock_moves').values(lines.flatMap((l) => datedMoves(l).map((p) => ({
+        tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: t.from_location_id, item_id: l.item_id, qty: p.qty, rate: null,
+        cost_rate: l.cost_rate, value: p.value, ref_type: 'transfer_cancel', ref_id: id, note: `Cancelled ${t.number}`, created_by: ctx.userId, layer_date: p.date,
+      })))).execute();
       await tx.updateTable('transfers').set({ status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason }).where('id', '=', id).execute();
       await reverseVoucher(tx, auditOf(ctx), id, todayIst(), `Cancelled ${t.number}: ${reason}`);
       await reverseFulfilment(tx, ctx, t.indent_id, id);

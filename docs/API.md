@@ -1,4 +1,4 @@
-# Progen ERP API — v1 contract
+# OneMatrix API — v1 contract
 
 The Flutter app (web, Android, iOS, desktop) and the backend both follow this file.
 Change it first, then change both sides.
@@ -930,8 +930,8 @@ Cancelling any of these posts the reversal (`is_reversal`, `reverses_id`), as fo
 ### GST e-invoice and e-way bill
 
 Two modes, set on the company. A live GSP connection comes in a later phase.
-- **`manual`:** Progen builds the IRP JSON. The user uploads it on the IRP portal or offline tool, then records the IRN, acknowledgement and signed QR that come back.
-- **`sandbox`:** Progen generates test values locally for demos and training. They are always flagged `sandbox: true` and are never valid for filing.
+- **`manual`:** OneMatrix builds the IRP JSON. The user uploads it on the IRP portal or offline tool, then records the IRN, acknowledgement and signed QR that come back.
+- **`sandbox`:** OneMatrix generates test values locally for demos and training. They are always flagged `sandbox: true` and are never valid for filing.
   - IRN = lowercase SHA-256 hex of `supplierGstin + fy ("2026-27") + "INV" + invoiceNumber`
   - acknowledgement number: 15 digits
   - `signedQrCode`: base64url of a JSON summary (seller GSTIN, buyer GSTIN, number, date, total, item count, main HSN, IRN)
@@ -977,13 +977,13 @@ Two modes, set on the company. A live GSP connection comes in a later phase.
 **Labour:** two labour advances, one partly recovered by the paid wage sheet.
 
 **Real estate:**
-- Project `PRJ-R1` "Progen Heights", with 12 units (wings A and B, floors 1–3, two per floor).
+- Project `PRJ-R1` "OneMatrix Heights", with 12 units (wings A and B, floors 1–3, two per floor).
 - A construction-linked plan of 10/20/15/15/15/15/10.
 - Three bookings:
   - one at agreement, with 3 demands and a part receipt
   - one booked, with the booking-amount demand
   - one cancelled
-- RERA account "RERA Collection A/c — Progen Heights" (bank), with one transfer in.
+- RERA account "RERA Collection A/c — OneMatrix Heights" (bank), with one transfer in.
 
 **E-invoice:**
 - Company pincode, plus party PAN and pincode on the demo parties.
@@ -1399,7 +1399,7 @@ No user input may cause a 500. Postgres input errors map to `400 VALIDATION_ERRO
 
 # v1.6 additions — Self-filing kit ("file it yourself")
 
-Goal: an owner can file GST and TDS returns, pay advance tax and prepare their income-tax return without a CA, wherever the law allows. Progen does not file on the portal. It produces the numbers in the portal's order, the upload files where the portal accepts them, the set-off and challan amounts, checks before filing, and step lists. A register records what was filed, and that clears the alert. Where the law needs a CA, the app says so (§8). Research behind it: `docs/research/self-filing-gst.md` and `self-filing-income-tax.md`.
+Goal: an owner can file GST and TDS returns, pay advance tax and prepare their income-tax return without a CA, wherever the law allows. OneMatrix does not file on the portal. It produces the numbers in the portal's order, the upload files where the portal accepts them, the set-off and challan amounts, checks before filing, and step lists. A register records what was filed, and that clears the alert. Where the law needs a CA, the app says so (§8). Research behind it: `docs/research/self-filing-gst.md` and `self-filing-income-tax.md`.
 
 Migration `009_selffiling.sql` creates every table and column below. `db/schema.ts`, `auth/permissions.ts`, `accounting/accounts.ts`, `lib/series.ts` and the voucher types are already updated. The v1.4 rule still applies: every statutory rate, slab, cap and due date lives in an effective-dated table or a constants file (`lib/gst-penalties.ts`, `lib/income-tax.ts`, `lib/due-dates.ts`), each entry carrying `verified: boolean`. Responses that use an unverified figure include it in `unverified: string[]`, and the UI shows an "unverified" badge.
 
@@ -1582,7 +1582,7 @@ PrefileCheck { id, title, status: 'pass'|'warn'|'fail'|'skip', detail, count: nu
 
 | Endpoint | Permission | Response |
 | --- | --- | --- |
-| `GET /tds/statement?fy=&quarter=&format=txt` | `tds.view` | `text/plain`, file name `{TAN}_140_{fy}_Q{n}.txt`. A caret-delimited draft (FH/BH/CD/DD records, laid out after the 26Q v7.5 file format) for the user to validate with the official FVU, then upload the zip on the e-filing portal. The first line is a comment `#PROGEN BETA: validate with FVU before upload`, to be removed if the FVU rejects comment lines. Blockers give `PREFILE_FAILED` with checks `tan`, `responsible_person`, `pan_missing` (a deductee without a PAN at 20%, a warning only), `unchallaned` (deductions not in a challan), `challan_mismatch` (deduction total ≠ challan tax). |
+| `GET /tds/statement?fy=&quarter=&format=txt` | `tds.view` | `text/plain`, file name `{TAN}_140_{fy}_Q{n}.txt`. A caret-delimited draft (FH/BH/CD/DD records, laid out after the 26Q v7.5 file format) for the user to validate with the official FVU, then upload the zip on the e-filing portal. The first line is a comment `#ONEMATRIX BETA: validate with FVU before upload`, to be removed if the FVU rejects comment lines. Blockers give `PREFILE_FAILED` with checks `tan`, `responsible_person`, `pan_missing` (a deductee without a PAN at 20%, a warning only), `unchallaned` (deductions not in a challan), `challan_mismatch` (deduction total ≠ challan tax). |
 | `GET /tds/prefile-check?fy=&quarter=` | `tds.view` | `{ fy, quarter, checks: PrefileCheck[], canFile }`: the blockers above, plus `sequence`, `late` (s.427 fee estimate) and `interest` (late deposit). |
 | `GET /tds/defaults?fy=` | `tds.view` | `{ fy, deposits: [{ month, deducted, depositDate: string|null, dueDate, monthsLate, interest /* 1.5% a month or part from deduction month-end to deposit or today */ }], statements: [{ quarter, dueDate, filedOn: string|null, daysLate, lateFee /* Rs 200 a day, capped at the quarter's TDS */ }], totals: { interest, lateFee }, unverified }`. The interest base date is the deduction date. The 1% "not deducted" interest is out of scope. |
 
@@ -1745,7 +1745,7 @@ Module stubs are registered in `app.ts`.
 | `PUBLIC_API_URL` | `http://localhost:8080` | Builds the SSO redirect URI `${PUBLIC_API_URL}/api/v1/auth/sso/callback` |
 | `DATA_KEY` | derived from `JWT_SECRET` | 32 bytes, base64. Seals TOTP secrets, SSO client secrets and GSP credentials (AES-256-GCM). Set it in production; the server logs a warning when it is derived. |
 | `EMAIL_DRIVER` | `log` | `log` or `smtp` |
-| `SMTP_URL`, `EMAIL_FROM` | none | For `smtp`, e.g. `smtps://user:pass@smtp.example.com:465` and `Progen <no-reply@example.com>` |
+| `SMTP_URL`, `EMAIL_FROM` | none | For `smtp`, e.g. `smtps://user:pass@smtp.example.com:465` and `OneMatrix <no-reply@onematrix.site>` |
 | `WHATSAPP_DRIVER` | `log` | `log` or `cloud_api` (WhatsApp Business Cloud API) |
 | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_API_VERSION` | none, none, `v21.0` | For `cloud_api` |
 | `JOBS_WORKER` | `true` | Runs the job worker inside the API process. Tests build the app without it and call `runJobsOnce`. |
@@ -1825,7 +1825,7 @@ Security { twoFactorEnabled, twoFactorEnabledAt: string|null, recoveryCodesLeft,
 | `POST /auth/login` | open | v1 | `LoginResult`. When 2FA is on, there are no tokens yet. `mfaToken` is a JWT of type `mfa` that lives 5 minutes. |
 | `POST /auth/login/mfa` | open, rate-limited | `{ mfaToken, code? , recoveryCode? }` (exactly one) | `Tokens`. 401 `MFA_INVALID`; after 5 wrong codes the `mfaToken` stops working (401 `UNAUTHORIZED`). |
 | `GET /me/security` | signed in | | `Security` |
-| `POST /me/2fa/setup` | signed in | `{}` | `{ secret /* base32 */, otpauthUri: 'otpauth://totp/Progen:{email}?secret=…&issuer=Progen&digits=6&period=30' }`. Replaces any unfinished setup. |
+| `POST /me/2fa/setup` | signed in | `{}` | `{ secret /* base32 */, otpauthUri: 'otpauth://totp/OneMatrix:{email}?secret=…&issuer=OneMatrix&digits=6&period=30' }`. Replaces any unfinished setup. |
 | `POST /me/2fa/enable` | signed in | `{ code }` | `{ recoveryCodes: string[] }`, shown once. Emails `mfa_changed`. |
 | `POST /me/2fa/disable` | signed in | `{ password, code /* TOTP or recovery */ }` | `204`. Emails `mfa_changed`. |
 | `POST /me/2fa/recovery-codes` | signed in | `{ password, code }` | `{ recoveryCodes }`; the old ones stop working |
@@ -2325,7 +2325,7 @@ The sandbox returns `reference: 'SBX-…'` and `status: 'saved'`. Filing with EV
 
 ## Demo data (v1.7)
 
-- **A second company,** "Progen Infra Projects LLP" (Gujarat, no GSTIN), in the demo business. owner@demo.in is its Owner.
+- **A second company,** "OneMatrix Infra Projects LLP" (Gujarat, no GSTIN), in the demo business. owner@demo.in is its Owner.
 - **One inter-company entry:** the main company pays 25,000 rent for the second company.
 - **Cost centres:** `RET` Retail, `PRJ` Projects and `HO` Head office, with a few seeded invoices and expenses tagged.
 - **Custom fields:**
@@ -2846,7 +2846,7 @@ Migration `021_platform_admin.sql`. All routes are under `/platform`, need a sig
 `403 NOT_PLATFORM_ADMIN` for everyone else.
 
 - **Granting admins is CLI-only:** `npm run platform:admin -- grant|revoke <email>` and `-- list` (uses `DATABASE_ADMIN_URL`).
-  There is no screen or endpoint to grant or revoke. The dev seed creates `superadmin@demo.in` / `Demo@1234` in a tenant "Progen Platform" with no company.
+  There is no screen or endpoint to grant or revoke. The dev seed creates `superadmin@demo.in` / `Demo@1234` in a tenant "OneMatrix Platform" with no company.
 - **There is no "sign in as" yet.** Admins see and change settings and users; they do not open a tenant's data.
 - `GET /me` adds `isPlatformAdmin`. An admin may have no company: `companies` is `[]` and company routes return 403.
 - Tables `platform_admins` and `platform_audit` have RLS with no policy for the app role. Cross-tenant reads go through `platform_*` security definer functions that re-check the admin. Work inside one tenant uses that tenant's row-level security.
@@ -3191,7 +3191,7 @@ Permission `integrations.manage` (Owner and Company Admin). A person manages key
 - `GET /webhooks/events` events you can subscribe to: `invoice.created`, `payment.received` (receipts), `order.created` (sales orders).
 - `GET /webhooks`, `POST /webhooks { url, events[], description? }` (201, returns `secret` once, `whsec_...`), `PATCH /webhooks/:id { url?, events?, description?, isActive? }`, `POST /webhooks/:id/rotate-secret` (returns the new `secret`), `DELETE /webhooks/:id` (204).
 - `POST /webhooks/:id/test` queues a `webhook.test` delivery (202, `deliveryId`). `GET /webhooks/:id/deliveries?limit&offset` is the log: `event, status (pending|retrying|delivered|failed), attempts, responseStatus, error, nextAttemptAt, deliveredAt`. `POST /webhooks/deliveries/:id/resend` sends the same data as a new delivery.
-- Delivery: `POST` of `{ event, createdAt, data }` as JSON by the jobs runner, with headers `X-Progen-Event`, `X-Progen-Delivery` and `X-Progen-Signature: t=<unix>,v1=<hex>` where `v1` is HMAC-SHA256 of `"<t>.<raw body>"` with the secret. Success is any 2xx within 10 s; redirects are not followed. Up to 5 attempts, waiting 30 s, 1, 2 and 4 minutes; then `failed`.
+- Delivery: `POST` of `{ event, createdAt, data }` as JSON by the jobs runner, with headers `X-OneMatrix-Event`, `X-OneMatrix-Delivery` and `X-OneMatrix-Signature: t=<unix>,v1=<hex>` where `v1` is HMAC-SHA256 of `"<t>.<raw body>"` with the secret. Success is any 2xx within 10 s; redirects are not followed. Up to 5 attempts, waiting 30 s, 1, 2 and 4 minutes; then `failed`.
 - URLs must be https and must not resolve to loopback, private or link-local addresses (400 on create, checked again at each delivery). `WEBHOOK_ALLOW_PRIVATE=true` lifts both rules; it defaults to on outside production.
 
 ## Stock ledger
@@ -3752,7 +3752,7 @@ Provider settings are server env (`SMS_DRIVER` log|msg91|http, `SMS_AUTH_KEY`, `
 
 ## Online payment links
 
-Settings (`integrations.manage`): `GET /payment-gateways` -> `[{ id, provider, isActive, accountId, credentials: [{key,label,secret,set}], webhookUrl, mode }]`. `PUT|PATCH /payment-gateways/razorpay` `{ keyId, keySecret, webhookSecret, accountId, isActive? }` (secrets sealed, never returned; `accountId` is the bank account receipts go to). `DELETE /payment-gateways/razorpay` removes credentials. Cashfree is not built.
+Settings (`integrations.manage`): `GET /payment-gateways` -> `[{ id, provider, isActive, accountId, credentials: [{key,label,secret,set}], webhookUrl, mode }]`. `PUT|PATCH /payment-gateways/razorpay` `{ keyId, keySecret, webhookSecret, accountId, isActive? }` (secrets sealed, never returned; `accountId` is the bank account receipts go to). `DELETE /payment-gateways/razorpay` removes credentials. Cashfree: see "Wave 4: Helpdesk visits, SLA pause and Cashfree".
 - `POST /invoices/:id/payment-links` `{ expiresInDays? (1..180, default 7), notify? }` (`payments.create`) creates a Razorpay Payment Link for the amount due. 409 `NO_GATEWAY` when not set up, `NOTHING_DUE` when paid. Returns the link `{ id, invoiceId, invoiceNumber, partyName, amount, status, shortUrl, expiresAt, whatsappUrl, paidAt, paymentId, fee, createdAt }`.
 - `GET /payment-links?status=&invoiceId=` (`payments.view`) list for reconciliation. `GET /payment-links/:id`. `POST /payment-links/:id/cancel`. `POST /payment-links/:id/send` `{ channels: ('email'|'whatsapp'|'sms')[] }` sends to the customer.
 - Public `POST /webhooks/payment-gateways/:gatewayId`: header `X-Razorpay-Signature` is HMAC SHA256 (hex) of the raw body with the webhook secret. Event `payment_link.paid` records one receipt (mode upi, reference = provider payment id) allocated to the invoice, once per provider payment id; the reported fee posts to Bank Charges. Bad signature: 401. `payment_link.expired|cancelled` update the status.
@@ -3834,7 +3834,7 @@ Form names by period (from 1 April 2026 the 2025 Act applies; earlier periods ke
 - `GET /tds/form16?fy=&employeeId=` Part A (quarterly deducted and deposited, deposits with challan details) and Part B (salary, standard deduction, professional tax, chapter VI-A, total income, tax, rebate, cess, marginal relief, relief u/s 89 = 0, net tax, TDS, balance), regime, warnings.
 - `GET /tds/form16a?fy=&quarter=&partyId=` one object per deductee for the quarter (all deductees when `partyId` is omitted).
 - `POST /tds/certificates/generate` `{kind: salary|non_salary, fy, quarter?, employeeId?|partyId?}` bulk when the person is omitted. Stores the figures as issued, numbered `SAL|NSL/<fy>/<seq>`; regenerating keeps the number. `GET /tds/certificates?kind=&fy=&quarter=` lists them with snapshots (used for PDFs).
-- `GET /tds/returns?fy=&quarter=&kind=salary|non_salary&format=json|csv` return data with `checks` (TAN, responsible person, PAN missing and PAN format, challan link and amount, late deposit interest, late filing fee, annual tax against TDS in Q4), `lateInterest`, `lateFee`, `canFile`. The salary return includes the annual salary details in Q4. The CSV is Progen's working layout, **not** the RPU import format (that specification was not found); the older FVU-style `.txt` draft at `/tds/statement` is unchanged.
+- `GET /tds/returns?fy=&quarter=&kind=salary|non_salary&format=json|csv` return data with `checks` (TAN, responsible person, PAN missing and PAN format, challan link and amount, late deposit interest, late filing fee, annual tax against TDS in Q4), `lateInterest`, `lateFee`, `canFile`. The salary return includes the annual salary details in Q4. The CSV is OneMatrix's working layout, **not** the RPU import format (that specification was not found); the older FVU-style `.txt` draft at `/tds/statement` is unchanged.
 - Rent (194I) thresholds become 6,00,000 a year from 1 April 2025 (unconfirmed).
 
 # Statutory payroll (migration 048)
@@ -3875,3 +3875,71 @@ Module `payroll`. No new permissions: settings and rate rows need `payroll.emplo
 
 Note (landed cost and RFQ): `PUT /rfqs/:id/quotes` and `PUT /rfqs/:id/choices` are also served as `PATCH` for the Flutter client. Stock moves of kind `landed_cost` and `landed_cost_cancel` have quantity 0 (value only).
 - `PATCH /timesheets/week` does the same as `PUT /timesheets/week` (the Flutter client has no PUT).
+
+# Wave 4: Finance and export gaps
+
+Migration 060. No new module key. Source: Finance Act 2025 (section 206C(1H) not applicable from 1 April 2025): https://taxguru.in/income-tax/tcs-sale-goods-removed-april-1-2025-faqs.html
+
+**Print cheque.** `GET /payments/:id/cheque` returns `{cheque}` (the cheque linked to a posted payment, or `null`; needs `cheques.view` or `cheques.manage`). The app then uses `POST /payments/:id/cheque` (v1.18) if it is null, and `GET /cheques/:id/print`. The Print cheque button shows on a posted vendor payment with mode `cheque` for users with `cheques.manage`.
+
+**Cash flow and ratios export.** Client side only: CSV and PDF built from the `/cash-flow` and `/ratios` responses through the shared report export.
+
+**E-invoice supply types.** `GET /invoices/:id/einvoice/payload` and `POST /invoices/:id/einvoice` read the invoice's export category (v1.20): `export_igst` gives `SupTyp` EXPWP, `export_lut` EXPWOP, `sez_igst` SEZWP, `sez_lut` SEZWOP, `deemed` DEXP, none gives B2B. Export buyers are sent as `Gstin: URP`, `Pos`/`Stcd` 96, `Pin` 999999, and need no GSTIN or pincode. `ExpDtls` is added when any of these exist: `ShipBNo`, `ShipBDt` (DD/MM/YYYY), `Port`, `RefClm` (Y for with-payment types, N otherwise), `ForCur`, `CntCode` (ISO alpha-2 from the stored country text; left out when unknown).
+
+**Foreign payables.** `PUT /fx/payables/:purchaseId` `{currency, rate}` tags a posted purchase bill (`fx.manage`); `fc_total` is total / rate. `GET /fx/payables` lists open tagged bills with `inrOutstanding` and `fcOutstanding`. `POST /fx/payables/revaluation/preview` and `POST /fx/payables/revaluation` take `{asOf, rates?}` like the receivables ones. A higher closing rate credits Accounts Payable and debits Exchange Rate Gain or Loss; the entry is reversed the next day. One posted payables revaluation per date (409 `ALREADY_POSTED`). `GET /fx/revaluations` rows now carry `kind` (`receivable` or `payable`).
+
+**Credit notes and TCS.** When the invoice collected TCS, a credit note hands back `invoice TCS x (note subtotal / invoice subtotal)`, never more than what is left unreversed. It debits TCS Payable and adds to the receivable credit, so `applied_amount` includes it. The amount is stored in `credit_notes.tcs_reversed`. Cancelling the note reverses the journal.
+
+**Landed cost sources.** `GET /landed-costs/sources?type=expense|vendor_bill&q=&limit=` lists posted expenses or bills not on any posted landed cost: `{data: [{id, number, date, description, amount, total}]}` (`amount` is before GST). Charges carry `sourceType` and `sourceId`; amount may not exceed the expense amount or bill subtotal; a source is used once (409 `SOURCE_USED`) and not twice in one request (400).
+
+**Section 206C(1H)** is not built and no screen or default nature offers it.
+
+# Wave 4: Helpdesk visits, SLA pause and Cashfree
+
+Migration 061. No new module keys (`helpdesk`; payment links are core).
+
+**SLA pause.** A ticket in status `waiting` (waiting on the customer) does not use its SLA. When it leaves `waiting`, the business hours it waited (IST, the company's helpdesk hours; plain elapsed time in 24x7 mode) are added to both due times and to `pausedMinutes`. While it waits, `firstResponseDue` and `resolutionDue` already include the wait so far. Ticket JSON adds `slaPaused` and `pausedMinutes`. Breach is still computed, never stored. Every status change is kept in `hd_status_history`. A priority change keeps the paused time.
+
+**Visit photos and signature.** `POST /service-contracts/visits/:visitId/complete` already takes `signatureFileId` (a PNG from `POST /files`), `photoFileIds` and `signatureName` (the typed fallback). Visit JSON also returns `partsLocationId`.
+
+**Parts move stock.** `complete` takes `locationId` and `partsUsed [{itemId?, name, qty}]`. Parts with an `itemId` of a stock-tracked item are issued from that location at average cost (stock moves `service_visit`); other parts are only recorded. 400 when stocked parts have no `locationId`; 409 when short. Cost is booked like stock issued to work: debit Material Consumed, credit Inventory (voucher type `issue`, id = visit); a part change or cancel posts the opposite entry.
+- `PATCH /service-contracts/visits/:visitId/parts` `{ partsUsed, locationId? }` (done visits only): returns what the visit holds, then issues the new list. Removing a part returns it.
+- `POST /service-contracts/visits/:visitId/cancel` (done visits only): returns all parts (`service_visit_reverse` moves) and sets status `cancelled`. Visit status is now `scheduled | done | skipped | cancelled`.
+
+**Cashfree payment links.** Docs: https://www.cashfree.com/docs/api-reference/payments/latest/payment-links/create and https://www.cashfree.com/docs/payments/online/webhooks/signature-verification . Untested against a real Cashfree account.
+- `GET /payment-gateways` returns one row for each provider (`razorpay`, `cashfree`). `PUT|PATCH|DELETE /payment-gateways/:provider` with `provider` `razorpay|cashfree`. Cashfree fields: `keyId` (app id), `keySecret` (secret key, also signs webhooks), `accountId`, `isActive`; no webhook secret. App ids starting `TEST` use the sandbox host.
+- `POST /invoices/:id/payment-links` takes optional `provider`; without it Razorpay is used, or Cashfree when only that one is active. Cashfree needs the customer's 10 digit phone (502 `GATEWAY_ERROR` otherwise).
+- Webhook `POST /webhooks/payment-gateways/:gatewayId` for Cashfree: headers `x-webhook-timestamp` and `x-webhook-signature`; signature is base64 HMAC SHA256 of timestamp + raw body, keyed with the secret key (a dot between the two is also accepted, as the docs show both). `PAYMENT_LINK_EVENT` with `link_status` `PAID` records one receipt (reference `cf_<order.transaction_id>`), `EXPIRED` and `CANCELLED` update the link.
+
+**MSG91.** The flow request now follows https://control.msg91.com/apidoc/textsms/send-sms-flow.php : `flow_id` (and `template_id`), `sender` when set, `recipients: [{mobiles, VAR1, VAR2, ...}]`, header `authkey`.
+
+# Wave 4: Gratuity provision, loan recovery cap and foreclosure
+
+Migration 059. Module key `payroll`. Accounting treatment needs a CA check.
+
+**Gratuity provision.** `GET /payroll/gratuity/provision?asOf=YYYY-MM-DD` (`payroll.view`, default today) returns `{asOf, cap, eligibleYears, data[], skipped[], totals, posted}`. Each row: `employeeId, code, name, joiningDate, fixedTerm, wages, completedYears, countedYears, eligible, underYears, formula, capped, provision`. Provision = 15/26 x monthly wages (basic + DA, the 50% wages rule when on) x counted years (a part year over six months counts), at most `cap` (the company's `gratuityCap` setting, 20,00,000 by default) per person. Everyone with a salary structure is included; `underYears` flags staff below the payment eligibility years but their provision stays in the total. `totals`: `provision, underYears, balance` (credit balance of "Gratuity Payable"), `toPost` (provision minus balance), `lastPostedOn, lastPostedTotal, changeSinceLast`. `posted` is the post for that date or `null`.
+
+`POST /payroll/gratuity/provision {asOf?}` (`payroll.approve`) books `toPost` through the journal service: debit "Gratuity Expense", credit "Gratuity Payable" (a negative difference reverses them). Both accounts are created on first use. Returns 201 `{id, asOf, total, priorBalance, posted, entryId, employees}`; `entryId` is null when nothing needed posting. One post per company per date: 409 `PROVISION_POSTED`. Books locked: 409 `PERIOD_LOCKED`.
+
+**Loan recovery capped at net pay.** When a payroll run is computed, loan and advance deductions are cut (last loan first) so net pay is not below zero. The line shows the cut in `warnings` ("Loan recovery limited by net pay: ... stays due."). On approval the instalment keeps its place: the part taken counts as recovered (interest first), `paidAmount` on the schedule row records it, and the rest stays `due` with reduced `principal`, `interest` and `amount`, picked up by the next run. Loan JSON `recovered` includes part payments.
+
+**Foreclosure interest.** `GET /loans/:id/foreclosure?payDate=` (`loans.manage`) returns `{payDate, interestRate, method: 'reducing_balance', inRun, principal, interest, total}`. Principal is all open principal; interest is each open instalment's interest for its due month, in full for months ended before `payDate`, pro rata by day for the month containing it, none for later months. `POST /loans/:id/foreclose {accountId?, payDate?}` posts Dr bank (total), Cr loan account (principal), Cr "Interest on Employee Loans" (interest), and stores `foreclosePrincipal`, `forecloseInterest`, `forecloseAmount` on the loan.
+
+# Wave 4: Stock units, MRP and stock age
+
+Migration 058. Core stock, no module flag.
+
+## Alternate units on lines
+Purchase orders now take the same line `unit` as invoices, bills, sales orders and quotations (053): `POST/PUT /purchase-orders` lines accept `unit` (an alternate unit of the item). `qty` and `rate` are converted to the base unit; stock and GST stay in the base unit. Stored on `purchase_order_lines.entered_unit`, `entered_qty`. PO line JSON adds `enteredUnit`, `enteredQty`, `enteredRate` (null for base-unit lines). The Flutter line forms of invoice, bill, sales order, PO and quotation show a unit picker beside the item and rescale an entered rate when the unit changes.
+
+`POST /quotations/:id/convert` copies the entered unit and quantity onto the new sales order or invoice (the base `qty` and `rate` are unchanged).
+
+PDFs print the entered quantity and rate (for example "2 box" at the box rate) when they differ from the base unit.
+
+## MRP
+`items.mrp` (numeric, rupees, nullable). `POST /items` and `PATCH /items/:id` accept `mrp` (>= 0, 2 decimals; `null` clears it); item JSON returns `mrp`. Barcode labels print "MRP Rs x (incl. of all taxes)" when set.
+
+## Stock age across transfers
+Dispatching `POST /transfers` records the source layers each line took (`transfer_lines.layers`, oldest first, `[{qty, date, rate}]`). Receiving writes one `transfer_in` move per layer with `stock_moves.layer_date` set to the layer's receipt date, valued at that layer's own cost (the line value is shared by layer cost). `POST /transfers/:id/cancel` does the same back at the source. Stock ageing and FIFO layers use `layer_date` when present, so a transfer neither resets age nor changes layer order. Transfers made before 058 have no layers and keep the old behaviour (age restarts).
+
+Wave 4 additions: `PATCH /fx/payables/:purchaseId` is served as well as PUT. Credit note JSON carries `tcsReversed`. The e-invoice `CntCode` accepts a stored ISO 3166 alpha-2 code or a country name (all alpha-2 codes are checked; common English names map to them).

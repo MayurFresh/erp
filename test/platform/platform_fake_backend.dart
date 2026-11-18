@@ -219,7 +219,7 @@ class PlatformFakeBackend implements HttpClientAdapter {
           200,
           {
             'secret': 'JBSWY3DPEHPK3PXP',
-            'otpauthUri': 'otpauth://totp/Progen:asha?secret=JBSWY3DPEHPK3PXP',
+            'otpauthUri': 'otpauth://totp/OneMatrix:asha?secret=JBSWY3DPEHPK3PXP',
           },
         );
       case ('POST', '/me/2fa/enable'):

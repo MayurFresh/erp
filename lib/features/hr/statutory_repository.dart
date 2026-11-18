@@ -20,6 +20,7 @@ Future<T> _w<T>(Ref ref, Future<T> Function(StatutoryRepository r) f) {
 final statSettingsProvider = FutureProvider.autoDispose<Json>((ref) => _w(ref, (r) => r.settings()));
 final statRatesProvider = FutureProvider.autoDispose.family<Json, String>((ref, month) => _w(ref, (r) => r.rates(month)));
 final gratuityProvider = FutureProvider.autoDispose.family<Json, String>((ref, month) => _w(ref, (r) => r.gratuity(month)));
+final gratuityProvisionProvider = FutureProvider.autoDispose.family<Json, String>((ref, asOf) => _w(ref, (r) => r.gratuityProvision(asOf)));
 final bonusPreviewProvider = FutureProvider.autoDispose.family<Json, int>((ref, fy) => _w(ref, (r) => r.bonusPreview(fy)));
 final encTypesProvider = FutureProvider.autoDispose<List<Json>>((ref) => _w(ref, (r) => r.encTypes()));
 final encPreviewProvider = FutureProvider.autoDispose.family<Json, int>((ref, fy) => _w(ref, (r) => r.encPreview(fy)));
@@ -43,6 +44,9 @@ class StatutoryRepository {
   Future<void> setFixedTerm(String employeeId, bool fixedTerm) =>
       _api.patchJson('/payroll/employees/$employeeId/statutory', body: {'fixedTerm': fixedTerm});
   Future<Json> gratuity(String month) => _api.getJson('/payroll/gratuity/report', query: {'month': month});
+
+  Future<Json> gratuityProvision(String asOf) => _api.getJson('/payroll/gratuity/provision', query: {'asOf': asOf});
+  Future<void> postGratuityProvision(String asOf) => _api.postJson('/payroll/gratuity/provision', body: {'asOf': asOf});
 
   Future<Json> bonusPreview(int fy) => _api.getJson('/payroll/bonus/preview', query: {'fy': fy});
   Future<Json> bonusRun(int fy, String runId) => _api.postJson('/payroll/bonus/run', body: {'fy': fy, 'runId': runId});

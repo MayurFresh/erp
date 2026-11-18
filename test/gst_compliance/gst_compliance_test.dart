@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/features/auth/session.dart';
-import 'package:progen_erp/features/gst_compliance/gst_compliance_repository.dart';
-import 'package:progen_erp/features/gst_compliance/ims_screen.dart';
-import 'package:progen_erp/features/gst_compliance/msme_43bh_screen.dart';
-import 'package:progen_erp/features/gst_compliance/rate_history_card.dart';
-import 'package:progen_erp/features/gst_compliance/slab_review_screen.dart';
-import 'package:progen_erp/features/gst_compliance/unreported_einvoice_screen.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/features/auth/session.dart';
+import 'package:onematrix/features/gst_compliance/gst_compliance_repository.dart';
+import 'package:onematrix/features/gst_compliance/ims_screen.dart';
+import 'package:onematrix/features/gst_compliance/msme_43bh_screen.dart';
+import 'package:onematrix/features/gst_compliance/rate_history_card.dart';
+import 'package:onematrix/features/gst_compliance/slab_review_screen.dart';
+import 'package:onematrix/features/gst_compliance/unreported_einvoice_screen.dart';
 
 class FakeRepo implements GstComplianceRepository {
   final actions = <String>[];

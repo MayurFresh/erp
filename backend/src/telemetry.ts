@@ -12,7 +12,7 @@ if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_ENABLED !== 'fal
     import('@opentelemetry/instrumentation-pg'),
   ]);
   const sdk = new NodeSDK({
-    serviceName: process.env.OTEL_SERVICE_NAME ?? 'progen-erp-api',
+    serviceName: process.env.OTEL_SERVICE_NAME ?? 'onematrix-api',
     traceExporter: new OTLPTraceExporter(),
     instrumentations: [new HttpInstrumentation(), new PgInstrumentation()],
   });

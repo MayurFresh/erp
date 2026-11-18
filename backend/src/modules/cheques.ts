@@ -376,6 +376,17 @@ export async function chequeRoutes(app: FastifyInstance) {
     });
   });
 
+  // The cheque already linked to a payment, or null, so the app can print without creating a second one.
+  app.get<{ Params: { id: string } }>('/payments/:id/cheque', async (req) => {
+    const ctx = req.ctx;
+    ctx.require('cheques.view', 'cheques.manage');
+    const id = parse(z.uuid(), req.params.id);
+    return ctx.tx(async (tx) => {
+      const c = await tx.selectFrom('cheques').select('id').where('payment_id', '=', id).where('company_id', '=', ctx.companyId).where('status', '<>', 'cancelled').executeTakeFirst();
+      return { cheque: c ? json(await one(tx, ctx, c.id)) : null };
+    });
+  });
+
   app.post<{ Params: { id: string } }>('/payments/:id/cheque', async (req, reply) => {
     const ctx = req.ctx;
     ctx.require('cheques.manage');

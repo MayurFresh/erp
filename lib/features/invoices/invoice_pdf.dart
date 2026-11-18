@@ -9,6 +9,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../core/amount_in_words.dart';
 import '../../core/india_states.dart';
+import '../../core/entered_unit.dart';
 import '../../core/money.dart';
 import '../../core/pdf_brand.dart';
 import '../../core/pdf_kit.dart';
@@ -299,8 +300,8 @@ class _InvoicePdf {
             '${i + 1}',
             line.description,
             line.hsnCode ?? '',
-            '${formatQty(line.qty)} ${line.unit}',
-            formatAmount(line.rate),
+            lineQtyText(line.qty, line.unit, line.entered),
+            lineRateText(line.rate, line.entered),
             line.discountPct == 0 ? '-' : formatPlain(line.discountPct),
             formatAmount(line.taxableValue),
             formatPlain(line.gstRate),

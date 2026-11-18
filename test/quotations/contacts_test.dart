@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/parties/contact_model.dart';
-import 'package:progen_erp/features/parties/contacts_section.dart';
+import 'package:onematrix/features/parties/contact_model.dart';
+import 'package:onematrix/features/parties/contacts_section.dart';
 
 import 'quotation_fixtures.dart';
 

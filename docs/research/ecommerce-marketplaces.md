@@ -10,7 +10,7 @@ Source quality legend:
 
 ## How to read the rate notes
 
-- GST rates were rationalised from 22 Sep 2025 (broadly 5% and 18%, with 40% for sin and luxury goods). The old 12% and 28% slabs are gone for most goods. Item-level rates (for example apparel) depend on the item and price. The apparel split (5% up to ₹2,500 per piece, 18% above) is from secondary sources and is **UNVERIFIED**. Progen must keep rate per HSN and per date in a table and never infer rate from the old list.
+- GST rates were rationalised from 22 Sep 2025 (broadly 5% and 18%, with 40% for sin and luxury goods). The old 12% and 28% slabs are gone for most goods. Item-level rates (for example apparel) depend on the item and price. The apparel split (5% up to ₹2,500 per piece, 18% above) is from secondary sources and is **UNVERIFIED**. OneMatrix must keep rate per HSN and per date in a table and never infer rate from the old list.
 - Income-tax references use the Income-tax Act 2025 section, with the old number in brackets, as in contractor-billing.md.
 - incometaxindia.gov.in returned errors to automated fetch in the earlier note, so Act text could not be opened directly here either.
 
@@ -24,12 +24,12 @@ Source quality legend:
 | Rate | 0.5% from 10 Jul 2024 (0.25% CGST + 0.25% SGST for intra-state, 0.5% IGST for inter-state). Earlier 1% (0.5% + 0.5%) from 1 Oct 2018. | Notification 15/2024-Central Tax, after the 53rd GST Council meeting (S). One source dated it 10.06.2024; most say 10.07.2024. Treat 10 Jul 2024 as likely but **UNVERIFIED** against the Gazette. |
 | Base | "Net value of taxable supplies": aggregate taxable supplies made through the ECO in the month by the supplier, minus taxable supplies returned to the supplier, minus supplies where the ECO itself pays tax under s.9(5). Excludes GST. Computed per supplier GSTIN. | s.52(1) Explanation (S) |
 | Timing | ECO pays the TCS to the government by the 10th of the next month (s.52(3)) and files GSTR-8 by the 10th of the next month (s.52(4)). | (S) |
-| Annual statement | ECO files an annual statement (s.52(5)) by 31 Dec following the year. Not needed in Progen. | (S) **UNVERIFIED** date |
+| Annual statement | ECO files an annual statement (s.52(5)) by 31 Dec following the year. Not needed in OneMatrix. | (S) **UNVERIFIED** date |
 | Credit to the seller | The ECO's GSTR-8 populates the seller's view (GSTR-2A, and the TCS lines of GSTR-2B). The credit goes to the seller's electronic cash ledger (s.52(9) read with Rule 67), after the seller can accept or reject details. The seller then uses cash-ledger balance to pay output tax in GSTR-3B. | (S) mechanics **UNVERIFIED** |
 | Seller still reports the gross | The seller's GSTR-1 shows the full sale (invoice value). TCS does not reduce the seller's liability on the invoice; it is a prepayment. The seller reports supplies made through ECO in GSTR-1 Table 14 / 15 (supplies through ECO, split by ECO GSTIN). | (S) **UNVERIFIED** table numbers |
 | Seller's return of goods | Customer returns reduce the "net value" in the month of the credit note. If returns exceed supplies in a month, the net can be negative and the ECO adjusts in later months. | (S) **UNVERIFIED** carry-forward detail |
 
-Key behaviours for Progen:
+Key behaviours for OneMatrix:
 - TCS is not an expense and not input tax credit. It is a **receivable from the tax department**, to be matched to GSTR-8 and then used against GST liability.
 - The TCS base is not the marketplace's gross collection. It is taxable value net of returns. A marketplace statement showing TCS on the invoice value including tax should be checked, not trusted.
 - A COD sale, where a courier collects cash, is within s.52 only if the ECO "collects" consideration. How marketplaces treat COD is **UNVERIFIED**. In practice Amazon, Flipkart and Meesho show TCS on all orders.
@@ -39,23 +39,23 @@ Key behaviours for Progen:
 - s.9(5): on notified services supplied through an ECO, the ECO (not the supplier) pays the GST, as if the ECO were the supplier. Notification 17/2017-Central Tax (Rate), 28 Jun 2017, as amended (S for the existence; the list was not retrieved).
 - Services I believe are notified: passenger transport by motor cab / radio taxi, accommodation in hotels and similar (where the hotel is not registered), housekeeping, and restaurant services. Local delivery services (supplied by delivery persons through an ECO) were added from the 2025 rate rationalisation. All of these are **UNVERIFIED**; they are services, not goods.
 - **Goods are never under s.9(5).** For a seller of goods on Amazon, Flipkart or Meesho, the seller is the supplier and issues the tax invoice.
-- Progen should hold a per-listing flag "ECO liable under s.9(5)" (default false), because a seller of services (for example a cab or hotel operator) falls outside the goods flow and is out of scope for v1.
+- OneMatrix should hold a per-listing flag "ECO liable under s.9(5)" (default false), because a seller of services (for example a cab or hotel operator) falls outside the goods flow and is out of scope for v1.
 - Where 9(5) applies, the seller does not need registration for that supply (s.24(ix) carves out s.9(5) services, per a secondary source). Excluded from the TCS base.
 
 ### 1.3 Composition dealers and unregistered sellers
 
 - **Unregistered sellers.** s.24(ix) CGST Act requires registration of persons supplying goods through an ECO that collects TCS, whatever their turnover. The ₹40 lakh (goods) threshold exemption is not available. Sources agree (S). The earlier carve-out for intra-state goods sellers (Notification 7/2019 style relief for small suppliers) does not apply once an ECO collecting TCS is involved. **UNVERIFIED** against the Act text.
-- **Composition dealers.** s.10(2)(d) bars composition for persons supplying goods through an ECO. Notification 36/2023-Central Tax (4 Jul 2023) is reported to let composition suppliers sell goods **intra-state only** through ECOs, with TCS collected, and the ECO must not allow inter-state supplies by them. **UNVERIFIED**: only a secondary source, not the notification. Progen must treat both rules as hard guardrails (Section 8.6).
+- **Composition dealers.** s.10(2)(d) bars composition for persons supplying goods through an ECO. Notification 36/2023-Central Tax (4 Jul 2023) is reported to let composition suppliers sell goods **intra-state only** through ECOs, with TCS collected, and the ECO must not allow inter-state supplies by them. **UNVERIFIED**: only a secondary source, not the notification. OneMatrix must treat both rules as hard guardrails (Section 8.6).
 - **Services sellers** (non-9(5)) on an ECO are also barred from the threshold exemption (S).
 - **The ECO itself** must register in every state it operates in, whatever its turnover (s.24(x)) (S). Not relevant to a seller.
-- Progen should not allow a composition-scheme company to create a channel with inter-state delivery. See guardrails.
+- OneMatrix should not allow a composition-scheme company to create a channel with inter-state delivery. See guardrails.
 
 ### 1.4 Warehouses in other states (FBA, Flipkart Fulfilment, Meesho warehouses)
 
 - GST registration is state-wise. A seller who stores stock in a marketplace warehouse in a state other than where it is registered needs a registration in that state (s.25(1), s.22(1)), with the warehouse declared as the principal or an additional place of business there. Amazon and Flipkart seller help pages say the same: the seller must hold a GSTIN in every state where inventory is stored (P, pages not opened). **UNVERIFIED**.
 - "Additional place of business" is the correct field within one state. For a new state, it is a separate GSTIN (a separate registration of the same PAN), not an extra place under the old GSTIN. Nominated goods may be held in the home state's additional place if the warehouse is within the home state.
 - Without a registration in the warehouse state, the transfer is a violation; goods may be detained. Penalty exposure is not researched.
-- Progen needs `gstin` per place of business and a mapping from channel warehouse to our location and GSTIN. The product's existing company/locations model is a natural fit (the existing locations feature).
+- OneMatrix needs `gstin` per place of business and a mapping from channel warehouse to our location and GSTIN. The product's existing company/locations model is a natural fit (the existing locations feature).
 
 ### 1.5 Stock transfers to marketplace warehouses
 
@@ -68,7 +68,7 @@ Key behaviours for Progen:
 ### 1.6 Place of supply for B2C online sales
 
 - Goods supplied online to a consumer: place of supply is where the goods are delivered, i.e. the customer's delivery state (s.10(1)(a) IGST Act). If the origin state (the supplying warehouse GSTIN's state) differs, it is inter-state: IGST. If same state: CGST + SGST.
-- With FBA, the origin is the warehouse state, not the seller's head-office state. So Progen must determine origin by fulfilment location.
+- With FBA, the origin is the warehouse state, not the seller's head-office state. So OneMatrix must determine origin by fulfilment location.
 - B2C invoices on marketplaces are issued by the seller (or on seller's behalf by the marketplace). Dynamic QR code is not mandatory for online sales.
 - B2C inter-state supply to unregistered buyers is subject to IGST regardless of invoice value (no ₹2.5 lakh B2CL threshold for reporting; this affects GSTR-1 only). **UNVERIFIED** current reporting thresholds.
 - E-invoicing: B2C is exempt from e-invoice IRN, but if the seller sells B2B on the marketplace (GST invoice with buyer GSTIN) and turnover is above the e-invoice threshold, the IRN applies. Thresholds are covered in docs/research/gst-einvoice-ewaybill.md.
@@ -76,10 +76,10 @@ Key behaviours for Progen:
 ### 1.7 Credit notes for returns
 
 - s.34 CGST Act: the supplier may issue a credit note for a return or price reduction. The time limit to issue it, and to reduce the output tax, is 30 November following the end of the financial year in which the original invoice was issued, or the date of the annual return, whichever is earlier (s.34(2)). (S, widely cited since the 2022 amendment; not verified against the text.) The GST on the credit note reduces output tax only if the recipient's ITC is reversed (not relevant for B2C).
-- For marketplace sales, the return is recognised when the item is received back (in the marketplace warehouse or at the seller's). The credit note date should be that date or the date the marketplace refunds the customer. A consistent rule is needed: Progen should use the date the return is *received* or the refund is confirmed, whichever the marketplace report shows first, and let the user edit.
+- For marketplace sales, the return is recognised when the item is received back (in the marketplace warehouse or at the seller's). The credit note date should be that date or the date the marketplace refunds the customer. A consistent rule is needed: OneMatrix should use the date the return is *received* or the refund is confirmed, whichever the marketplace report shows first, and let the user edit.
 - GSTR-1: the credit note is shown in the "credit/debit notes (unregistered)" table; supplies through ECO are in a separate table keyed by the ECO's GSTIN.
 - TCS adjustment: the ECO reduces the next GSTR-8's net value by the returned supply's value. The seller's TCS receivable then reduces to match. A return in a later month produces a **negative** TCS line in a later settlement or a smaller credit in GSTR-8.
-- An RTO (customer never received it) is not a "return" under s.34 in the strict sense, but is booked as a cancelled supply: if the invoice was issued, a credit note is required, because tax was paid on a supply that did not complete; if no invoice was issued (dispatch not completed), no GST event. **UNVERIFIED**, practice varies. Progen should issue the invoice at dispatch and a credit note on RTO receipt.
+- An RTO (customer never received it) is not a "return" under s.34 in the strict sense, but is booked as a cancelled supply: if the invoice was issued, a credit note is required, because tax was paid on a supply that did not complete; if no invoice was issued (dispatch not completed), no GST event. **UNVERIFIED**, practice varies. OneMatrix should issue the invoice at dispatch and a credit note on RTO receipt.
 
 ## 2. Income tax
 
@@ -89,7 +89,7 @@ Key behaviours for Progen:
 - Who: an e-commerce operator paying an "e-commerce participant" (the seller) for sale of goods or provision of services facilitated through the platform. Deducted at the **earlier of credit to the participant's account or payment**, including credit in a separate account of the ECO.
 - Rate: **0.1%** from 1 Oct 2024 (was 1%; Union Budget July 2024 cut, effective 1 Oct 2024). Continues for FY 2026-27 under the 2025 Act (S).
 - Base: the **gross amount** of sales or services of the participant facilitated through the platform, including amounts the ECO pays on the participant's behalf, such as courier or payment gateway charges collected by the ECO. The ECO deducts on the gross, not on the amount after marketplace fees.
-- Whether GST is included in the gross: CBDT Circular 17/2020 (29 Sep 2020) is the normal reference; I believe it says the base is the gross amount including GST (i.e. unlike contractors under Circular 23/2017). **UNVERIFIED**; Progen should store the TDS base as reported in the settlement report and not recompute it. The worked example in Section 4 uses GST-inclusive and notes the alternative.
+- Whether GST is included in the gross: CBDT Circular 17/2020 (29 Sep 2020) is the normal reference; I believe it says the base is the gross amount including GST (i.e. unlike contractors under Circular 23/2017). **UNVERIFIED**; OneMatrix should store the TDS base as reported in the settlement report and not recompute it. The worked example in Section 4 uses GST-inclusive and notes the alternative.
 - **Small participant exemption:** an individual or HUF participant whose gross sales or services through the ECO in the tax year do not exceed ₹5,00,000, and who has given PAN or Aadhaar to the ECO, is not subject to TDS. This was s.194-O(2); the 2025 Act carries it into s.393(4) Table Sl. No. 11 (S: taxtmi comparison). One secondary source says no threshold survives. The conditions, especially "individual or HUF only", are **UNVERIFIED** against the Act. A company or LLP seller is never exempt.
 - **No PAN or Aadhaar:** the old rule was 5% under s.206AA(1) (the 20% floor does not apply to 194-O). Under the 2025 Act the corresponding section is either s.397(2) or s.394A depending on source (contractor-billing.md says s.397(2)(b)(i); one search result said s.394A). The rate is **UNVERIFIED**.
 - The ECO's deduction overrides other TDS sections on the same payment: no deduction under 194C, 194H, 194J etc. on the amount on which 194-O was deducted (old s.194-O(4), the non-obstante clause). The marketplace's fees charged to the seller are a separate matter (Section 2.3).
@@ -98,14 +98,14 @@ Key behaviours for Progen:
 
 ### 2.2 Interplay with TDS on purchase of goods (old 194Q) and TCS on sale of goods (old 206C(1H))
 
-- **Old s.194Q (buyer TDS of 0.1% on purchases of goods above ₹50 lakh from a resident seller in a year):** does not apply to transactions where 194-O applies (194Q proviso: not where TDS is deductible under any other provision, and not where TCS under 206C other than 206C(1H) applies). So for a seller's marketplace sales, the ECO deducts 194-O, not 194Q. But where a **seller** buys stock above ₹50 lakh from a supplier (a manufacturer or wholesaler), the 194Q rule applies to that purchase. Progen's buyer-side TDS is separate. (S; **UNVERIFIED** under 2025 section numbers.)
+- **Old s.194Q (buyer TDS of 0.1% on purchases of goods above ₹50 lakh from a resident seller in a year):** does not apply to transactions where 194-O applies (194Q proviso: not where TDS is deductible under any other provision, and not where TCS under 206C other than 206C(1H) applies). So for a seller's marketplace sales, the ECO deducts 194-O, not 194Q. But where a **seller** buys stock above ₹50 lakh from a supplier (a manufacturer or wholesaler), the 194Q rule applies to that purchase. OneMatrix's buyer-side TDS is separate. (S; **UNVERIFIED** under 2025 section numbers.)
 - **Old s.206C(1H) (seller TCS of 0.1% on sale of goods above ₹50 lakh):** Budget 2025 removed this with effect from 1 Apr 2025, as I recall (**UNVERIFIED**; not confirmed here). If still in force for any year, it never overlapped with 194-O (a sale already subject to 194-O has no TCS under 206C(1H)).
 - The marketplace-side result for a seller: no TCS on sale (income-tax), TDS 0.1% from the ECO, GST TCS 0.5% from the ECO.
-- Progen's guardrail: do not deduct TDS or collect TCS on marketplace-routed sales; these are on the ECO. Only direct B2B sales fall into the usual rules.
+- OneMatrix's guardrail: do not deduct TDS or collect TCS on marketplace-routed sales; these are on the ECO. Only direct B2B sales fall into the usual rules.
 
 ### 2.3 Fees paid by the seller to the marketplace
 
-- Whether the seller must deduct TDS (194H, 194C, 194J equivalents) on commission, shipping and ad fees paid to Amazon, Flipkart, Meesho is a point where practice differs. Many sellers do not deduct. **UNVERIFIED**; needs an advisor's view. Progen should not auto-deduct; a switch is provided per channel. Ads are usually billed separately (Amazon Ads has its own invoice).
+- Whether the seller must deduct TDS (194H, 194C, 194J equivalents) on commission, shipping and ad fees paid to Amazon, Flipkart, Meesho is a point where practice differs. Many sellers do not deduct. **UNVERIFIED**; needs an advisor's view. OneMatrix should not auto-deduct; a switch is provided per channel. Ads are usually billed separately (Amazon Ads has its own invoice).
 - GST on those fees: input tax credit available if the seller is registered and holds the marketplace's tax invoice with the seller's GSTIN (Section 3).
 - Reverse charge does not apply to marketplace fees from an Indian ECO. For Shopify (foreign), see Section 3.5.
 
@@ -134,7 +134,7 @@ Settlement report: download from Seller Central, Reports, Payments (S). Third-pa
 - Identifiers: settlement-id, settlement-start-date, settlement-end-date, deposit-date, total-amount, currency.
 - Order level: order-id, merchant-order-id, adjustment-id, shipment-id, marketplace-name, amount-type, amount-description, amount, fulfillment-id, posted-date, posted-date-time, order-item-code, merchant-order-item-id, merchant-adjustment-item-id, sku, quantity-purchased, promotion-id.
 - `amount-type` / `amount-description` pairs include Principal, Tax, Shipping, ItemFees (Commission, FixedClosingFee, FBA weight handling), ItemWithheldTax (TCS-CGST, TCS-SGST, TCS-IGST, TDS), and Refund lines. These names are from the global settlement report format and may differ in India. **UNVERIFIED**.
-- Progen should store the raw rows verbatim (`raw_json`) and map `amount-description` through a configurable alias table.
+- OneMatrix should store the raw rows verbatim (`raw_json`) and map `amount-description` through a configurable alias table.
 
 ### 3.2 Flipkart
 
@@ -151,7 +151,7 @@ Fee heads (S: Flipkart Seller Hub fees page snippet, auperator knowledge base, s
 | GST | 18% on the fees (S: shiprocket says GST applies on commission, fixed fee and shipping) |
 | TCS and TDS | Shown as separate deductions. A source saying "1% TCS and 1% TDS" is out of date or wrong; use 0.5% and 0.1% |
 
-Payment (settlement) reports: Seller Hub, Payments, with a payment report per deposit (S). Third-party descriptions list paired columns (commission, commission waiver, collection fee, collection waiver, fixed fee, fixed waiver, shipping fee, reverse shipping fee, pick-and-pack fee), taxes, TCS, TDS, "settlement value" and "bank settlement value". Exact headers **UNVERIFIED**. Failed or reversed fees are reported in later cycles (auperator KB title: "Reconciling failed fees"); Progen needs a per-fee reversal model.
+Payment (settlement) reports: Seller Hub, Payments, with a payment report per deposit (S). Third-party descriptions list paired columns (commission, commission waiver, collection fee, collection waiver, fixed fee, fixed waiver, shipping fee, reverse shipping fee, pick-and-pack fee), taxes, TCS, TDS, "settlement value" and "bank settlement value". Exact headers **UNVERIFIED**. Failed or reversed fees are reported in later cycles (auperator KB title: "Reconciling failed fees"); OneMatrix needs a per-fee reversal model.
 
 ### 3.3 Meesho
 
@@ -163,8 +163,8 @@ Sources are all third-party and they conflict. Treat everything as **UNVERIFIED*
 - TCS 0.5% and TDS 0.1% as per law. One source says TCS is 1%, which is outdated.
 - Settlement cycle: weekly, T+7 and T+15 all appear. The cycle is a per-channel setting, never a constant.
 - A return-heavy week can give a negative settlement; the negative is carried to the next payout.
-- Sellers may be unregistered for GST on Meesho: some sources say Meesho lets sellers without GST sell certain categories, which contradicts s.24(ix) unless the notified exemption applies. **UNVERIFIED**; Progen should not offer an "unregistered seller" path (Section 8.6).
-- Payment sheet columns were not found in any source. Progen should rely on file import with a configurable mapping.
+- Sellers may be unregistered for GST on Meesho: some sources say Meesho lets sellers without GST sell certain categories, which contradicts s.24(ix) unless the notified exemption applies. **UNVERIFIED**; OneMatrix should not offer an "unregistered seller" path (Section 8.6).
+- Payment sheet columns were not found in any source. OneMatrix should rely on file import with a configurable mapping.
 
 ### 3.4 Common structure
 
@@ -181,7 +181,7 @@ settlement payout = customer-paid amounts due to seller (sale + shipping recharg
                   - reserve held, + reserve released
 ```
 
-Progen's settlement model must keep each of these as a line type with sign, the order or return it refers to (optional), and whether GST is included.
+OneMatrix's settlement model must keep each of these as a line type with sign, the order or return it refers to (optional), and whether GST is included.
 
 ### 3.5 Shopify and payment gateways
 
@@ -189,7 +189,7 @@ Progen's settlement model must keep each of these as a line type with sign, the 
 - **Shopify subscription:** Shopify is a foreign provider, billed in USD. B2B recipient in India that is GST-registered: reverse charge (IGST by the recipient) on import of services, with input credit. Whether Shopify charges GST directly on India accounts is **UNVERIFIED**. Shopify Payments availability in India is **UNVERIFIED**; Indian stores generally use third-party gateways.
 - **Razorpay:** the vendor's own blog says most domestic methods (cards, UPI, netbanking, wallets) are 2% + GST, and EMI, Amex, Diners, international cards about 3% + GST, with 18% GST applying only to the gateway's fee (P: razorpay.com blog, per search summary). Settlement T+2 business days for domestic standard (one comparison says T+1; Razorpay also offers instant settlement for an extra fee, 0.5% to 0.7% **UNVERIFIED**). UPI rate is negotiable and **UNVERIFIED**. Merchant discount rate (MDR) on RuPay debit and UPI is zero by RBI/government policy for banks, but gateways charge a platform fee; **UNVERIFIED**.
 - **Cashfree:** figures disagree between sources (1.9% to 1.95% domestic cards plus GST, and a promotion of zero fee on first ₹20 lakh). **UNVERIFIED**, check the pricing page.
-- **Settlement report from a gateway** (Razorpay "Settlements" and "Transactions" reports, **UNVERIFIED** headers) usually has: settlement id, settled at, payment id, order id, amount, fee, tax (GST on fee), debit/credit, net, UTR, plus refund and dispute rows. Fee and tax are separate columns. Progen should import these as settlement lines of type `gateway_fee` and `gateway_fee_gst`.
+- **Settlement report from a gateway** (Razorpay "Settlements" and "Transactions" reports, **UNVERIFIED** headers) usually has: settlement id, settled at, payment id, order id, amount, fee, tax (GST on fee), debit/credit, net, UTR, plus refund and dispute rows. Fee and tax are separate columns. OneMatrix should import these as settlement lines of type `gateway_fee` and `gateway_fee_gst`.
 - GST on the gateway fee is an input credit for the seller, if the gateway's tax invoice carries the seller's GSTIN.
 - Gateway fee is deducted from the payout, so the bank credit is lower than the order amount; the order shows a receivable from the gateway until settlement.
 - On refunds, gateways usually do not return the original fee (**UNVERIFIED**). Keep as a cost.
@@ -383,7 +383,7 @@ For a seller on a marketplace (Rule 6(5) and surrounding):
 - The 13 specified patterns: false urgency, basket sneaking, confirm shaming, forced action, subscription trap, interface interference, bait and switch, drip pricing, disguised advertisement, nagging, trick question, SaaS billing, and rogue malwares. **UNVERIFIED** against the Gazette text.
 - Applies to all platforms, sellers and advertisers. For a seller's catalogue, the relevant ones are: drip pricing (the price shown must be the total payable, including shipping and handling fees, with no surprise add-ons), false urgency ("only 2 left" must be true), bait and switch, basket sneaking (no pre-added items or fees), and disguised ads (sponsored listings must be labelled).
 - Subsequent CCPA directions asking platforms for self-audits in 2025 are **UNVERIFIED**.
-- For Progen this is mostly a content and process matter. The data model only needs to avoid creating the patterns (for example showing a fee not in the displayed price).
+- For OneMatrix this is mostly a content and process matter. The data model only needs to avoid creating the patterns (for example showing a fee not in the displayed price).
 
 ### 6.4 What the seller's listing master must hold
 
@@ -407,7 +407,7 @@ Per listing (SKU on a channel) and per item master:
 | Category and fee category | Fee estimate |
 | Weight and dimensions | Fee estimate |
 
-Rule: the listing master holds the data; Progen validates completeness (warns) but does not publish to the marketplace in v1. Gaps block a channel's "ready" flag only as a warning.
+Rule: the listing master holds the data; OneMatrix validates completeness (warns) but does not publish to the marketplace in v1. Gaps block a channel's "ready" flag only as a warning.
 
 ## 7. Open questions for a human advisor
 
@@ -419,14 +419,14 @@ Rule: the listing master holds the data; Progen validates completeness (warns) b
 - Current fee schedules and report headers, from a real account.
 - The exact 9(5) service list as of 2026.
 
-## 8. What Progen needs to build
+## 8. What OneMatrix needs to build
 
 ### 8.1 Objects
 
 | Object | Key fields |
 | --- | --- |
 | Channel | id, type (amazon, flipkart, meesho, shopify, other), company, GSTIN used, state, settlement cycle days, fee profile id, `tcs_applies` (true for marketplaces), `tds_applies`, `tds_base_includes_gst`, active |
-| Channel location map | channel warehouse code to Progen location and GSTIN |
+| Channel location map | channel warehouse code to OneMatrix location and GSTIN |
 | Listing | channel, channel SKU, marketplace id, item, status, price, MRP, fee category, country of origin and other 6.4 fields |
 | Listing component | listing to item with quantity. Supports **combos and bundles**: one listing sells several items, stock and COGS split by component. Supports **variants** (many listings to one item). |
 | Order | channel, order id (unique per channel), order date, customer state, place of supply, payment mode (prepaid or COD), status |

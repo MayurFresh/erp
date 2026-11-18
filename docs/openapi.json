@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Progen ERP API",
+    "title": "OneMatrix API",
     "version": "1.11.0",
     "description": "Routes are listed from the running server. Request bodies are described where a zod schema is registered with documentRoute; see docs/API.md for the rest. Money is in rupees, dates are YYYY-MM-DD."
   },

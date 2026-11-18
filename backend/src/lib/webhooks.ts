@@ -82,8 +82,8 @@ registerJobHandler('webhook.deliver', async (tx, job, deps) => {
   const res = await fetch(ep.url, {
     method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10_000),
     headers: {
-      'content-type': 'application/json', 'user-agent': 'Progen-Webhooks/1',
-      'x-progen-event': d.event, 'x-progen-delivery': d.id, 'x-progen-signature': signPayload(unseal(ep.secret_sealed), body),
+      'content-type': 'application/json', 'user-agent': 'OneMatrix-Webhooks/1',
+      'x-onematrix-event': d.event, 'x-onematrix-delivery': d.id, 'x-onematrix-signature': signPayload(unseal(ep.secret_sealed), body),
     },
     body,
   });

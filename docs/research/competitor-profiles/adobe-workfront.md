@@ -57,10 +57,10 @@ Checked 2026-11-03. Confidence: medium for pricing model and Proof API, low for 
 - AI reviewer has prerequisites that suggest migration work.
 - No evidence of invoicing or project accounting. Workfront is not an ERP.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
-- Reuse Progen approvals for creative sign-off: a deliverable has versions, each version has reviewers and a decision.
-- Link a project to a client invoice and to a cost centre. Workfront does not do this, so it is a Progen advantage.
+- Reuse OneMatrix approvals for creative sign-off: a deliverable has versions, each version has reviewers and a decision.
+- Link a project to a client invoice and to a cost centre. Workfront does not do this, so it is a OneMatrix advantage.
 - Do not build proofing markup. Link to files and record decisions.
 - See docs/research/industry-workflows/media-creative.md.
 

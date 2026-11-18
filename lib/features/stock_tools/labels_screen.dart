@@ -89,7 +89,7 @@ class _LabelsState extends ConsumerState<LabelsScreen> {
   List<LabelEntry> get _entries => [
     for (final p in _picks)
       if (p.code != null && p.count > 0)
-        LabelEntry(name: p.item.name, price: p.item.salePrice, code: p.code!, copies: p.count),
+        LabelEntry(name: p.item.name, price: p.item.salePrice, code: p.code!, copies: p.count, mrp: p.item.mrp),
   ];
 
   Future<void> _print() async {

@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 /// Build-time configuration.
 ///
 /// Override the API base URL with
-/// `--dart-define=API_BASE_URL=https://erp.example.com/api/v1`.
+/// `--dart-define=API_BASE_URL=https://api.onematrix.site/api/v1`.
 abstract final class AppConfig {
   static const String _apiBaseUrlFromEnv = String.fromEnvironment(
     'API_BASE_URL',

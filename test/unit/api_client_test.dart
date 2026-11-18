@@ -4,9 +4,9 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/api_exception.dart';
-import 'package:progen_erp/core/token_store.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/api_exception.dart';
+import 'package:onematrix/core/token_store.dart';
 
 typedef Handler = FutureOr<ResponseBody> Function(RequestOptions options);
 

@@ -20,14 +20,14 @@ export async function seedRealEstate({ api, acct, patelId, mumbaiId, invoiceId }
   await api('PATCH', `/parties/${patelId}`, { pan: 'AABCP1234C', pincode: '380015' });
   await api('PATCH', `/parties/${mumbaiId}`, { pan: 'AAPFU0939F', pincode: '400069' });
 
-  const site = await api('POST', '/locations', { type: 'site', name: 'Site R1 — Progen Heights', code: 'SR1', address: 'Bopal, Ahmedabad' });
+  const site = await api('POST', '/locations', { type: 'site', name: 'Site R1 — OneMatrix Heights', code: 'SR1', address: 'Bopal, Ahmedabad' });
   // The sales executive sells flats at this site, so the project's units and bookings must be in their scope.
   const sales = (await api('GET', '/users?q=sales@demo.in')).data[0];
   const salesLocations: string[] = sales.assignments[0].locationIds ?? [];
   await api('PATCH', `/users/${sales.id}`, { locationIds: [...salesLocations, site.id] });
-  const reraAccount = await api('POST', '/accounts', { name: 'RERA Collection A/c — Progen Heights', type: 'asset', subtype: 'bank' });
+  const reraAccount = await api('POST', '/accounts', { name: 'RERA Collection A/c — OneMatrix Heights', type: 'asset', subtype: 'bank' });
   const project = await api('POST', '/projects', {
-    code: 'PRJ-R1', name: 'Progen Heights', status: 'active', startDate: daysAgo(90), endDate: addDays(todayIst(), 700),
+    code: 'PRJ-R1', name: 'OneMatrix Heights', status: 'active', startDate: daysAgo(90), endDate: addDays(todayIst(), 700),
     address: 'Bopal, Ahmedabad', siteIds: [site.id], reraRegNo: 'PR/GJ/AHMEDABAD/AHMEDABAD CITY/AUDA/RAA00000/010000', reraAccountId: reraAccount.id,
   });
 
@@ -77,7 +77,7 @@ export async function seedRealEstate({ api, acct, patelId, mumbaiId, invoiceId }
   await api('POST', `/bookings/${b3.id}/cancel`, { reason: 'Home loan not sanctioned' });
 
   // One transfer into the RERA account (70% rule is shown on GET /projects/:id/rera).
-  await api('POST', '/journals', { date: daysAgo(35), narration: 'Transfer to RERA collection account — Progen Heights', lines: [
+  await api('POST', '/journals', { date: daysAgo(35), narration: 'Transfer to RERA collection account — OneMatrix Heights', lines: [
     { accountId: reraAccount.id, debit: 1500000 }, { accountId: acct('1010'), credit: 1500000 }] });
 
   // A B2B invoice with a sandbox IRN.

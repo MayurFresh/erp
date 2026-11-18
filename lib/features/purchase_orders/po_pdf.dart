@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../core/amount_in_words.dart';
 import '../../core/india_states.dart';
+import '../../core/entered_unit.dart';
 import '../../core/money.dart';
 import '../../core/pdf_brand.dart';
 import '../../core/pdf_doc.dart';
@@ -64,8 +65,8 @@ Future<Uint8List> buildPurchaseOrderPdf(
             '${i + 1}',
             l.description.isEmpty ? l.itemName : l.description,
             l.hsnCode ?? '',
-            '${formatQty(l.qty)} ${l.unit}',
-            formatAmount(l.rate),
+            lineQtyText(l.qty, l.unit, l.entered),
+            lineRateText(l.rate, l.entered),
             l.discountPct == 0 ? '-' : formatPlain(l.discountPct),
             formatPlain(l.gstRate),
             formatAmount(l.lineTotal),

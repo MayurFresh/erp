@@ -54,6 +54,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
   late final TextEditingController _hsn;
   late final TextEditingController _unit;
   late final TextEditingController _salePrice;
+  late final TextEditingController _mrp;
   late final TextEditingController _purchasePrice;
   late final TextEditingController _reorder;
   late double _gstRate;
@@ -81,6 +82,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
     _hsn = TextEditingController(text: item?.hsnCode);
     _unit = TextEditingController(text: item?.unit ?? 'pcs');
     _salePrice = TextEditingController(text: formatPlain(item?.salePrice));
+    _mrp = TextEditingController(text: formatPlain(item?.mrp));
     _purchasePrice = TextEditingController(
       text: formatPlain(item?.purchasePrice),
     );
@@ -100,6 +102,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
       _hsn,
       _unit,
       _salePrice,
+      _mrp,
       _purchasePrice,
       _reorder,
     ]) {
@@ -120,6 +123,7 @@ class _ItemFormState extends ConsumerState<ItemForm>
       unit: _unit.text.trim(),
       gstRate: _gstRate,
       salePrice: parseNumber(_salePrice.text) ?? 0,
+      mrp: parseNumber(_mrp.text),
       // An emptied cost keeps the stored value rather than sending null.
       purchasePrice:
           parseNumber(_purchasePrice.text) ?? original?.purchasePrice,
@@ -316,6 +320,19 @@ class _ItemFormState extends ConsumerState<ItemForm>
                   onChanged: (_) => clearServerError('salePrice'),
                   validator: (v) =>
                       requiredNumber(v, label: 'Sale price', min: 0),
+                ),
+                TextFormField(
+                  controller: _mrp,
+                  enabled: canSave,
+                  decoration: InputDecoration(
+                    labelText: 'MRP (optional)',
+                    prefixText: '$moneySymbol ',
+                  ),
+                  keyboardType: decimalKeyboard,
+                  inputFormatters: [decimalInput()],
+                  forceErrorText: serverError('mrp'),
+                  onChanged: (_) => clearServerError('mrp'),
+                  validator: (v) => optionalNumber(v, min: 0),
                 ),
                 if (showCost)
                   TextFormField(

@@ -73,7 +73,7 @@ Practice follows the CPWD / state PWD model, which private main contractors copy
 - **CGST + SGST** for intra-state, **IGST** for inter-state, by place of supply (location of the immovable property).
 - **Time of supply (services).** The earlier of invoice date (invoice due within 30 days of the service, CGST s.13(2)) and receipt of payment. For stage-based RA bills, treat each certified bill as a milestone supply and invoice at certification. Retention is part of the invoice value and GST is paid on it at bill time (unverified in detail; confirm with a CA).
 - **ITC blocking, s.17(5)(c)/(d).** No ITC to the recipient on works contract services for construction of immovable property (other than plant and machinery) except where the service is used to further supply of works contract service itself. Land and building cases are blocked even if used in business, unless it is plant and machinery. A main contractor billing the client for works contract can claim ITC on subcontractor works contract (to supply further works contract). A developer building for sale is generally blocked (unverified in detail). Add a per-project flag "ITC eligible Y/N" that decides whether subcontractor GST goes to GST input (eligible) or is capitalised/expensed in Subcontract cost (blocked).
-- **GST TDS, CGST s.51.** Government departments, local authorities and notified bodies deduct 2 percent (1 + 1 CGST/SGST, or 2 IGST) when the contract value (excluding GST) exceeds ₹2.5 lakh. It applies to the taxable value, excluding GST. Sources: [TaxGuru on s.51](https://taxguru.in/goods-and-service-tax/section-51-gst-act-deduction-tds-specified-persons.html), [Bihar GST study material](https://bica.bihar.gov.in/Doc/Study%20Matrials/TDS%20under%20GST.pdf). It applies when Progen's client is such a body, and is relevant to Progen's own billing (receivable side) more than to subcontractor payments, unless Progen is itself a notified recipient (unlikely). Threshold is per contract, not per invoice (secondary source). Return is GSTR-7 (not detailed here).
+- **GST TDS, CGST s.51.** Government departments, local authorities and notified bodies deduct 2 percent (1 + 1 CGST/SGST, or 2 IGST) when the contract value (excluding GST) exceeds ₹2.5 lakh. It applies to the taxable value, excluding GST. Sources: [TaxGuru on s.51](https://taxguru.in/goods-and-service-tax/section-51-gst-act-deduction-tds-specified-persons.html), [Bihar GST study material](https://bica.bihar.gov.in/Doc/Study%20Matrials/TDS%20under%20GST.pdf). It applies when OneMatrix's client is such a body, and is relevant to OneMatrix's own billing (receivable side) more than to subcontractor payments, unless OneMatrix is itself a notified recipient (unlikely). Threshold is per contract, not per invoice (secondary source). Return is GSTR-7 (not detailed here).
 - **Reverse charge (RCM).** Normally the subcontractor charges GST. RCM under s.9(4) on supplies by unregistered persons now applies only to notified classes (unverified for works contracts; in practice most subcontractors are registered). If a subcontractor is unregistered or under the composition scheme, the bill is "bill of supply" with no GST and the system must not claim ITC. Flag subcontractor GST registration type.
 
 ## 6. BOCW welfare cess
@@ -91,7 +91,7 @@ Practice follows the CPWD / state PWD model, which private main contractors copy
 - **Closure:** at DLP end, defect-free certificate, release of retention or BG, no-dues / no-claim certificate, TDS certificate (Form 131) issued, WO status = closed. Block further bills after closure.
 - **Rework and defect cost** after the final bill is booked against the retention payable, not as a new RA bill.
 
-## 8. What Progen needs to build
+## 8. What OneMatrix needs to build
 
 ### Objects and fields
 - **Work order:** id, project, subcontractor (vendor with PAN, GSTIN, registration type, TDS category individual/HUF or other), date, validity, GST rate, TDS %, retention %, retention cap, DLP months, advance terms, BOCW cess %, status (draft, approved, active, closed). **WO line:** BOQ code, description, unit, qty, rate_paise.
@@ -107,7 +107,7 @@ Practice follows the CPWD / state PWD model, which private main contractors copy
 3. advance_recovery = min(advance balance, rule amount).
 4. GST = round(taxable x rate), where taxable = gross_this (retention not netted, GST is on the full value).
 5. TDS (income tax) on gross_this excluding GST, using the threshold logic in the TDS section above (aggregate tracking per vendor per financial year).
-6. BOCW cess = round(gross_this x cess_bp / 10000) when Progen deducts.
+6. BOCW cess = round(gross_this x cess_bp / 10000) when OneMatrix deducts.
 7. net_payable = gross_this + GST - retention - advance_recovery - TDS - GST TDS - cess - other.
 
 Example (paise): gross_this 1,00,00,000 (₹1,00,000.00), retention 5% = 5,00,000, advance recovery 10% = 10,00,000, TDS 2% = 2,00,000, GST 18% = 18,00,000, cess 1% = 1,00,000. Net = 1,00,00,000 + 18,00,000 - 5,00,000 - 10,00,000 - 2,00,000 - 1,00,000 = 1,00,00,000 paise (₹1,00,000.00).

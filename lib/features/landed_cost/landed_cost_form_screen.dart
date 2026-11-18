@@ -102,8 +102,44 @@ class _State extends ConsumerState<LandedCostFormScreen> {
     );
     if (picked == null) return;
     setState(() {
+      c.clearSource();
       c.creditAccountId = asString(picked['id']);
       c.creditAccountName = '${picked['code']} ${picked['name']}';
+      c.partyId = null;
+      c.partyName = null;
+      _preview = null;
+    });
+  }
+
+  /// Takes the charge from an expense entry or a vendor bill that has not
+  /// been allocated yet. The source supplies the credit side and the amount.
+  Future<void> _pickSource(ChargeDraft c, String type) async {
+    final repo = ref.read(landedCostRepositoryProvider);
+    final isExpense = type == 'expense';
+    final picked = await showSearchPicker<Json>(
+      context: context,
+      title: isExpense ? 'Choose an expense' : 'Choose a vendor bill',
+      hintText: 'Search number or name',
+      emptyMessage: 'No unused ${isExpense ? 'expense' : 'vendor bill'} found.',
+      search: (q) => repo.sources(type, q),
+      titleBuilder: (_, d) => Text(
+        '${asString(d['number'])} · ${formatMoney(asDouble(d['amount']))}',
+      ),
+      subtitleBuilder: (_, d) => Text(
+        [formatDate(d['date']), asString(d['description'])]
+            .where((x) => x.isNotEmpty)
+            .join(' · '),
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      c.sourceType = type;
+      c.sourceId = asString(picked['id']);
+      c.sourceLabel = asString(picked['number']);
+      c.sourceAmount = asDouble(picked['amount']);
+      c.amount = c.sourceAmount!;
+      c.creditAccountId = null;
+      c.creditAccountName = null;
       c.partyId = null;
       c.partyName = null;
       _preview = null;
@@ -114,6 +150,7 @@ class _State extends ConsumerState<LandedCostFormScreen> {
     final p = await pickParty(context, ref, type: PartyType.vendor);
     if (p == null) return;
     setState(() {
+      c.clearSource();
       c.partyId = p.id;
       c.partyName = p.name;
       c.creditAccountId = null;
@@ -189,13 +226,16 @@ class _State extends ConsumerState<LandedCostFormScreen> {
                 }),
               ),
               TextFormField(
+                key: ValueKey('amount-${c.sourceId}'),
                 initialValue: c.amount > 0 ? '${c.amount}' : '',
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Added to cost',
-                  helperText: 'Without GST',
+                  helperText: c.sourceAmount == null
+                      ? 'Without GST'
+                      : 'Without GST, at most ${formatMoney(c.sourceAmount!)}',
                 ),
                 onChanged: (v) {
                   c.amount = double.tryParse(v) ?? 0;
@@ -228,6 +268,24 @@ class _State extends ConsumerState<LandedCostFormScreen> {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+                onPressed: () => _pickSource(c, 'expense'),
+                child: Text(
+                  c.sourceType == 'expense'
+                      ? 'Expense ${c.sourceLabel}'
+                      : 'From an expense',
+                ),
+              ),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+                onPressed: () => _pickSource(c, 'vendor_bill'),
+                child: Text(
+                  c.sourceType == 'vendor_bill'
+                      ? 'Bill ${c.sourceLabel}'
+                      : 'From a vendor bill',
+                ),
+              ),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => _pickAccount(c),

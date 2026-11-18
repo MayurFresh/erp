@@ -1,6 +1,6 @@
 # Backup and restore
 
-Status: drill not yet done. These commands are standard PostgreSQL tools and have not been rehearsed against Progen data. A restore drill is a release blocker (`docs/release/production-readiness-checklist.md`, gate 5).
+Status: drill not yet done. These commands are standard PostgreSQL tools and have not been rehearsed against OneMatrix data. A restore drill is a release blocker (`docs/release/production-readiness-checklist.md`, gate 5).
 
 ## What to back up
 
@@ -15,10 +15,10 @@ Status: drill not yet done. These commands are standard PostgreSQL tools and hav
 Use the admin (owner) connection, not the app role, so every row is included:
 
 ```
-pg_dump --format=custom --no-owner --file progen-$(date +%F).dump "$OWNER_DATABASE_URL"
+pg_dump --format=custom --no-owner --file onematrix-$(date +%F).dump "$OWNER_DATABASE_URL"
 ```
 
-`$OWNER_DATABASE_URL` is the admin credentials pointing at the Progen database (not the `postgres` database). Encrypt the file before it leaves the host. Keep daily copies for at least 14 days and test one regularly.
+`$OWNER_DATABASE_URL` is the admin credentials pointing at the OneMatrix database (not the `postgres` database). Encrypt the file before it leaves the host. Keep daily copies for at least 14 days and test one regularly.
 
 ## Restore
 
@@ -27,7 +27,7 @@ pg_dump --format=custom --no-owner --file progen-$(date +%F).dump "$OWNER_DATABA
 3. Restore:
 
 ```
-pg_restore --no-owner --dbname "$OWNER_NEW_DATABASE_URL" --exit-on-error progen-YYYY-MM-DD.dump
+pg_restore --no-owner --dbname "$OWNER_NEW_DATABASE_URL" --exit-on-error onematrix-YYYY-MM-DD.dump
 ```
 
 4. Re-grant the app role: `npm run db:migrate` (applies nothing new but runs the grants).

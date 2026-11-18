@@ -162,7 +162,7 @@ class _TwoFactorCardState extends ConsumerState<TwoFactorCard> {
                 child: Text(
                   key: const Key('security.mustEnrol'),
                   'Your company requires two-step verification. Set it up to '
-                  'continue using Progen.',
+                  'continue using OneMatrix.',
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),

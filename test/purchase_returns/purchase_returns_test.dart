@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_exception.dart';
-import 'package:progen_erp/features/documents/credit_limit_dialog.dart';
-import 'package:progen_erp/features/invoices/invoice_model.dart';
-import 'package:progen_erp/features/purchase_returns/purchase_return_model.dart';
-import 'package:progen_erp/features/sales_orders/sales_order_models.dart';
+import 'package:onematrix/core/api_exception.dart';
+import 'package:onematrix/features/documents/credit_limit_dialog.dart';
+import 'package:onematrix/features/invoices/invoice_model.dart';
+import 'package:onematrix/features/purchase_returns/purchase_return_model.dart';
+import 'package:onematrix/features/sales_orders/sales_order_models.dart';
 
 const _json = {
   'id': 'r1',

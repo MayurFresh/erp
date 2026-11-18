@@ -37,6 +37,25 @@ export function dueAt(start: Date, hours: number, cfg: Hours): Date {
   return new Date(start.getTime() + hours * 3600_000);
 }
 
+/** Service time, in milliseconds, between two moments: elapsed time in 24x7 mode, working hours only in business mode. */
+export function businessMillis(from: Date, to: Date, cfg: Hours): number {
+  if (to <= from) return 0;
+  const open = minutesOf(cfg.startTime) * 60_000;
+  const close = minutesOf(cfg.endTime) * 60_000;
+  if (cfg.mode === '24x7' || close <= open || !cfg.workDays.length) return to.getTime() - from.getTime();
+  const a = from.getTime() + IST_MS;
+  const b = to.getTime() + IST_MS;
+  let total = 0;
+  for (let dayStart = Math.floor(a / DAY_MS) * DAY_MS; dayStart < b; dayStart += DAY_MS) {
+    const dow = new Date(dayStart).getUTCDay() || 7;
+    if (!cfg.workDays.includes(dow)) continue;
+    const lo = Math.max(a, dayStart + open);
+    const hi = Math.min(b, dayStart + close);
+    if (hi > lo) total += hi - lo;
+  }
+  return total;
+}
+
 export const DEFAULT_SLA: Record<string, { firstResponseHours: number; resolutionHours: number }> = {
   low: { firstResponseHours: 24, resolutionHours: 120 },
   medium: { firstResponseHours: 8, resolutionHours: 48 },

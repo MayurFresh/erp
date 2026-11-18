@@ -1,6 +1,6 @@
 # Runbooks
 
-Short, exact procedures for running Progen ERP. Commands come from `backend/package.json`. Run backend commands in `backend/`. Environment variables are named in `backend/src/config.ts`; set them in `backend/.env` or the host environment. Never paste their values into tickets or chat.
+Short, exact procedures for running OneMatrix. Commands come from `backend/package.json`. Run backend commands in `backend/`. Environment variables are named in `backend/src/config.ts`; set them in `backend/.env` or the host environment. Never paste their values into tickets or chat.
 
 Status on 2026-11-03: there is no Dockerfile, no CI and no hosted environment in the repo. These runbooks describe a single Node process plus PostgreSQL 16. Nothing here has been drilled in production.
 

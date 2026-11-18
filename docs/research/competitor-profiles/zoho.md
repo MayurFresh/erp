@@ -69,7 +69,7 @@ Mobile apps exist for Books (UNVERIFIED on a store page this pass).
 - Zoho One and ERP prices are not published on pages that could be read.
 - Plan invoice caps create upgrade cliffs.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Make e-invoice available on the lowest paid plan. It is the anchor feature in India.
 - Pre-validate documents before submission.

@@ -58,7 +58,7 @@ Checked 2026-11-03. Confidence: medium for the integration platform (Oracle docs
 - Heavy product for small Indian hotels (this is an inference; no Oracle statement on SME fit).
 - Pricing and India tax handling not found.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Define a small set of outbound hotel events (check-in, check-out, room move, charge posted) before building any integrations.
 - Keep a charge-posting endpoint so a restaurant pack can post to a room folio.

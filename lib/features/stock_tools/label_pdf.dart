@@ -47,6 +47,7 @@ class LabelEntry {
     required this.price,
     required this.code,
     required this.copies,
+    this.mrp,
   });
 
   final String name;
@@ -55,6 +56,9 @@ class LabelEntry {
   /// Item barcode, or the SKU when there is none.
   final String code;
   final int copies;
+
+  /// Printed as "MRP Rs x (incl. of all taxes)" when set.
+  final double? mrp;
 }
 
 /// EAN-13 for 12 or 13 digits with a good check digit; Code 128 for anything else.
@@ -80,6 +84,9 @@ String _price(double v, bool rupeeSign) {
   final text = v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
   return rupeeSign ? '₹$text' : 'Rs $text';
 }
+
+/// The legal-metrology line under the barcode.
+String mrpLine(double mrp, bool rupeeSign) => 'MRP ${_price(mrp, rupeeSign)} (incl. of all taxes)';
 
 pw.Widget _label(LabelEntry e, LabelLayout l, bool rupeeSign) {
   final small = l.heightMm < 25;
@@ -108,6 +115,13 @@ pw.Widget _label(LabelEntry e, LabelLayout l, bool rupeeSign) {
             padding: const pw.EdgeInsets.symmetric(vertical: 1),
           ),
         ),
+        if (e.mrp != null)
+          pw.Text(
+            mrpLine(e.mrp!, rupeeSign),
+            maxLines: 1,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(fontSize: small ? 4.5 : 6),
+          ),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [

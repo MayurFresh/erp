@@ -29,7 +29,7 @@ How to read this note:
 | Leave encashment, notice pay, F&F | usually basic + DA, or per policy | §9, §10 |
 
 ### 1.3 Worked example: the add-back
-Interpretation used here (the "payroll vendor view", **UNVERIFIED** as a legal reading): treat HRA, conveyance, commission, OT, employer PF, special-expense reimbursements and other non-basic allowances as the excluded block. Whether a free-form "special allowance" counts as wages or as an excluded item is disputed in commentary. Progen must therefore make each component's `countsAsWages` flag editable per company, with a default.
+Interpretation used here (the "payroll vendor view", **UNVERIFIED** as a legal reading): treat HRA, conveyance, commission, OT, employer PF, special-expense reimbursements and other non-basic allowances as the excluded block. Whether a free-form "special allowance" counts as wages or as an excluded item is disputed in commentary. OneMatrix must therefore make each component's `countsAsWages` flag editable per company, with a default.
 
 Example A: monthly remuneration ₹40,000
 - Basic ₹15,000, HRA ₹7,500, conveyance ₹3,000, special allowance ₹14,500.
@@ -100,7 +100,7 @@ Basics, the ₹25,000 ceiling from 17 Sep 2026, the SS Code s.16 rates and cover
 - Fields per line (from the ECR 2.0 layout, **UNVERIFIED (carried over)** since I could not open the PDF text): UAN; member name; gross wages; EPF wages; EPS wages; EDLI wages; EPF contribution remitted (employee share); EPS contribution remitted; EPF-EPS diff remitted (employer EPF share); NCP days (non-contributing days); refund of advances.
 - The challan is built from totals. Admin charges and EDLI are computed on the portal from wages.
 - **Due date.** The 15th of the following month (EPFO notices: https://www.zeebiz.com/hindi/personal-finance/epfo/epfo-what-is-ecr-and-filing-deadline-may-15-2026-penalty-rules-reminders-alert-full-update-255173). A grace period used to exist (5 days) but is not a safe assumption; late payment attracts damages and interest. Under the SS Code, the legal basis is SS Code s.16-17 plus the EPF scheme; exact current interest/damages rates are **UNVERIFIED**.
-- Rounding: contributions are rounded to the nearest rupee per member in the ECR (EPFO rate sheet states nearest rupee for admin charge; per-member rounding is **UNVERIFIED (carried over)**). Progen should keep a configurable rule per charge head (`nearest`, `up`, `down`).
+- Rounding: contributions are rounded to the nearest rupee per member in the ECR (EPFO rate sheet states nearest rupee for admin charge; per-member rounding is **UNVERIFIED (carried over)**). OneMatrix should keep a configurable rule per charge head (`nearest`, `up`, `down`).
 - NCP days: LOP days in the month. Gross wages in the ECR are the actual month's earned wages; EPF wages are capped.
 
 ### 2.6 Worked examples
@@ -366,7 +366,7 @@ Assumptions for both: employer PF on the ceiling (₹25,000 × 12% = ₹3,000/mo
 
 ### 7.1 Formula and eligibility
 - **Formula (SS Code s.53, old Payment of Gratuity Act s.4):** gratuity = last drawn wages × 15 ÷ 26 × completed years of service. Part-year over 6 months is counted as a full year (same under the Act; one source says Social Security (Central) Rules r.33 states it: https://www.patronaccounting.com/blog/gratuity-calculation-2026-one-year-rule-fixed-term-employees). SS Code section number and rule number **UNVERIFIED**.
-- "Wages" = Code wages (basic + DA + retaining, with the 50% add-back, §1). New wage definition applies **prospectively from 21 Nov 2025** per Labour Ministry comments reported at https://www.legalserviceindia.com/Legal-Articles/gratuity-act-under-the-code-on-social-security-2020-employer-duties/ (**UNVERIFIED**). A conservative reading: for service up to 20 Nov 2025 compute on the old definition; after on the new. Progen should support a two-tranche computation or flag this open item.
+- "Wages" = Code wages (basic + DA + retaining, with the 50% add-back, §1). New wage definition applies **prospectively from 21 Nov 2025** per Labour Ministry comments reported at https://www.legalserviceindia.com/Legal-Articles/gratuity-act-under-the-code-on-social-security-2020-employer-duties/ (**UNVERIFIED**). A conservative reading: for service up to 20 Nov 2025 compute on the old definition; after on the new. OneMatrix should support a two-tranche computation or flag this open item.
 - **Eligibility:** 5 years of continuous service on superannuation, retirement, resignation, death or disablement. For death or disablement the 5-year condition does not apply (**UNVERIFIED (carried over)**).
 - **Fixed-term employees:** eligible after **one year** of service under the contract, pro-rata. IR Code s.2(o)(c) as quoted in LW §7, and PIB (https://www.pib.gov.in/PressReleasePage.aspx?PRID=2192524) ("earlier five years"). Fixed-term employees' gratuity is payable on the pro-rata completed years, for which 6+ months counts as one.
 - Seasonal establishments: 7 days for each season (**UNVERIFIED (carried over)**).
@@ -498,7 +498,7 @@ Working time and OT law: LW §2 (OT at twice the normal rate, daily rate ÷ 8, m
 
 ### 12.1 Status
 - The Digital Personal Data Protection Rules 2025 were notified on 13 Nov 2025 (published in the Gazette 14 Nov, per some sources). Only enabling rules (r.1, 2, 17 to 21) came into force at once; the main obligations on data fiduciaries start after 18 months, about **13 May 2027** (https://www.mondaq.com/india/data-protection/1713500/regulatory-update-notification-of-the-digital-personal-data-protection-rules-2025, https://www.tribuneindia.com/news/business/govt-notifies-digital-personal-data-protection-rules-rollout-in-phases-specified-obligations-for-data-fiduciaries). Consent-manager registration begins about 14 Nov 2026. A tracker computed for 9 Sep 2026 reports 19 of 44 sections in force. **UNVERIFIED** dates (law-firm and news sources only).
-- Practical timeline for Progen: build the controls now; they bind customers from about May 2027.
+- Practical timeline for OneMatrix: build the controls now; they bind customers from about May 2027.
 
 ### 12.2 Employment as a legitimate use
 - **s.7(i) of the DPDP Act:** processing "for the purposes of employment or those related to safeguarding the employer from loss or liability" is a legitimate use for which consent is not needed (https://factohr.com/dpdp-act-2023/, https://elplaw.in/wp-content/uploads/2026/05/Processing-employee-related-data-Where-are-the-potential-boundaries.pdf). Commentators caution that this covers data genuinely tied to the employment relationship, not every conceivable use. **UNVERIFIED** reading.
@@ -506,18 +506,18 @@ Working time and OT law: LW §2 (OT at twice the normal rate, daily rate ÷ 8, m
 - **Consent likely needed (or a very clear necessity record):** continuous GPS tracking, face recognition or fingerprint (biometric) attendance, photos, location outside work hours, health data beyond statutory needs, marketing, and any data used for analytics unrelated to employment. Biometric data is not a separate "sensitive" class under the DPDP Act (unlike the repealed SPDI Rules), but necessity and proportionality, notice and purpose limitation apply (**UNVERIFIED** commentary).
 - Prefer an alternative where possible: allow PIN/QR/manual attendance when an employee declines biometrics or GPS (consent must be freely given; an employee in a power imbalance can argue it was not).
 
-### 12.3 Obligations Progen must support
+### 12.3 Obligations OneMatrix must support
 - **Notice** (s.5 and Rules): itemised list of personal data, purpose, how to exercise rights, how to complain to the Data Protection Board. Present at first use of GPS/face attendance in the app, in English and local language (the Act allows the 22 scheduled languages).
 - **Consent record**, when consent is the basis: who, what purpose, timestamp, version of notice, and withdrawal as easy as giving it. Withdrawal stops the processing from then on; data already needed for legal obligations stays.
 - **Rights:** access, correction, erasure, grievance redressal, nomination. Employee self-service for view/correct; erasure requests handled with legal-retention holds.
 - **Retention and erasure:** s.8(7): erase personal data once the purpose is served and consent withdrawn, unless law requires retention. Statutory floors, from LW §7: wage registers 5 years after the last entry; EPF/ESI/tax records, **UNVERIFIED** (EPF records: 5 years under the scheme; income-tax records: 6–8 years: **UNVERIFIED (carried over)**). Practical policy: keep payroll and statutory records at least the longest applicable statutory period, then anonymise or erase; keep **attendance GPS coordinates and face templates short** (for instance, delete raw GPS trails after 90 days and keep only the punch result; delete face templates on exit within 30 days). These periods are product choices, not law: **UNVERIFIED**.
 - **Security and breach:** reasonable safeguards (encryption, access control, logs kept for a year per the Rules, **UNVERIFIED**) and breach notice to the Board and affected persons (72 hours for the detailed report, **UNVERIFIED**).
-- **Processor role:** Progen is the **data processor** for its customers (the data fiduciaries). It needs a data-processing agreement, sub-processor list, and the ability to apply deletion on instruction.
+- **Processor role:** OneMatrix is the **data processor** for its customers (the data fiduciaries). It needs a data-processing agreement, sub-processor list, and the ability to apply deletion on instruction.
 - Children's data: employees under 18 (apprentices, trainees): verifiable parental consent is needed; no tracking or targeted behaviour monitoring (**UNVERIFIED** application to employment).
 
 ---
 
-## 13. What Progen needs to build
+## 13. What OneMatrix needs to build
 
 ### 13.1 Objects
 | Object | Key fields |
@@ -594,7 +594,7 @@ Per payroll run (accrual basis on the pay date or the month end):
 - Warn (do not block) on: wages below the state minimum (LW §3), EPF ceiling mismatch, ESI covered-until mismatch, PT state mismatch with work location, negative net pay, more than 50% deductions (LW §7), OT above the cap (LW §2).
 - Block on: no appointment letter on file (LW §8), missing PAN/UAN where mandatory (warn for the first run, block for statutory filings), duplicate bank accounts across employees (flag for review).
 - A TDS projection must show the working (annual estimate, tax computed, tax paid, balance, months left) so the employee and auditor can follow.
-- Do not present Progen's PT/LWF/TDS outputs as legal advice; each customer's statutory registrations remain their duty. Add a "last reviewed" date on each rule table and a yearly review task in April and October (EPF/ESI/VDA changes happen near those dates).
+- Do not present OneMatrix's PT/LWF/TDS outputs as legal advice; each customer's statutory registrations remain their duty. Add a "last reviewed" date on each rule table and a yearly review task in April and October (EPF/ESI/VDA changes happen near those dates).
 - Biometric/GPS: off by default, per-company switch, notice shown before first use, an alternate method available; store face templates as non-reversible templates, not images; retention timers enforced by a job (§12.3).
 
 ### 13.7 Open items to confirm before go-live

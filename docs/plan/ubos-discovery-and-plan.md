@@ -1,10 +1,10 @@
-# Progen as a business operating system: discovery report and plan
+# OneMatrix as a business operating system: discovery report and plan
 
-Written 3 November 2026 against the "Universal Business Operating System master plan" (v1.0). The plan describes building that product from scratch. Progen already exists, so this report answers three questions: what in the plan is already built, what is missing, and what to build next, in what order.
+Written 3 November 2026 against the "Universal Business Operating System master plan" (v1.0). The plan describes building that product from scratch. OneMatrix already exists, so this report answers three questions: what in the plan is already built, what is missing, and what to build next, in what order.
 
 Section numbers in brackets refer to the master plan.
 
-## 1. Where Progen stands today
+## 1. Where OneMatrix stands today
 
 | Area | State |
 | --- | --- |
@@ -80,7 +80,7 @@ Legend: **Done** = built and tested. **Partial** = some of it exists. **Missing*
 
 ## 3. Who we build for first
 
-The master plan's recommended first market fits Progen's strengths [§1.2, §2.2]: **Indian SMEs that hold stock and sell through several channels**. That means marketplace sellers, D2C brands, distributors and wholesalers, and small manufacturers with one or more warehouses. They already need what Progen does well (GST, TDS, books), and what they lack today is order, warehouse and channel operations.
+The master plan's recommended first market fits OneMatrix's strengths [§1.2, §2.2]: **Indian SMEs that hold stock and sell through several channels**. That means marketplace sellers, D2C brands, distributors and wholesalers, and small manufacturers with one or more warehouses. They already need what OneMatrix does well (GST, TDS, books), and what they lack today is order, warehouse and channel operations.
 
 Construction and real estate stay as existing industry packs. They are not the launch wedge.
 
@@ -112,7 +112,7 @@ Each release keeps the same rule: contract first in docs/API.md, then backend wi
 
 - **Scope.** Seventeen verticals is a decade of work for a large team. The plan says so too [§1.2]. We hold to one wedge per release.
 - **Marketplace access is a business task, not a coding one.** Amazon SP-API needs a developer registration, and Flipkart needs a seller API application. Meesho has no public seller API that we could confirm. Code can be ready, but nothing goes live until the owner gets access [§7.3].
-- **Compliance sign-off.** Every statutory figure in Progen is marked unverified until a chartered accountant reviews it [§8].
+- **Compliance sign-off.** Every statutory figure in OneMatrix is marked unverified until a chartered accountant reviews it [§8].
 - **"Production ready" needs evidence we don't have yet:** load tests, a penetration test, backup drills and pilot customers [§12]. v1.11 produces the engineering evidence. Pilots are the owner's call.
 
 ## 7. Decisions needed from the owner
@@ -123,7 +123,7 @@ Each release keeps the same rule: contract first in docs/API.md, then backend wi
 4. A GSP for live e-invoice and e-way bill (still sandbox).
 5. Two or three pilot businesses in the wedge, and a chartered accountant to review postings.
 6. Hosting region and provider, so v1.11 can target it.
-7. Product name: keep "Progen", or rebrand to match the broader vision.
+7. Product name: keep "OneMatrix", or rebrand to match the broader vision.
 8. Whether to add a scan-only picker role for warehouse staff.
 9. A separate `DATA_KEY` for production field encryption, held outside the database host.
 10. Ask the Meesho, Myntra, AJIO, Nykaa and JioMart account managers about partner API access. Until then those channels run on file import.
@@ -132,7 +132,7 @@ Each release keeps the same rule: contract first in docs/API.md, then backend wi
 
 | Deliverable | Where | State |
 | --- | --- | --- |
-| Research files [§4.1] | [docs/research/](../research/README.md): competitor-master (96 vendor rows), feature-matrix (48 features, Progen and 23 vendors), pricing-matrix (108 published prices), integration-matrix (41 APIs with Progen status), 18 competitor profiles, 13 industry workflows with a ranking, source register, research gaps, decisions and assumptions | Done. Gaps need vendor demos, quotes and the owner's seller logins. |
+| Research files [§4.1] | [docs/research/](../research/README.md): competitor-master (96 vendor rows), feature-matrix (48 features, OneMatrix and 23 vendors), pricing-matrix (108 published prices), integration-matrix (41 APIs with OneMatrix status), 18 competitor profiles, 13 industry workflows with a ranking, source register, research gaps, decisions and assumptions | Done. Gaps need vendor demos, quotes and the owner's seller logins. |
 | Product docs [§19 C] | [docs/product/](../product/): vision, personas, industry and module catalogues, requirements F1 to F19 with acceptance criteria, user stories, roadmap, risks | Done |
 | Architecture [§19 D] | [docs/architecture/](../architecture/): system, domain boundaries, data flow, multi-tenancy, security, integrations, and ADR-001 to ADR-006 | Done |
 | QA, security, operations, release [§19 N] | [docs/qa/](../qa/), [docs/security/](../security/), [docs/operations/runbooks/](../operations/runbooks/), [docs/release/](../release/) | See §11 |
@@ -141,11 +141,11 @@ Each release keeps the same rule: contract first in docs/API.md, then backend wi
 
 1. **v1.9 opens with file import, not adapters.** Meesho, Myntra, AJIO, Nykaa, JioMart and Snapdeal have no public seller API that we could find. CSV import for orders, returns and settlements, with channel SKU mapping, is the only route for them and works for every other channel too.
 2. **The webhook inbox needs one verifier per provider.** Shopify signs the raw body with HMAC-SHA256, waits 5 seconds for a reply, retries 8 times and sends a `Webhook-Id` to dedupe on. WooCommerce disables a webhook after more than 5 failed deliveries. Each payment gateway signs differently. So the inbox stores the raw body, verifies, replies at once, and hands the work to the job worker, keyed on the provider's event id.
-3. **Tally export moves into v1.9.** TallyPrime Silver costs Rs 22,500 once, and most target SMEs keep Tally as the book their CA works in. An export lets them run operations in Progen without moving their books on day one.
-4. **A live GSP is now a competitive gap, not just a compliance one.** Zoho Books includes e-invoicing from Rs 749 per organisation per month and acts as its own GSP. Progen's e-invoice is still sandbox.
-5. **Odoo puts its API, Studio and multi-company on its top Custom plan.** Progen has all three in core, which is worth saying on a pricing page.
+3. **Tally export moves into v1.9.** TallyPrime Silver costs Rs 22,500 once, and most target SMEs keep Tally as the book their CA works in. An export lets them run operations in OneMatrix without moving their books on day one.
+4. **A live GSP is now a competitive gap, not just a compliance one.** Zoho Books includes e-invoicing from Rs 749 per organisation per month and acts as its own GSP. OneMatrix's e-invoice is still sandbox.
+5. **Odoo puts its API, Studio and multi-company on its top Custom plan.** OneMatrix has all three in core, which is worth saying on a pricing page.
 6. **Business Central has about 70 India tax scenario pages.** That is the bar for compliance depth, and it is why the CA review in §7 matters.
-7. **NetSuite exposes data to AI clients over MCP.** Progen's assistant should use the same route: the permissioned API from v1.11 first, the assistant after it.
+7. **NetSuite exposes data to AI clients over MCP.** OneMatrix's assistant should use the same route: the permissioned API from v1.11 first, the assistant after it.
 8. **Vertical order after commerce:** construction and real-estate gap closure, then retail and wholesale (POS), manufacturing, professional services, restaurant, hospitality. The ranking is in [industry-workflows/README.md](../research/industry-workflows/README.md). India demand evidence is weak for most rows.
 
 ## 10. Code facts the plan should not assume away

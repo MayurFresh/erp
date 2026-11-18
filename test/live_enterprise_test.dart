@@ -4,21 +4,21 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/auth/auth_repository.dart';
-import 'package:progen_erp/features/controls/controls_repository.dart';
-import 'package:progen_erp/features/platform/platform_repository.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/auth/auth_repository.dart';
+import 'package:onematrix/features/controls/controls_repository.dart';
+import 'package:onematrix/features/platform/platform_repository.dart';
 
 /// v1.7 client models against the real API and the seeded demo data (seed-platform.ts and
 /// seed-controls.ts). Read-only, so the suite can run repeatedly.
 void main() {
-  final baseUrl = Platform.environment['PROGEN_API'];
+  final baseUrl = Platform.environment['ONEMATRIX_API'];
 
   group(
     'live enterprise',
     skip: baseUrl == null || baseUrl.isEmpty
-        ? 'Set PROGEN_API (e.g. http://localhost:8080/api/v1) to run'
+        ? 'Set ONEMATRIX_API (e.g. http://localhost:8080/api/v1) to run'
         : false,
     () {
       late ApiClient api;
@@ -56,7 +56,7 @@ void main() {
       test('companies, inter-company and consolidation', () async {
         final cos = await platform.companies();
         expect(cos, hasLength(2));
-        expect(cos.map((c) => c.name), contains('Progen Infra Projects LLP'));
+        expect(cos.map((c) => c.name), contains('OneMatrix Infra Projects LLP'));
 
         final ice = await platform.intercompany();
         expect(ice.total, 1);

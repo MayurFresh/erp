@@ -1,4 +1,4 @@
-# Progen design system
+# OneMatrix design system
 
 Flat, quiet, tool-like. A cool-grey base, a dark teal sidebar and phone app bar, one teal brand colour, five accent tones for badges, hairline borders, small radii. Source of truth: `lib/core/design_tokens.dart`, `lib/core/app_colors.dart`, `lib/core/theme.dart`.
 

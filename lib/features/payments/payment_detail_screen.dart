@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printing/printing.dart';
 
 import '../../core/money.dart';
 import '../../core/permissions.dart';
@@ -10,6 +11,8 @@ import '../../widgets/states.dart';
 import '../auth/session.dart';
 import '../documents/document_models.dart';
 import '../documents/document_widgets.dart';
+import '../finance_reports/cheque_pdf.dart';
+import '../finance_reports/finance_repository.dart';
 import 'payment_model.dart';
 import 'payments_repository.dart';
 import '../reports/pdf_actions.dart';
@@ -50,6 +53,21 @@ class PaymentDetailScreen extends ConsumerWidget {
     }
   }
 
+  /// Prints the cheque leaf for this payment, creating the cheque record from
+  /// the bank account's next unused leaf the first time.
+  Future<void> _printCheque(BuildContext context, WidgetRef ref) async {
+    try {
+      final r = await ref.read(financeRepositoryProvider).chequeForPayment(paymentId);
+      final bytes = await buildChequePdf(r.data);
+      await Printing.layoutPdf(
+        onLayout: (_) async => bytes,
+        name: 'cheque-${r.chequeNo}.pdf',
+      );
+    } catch (e) {
+      if (context.mounted) showErrorSnackBar(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final perms = ref.watch(permissionsProvider);
@@ -85,6 +103,15 @@ class PaymentDetailScreen extends ConsumerWidget {
                     theme: x.theme,
                   ),
                 ),
+                if (p.status == DocStatus.posted &&
+                    !receipt &&
+                    p.mode == PaymentMode.cheque &&
+                    perms.can(Perm.chequesManage))
+                  DocAction(
+                    label: 'Print cheque',
+                    icon: Icons.print_outlined,
+                    onPressed: () => _printCheque(context, ref),
+                  ),
                 if (p.status == DocStatus.posted &&
                     perms.can(Perm.paymentsCancel))
                   DocAction(

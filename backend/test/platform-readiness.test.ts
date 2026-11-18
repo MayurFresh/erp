@@ -242,8 +242,8 @@ describe('webhooks', () => {
     expect(log[0]).toMatchObject({ status: 'delivered', attempts: 2, responseStatus: 200 });
 
     const last = received.at(-1)!;
-    expect(last.headers['x-progen-event']).toBe('invoice.created');
-    const sig = String(last.headers['x-progen-signature']);
+    expect(last.headers['x-onematrix-event']).toBe('invoice.created');
+    const sig = String(last.headers['x-onematrix-signature']);
     const t = Number(/t=(\d+)/.exec(sig)![1]);
     expect(sig).toBe(signPayload(secret, last.body, t));
     const payload = JSON.parse(last.body);

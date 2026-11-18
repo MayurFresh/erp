@@ -25,7 +25,7 @@ String _where(FlutterErrorDetails d) {
   final where = lines
       .where((l) => l.contains('lib/'))
       .take(2)
-      .map((l) => l.trim().replaceAll(RegExp(r'.*progen_erp/'), ''));
+      .map((l) => l.trim().replaceAll(RegExp(r'.*?(?=lib/)'), ''));
   return '${head.trim()} @ ${where.join(' ; ')}';
 }
 

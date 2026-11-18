@@ -148,6 +148,7 @@ class ScheduleRow {
     required this.interest,
     required this.amount,
     required this.status,
+    this.paidAmount = 0,
   });
 
   factory ScheduleRow.fromJson(Json j) => ScheduleRow(
@@ -157,9 +158,11 @@ class ScheduleRow {
     interest: asDouble(j['interest']),
     amount: asDouble(j['amount']),
     status: asString(j['status']),
+    paidAmount: asDouble(j['paidAmount']),
   );
 
   final int seq;
+  final double paidAmount;
   final String dueMonth;
   final double principal;
   final double interest;

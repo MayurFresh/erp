@@ -21,6 +21,7 @@ import 'payslip_screen.dart';
 import 'bonus_screen.dart';
 import 'encashment_screen.dart';
 import 'fnf_screen.dart';
+import 'gratuity_provision_screen.dart';
 import 'gratuity_screen.dart';
 import 'shifts_screen.dart';
 import 'statutory_settings_screen.dart';
@@ -80,6 +81,13 @@ const List<NavEntry> hrNavEntries = [
     label: 'Gratuity',
     icon: Icons.savings_outlined,
     selectedIcon: Icons.savings,
+    permission: Perm.payrollView,
+  ),
+  NavEntry(
+    path: '/hr/gratuity-provision',
+    label: 'Gratuity provision',
+    icon: Icons.account_balance_outlined,
+    selectedIcon: Icons.account_balance,
     permission: Perm.payrollView,
   ),
   NavEntry(
@@ -149,6 +157,7 @@ List<RouteBase> hrRoutes() => [
   ),
   GoRoute(path: '/hr/statutory', pageBuilder: (_, s) => sectionPage(s, const StatutorySettingsScreen())),
   GoRoute(path: '/hr/gratuity', pageBuilder: (_, s) => sectionPage(s, const GratuityScreen())),
+  GoRoute(path: '/hr/gratuity-provision', pageBuilder: (_, s) => sectionPage(s, const GratuityProvisionScreen())),
   GoRoute(path: '/hr/bonus', pageBuilder: (_, s) => sectionPage(s, const BonusScreen())),
   GoRoute(path: '/hr/encashment', pageBuilder: (_, s) => sectionPage(s, const EncashmentScreen())),
   GoRoute(path: '/hr/shifts', pageBuilder: (_, s) => sectionPage(s, const ShiftsScreen())),

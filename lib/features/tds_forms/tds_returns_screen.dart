@@ -128,7 +128,7 @@ class _TdsReturnsScreenState extends ConsumerState<TdsReturnsScreen> {
                         const SizedBox(
                           width: 320,
                           child: Text(
-                            'The CSV is Progen\'s own layout. It is not the '
+                            'The CSV is OneMatrix\'s own layout. It is not the '
                             'Protean RPU import format, which could not be '
                             'confirmed. Use it to key the return into the '
                             'RPU, then run the FVU.',

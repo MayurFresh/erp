@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/purchase_orders/bill_from_grn_screen.dart';
-import 'package:progen_erp/features/purchase_orders/po_detail_screen.dart';
-import 'package:progen_erp/features/purchase_orders/po_form_screen.dart';
-import 'package:progen_erp/features/purchase_orders/purchase_orders_screen.dart';
-import 'package:progen_erp/features/purchase_orders/receive_goods_screen.dart';
-import 'package:progen_erp/features/purchase_orders/reorder_screen.dart';
-import 'package:progen_erp/features/stock_counts/stock_count_screen.dart';
-import 'package:progen_erp/features/stock_counts/stock_counts_screen.dart';
+import 'package:onematrix/features/purchase_orders/bill_from_grn_screen.dart';
+import 'package:onematrix/features/purchase_orders/po_detail_screen.dart';
+import 'package:onematrix/features/purchase_orders/po_form_screen.dart';
+import 'package:onematrix/features/purchase_orders/purchase_orders_screen.dart';
+import 'package:onematrix/features/purchase_orders/receive_goods_screen.dart';
+import 'package:onematrix/features/purchase_orders/reorder_screen.dart';
+import 'package:onematrix/features/stock_counts/stock_count_screen.dart';
+import 'package:onematrix/features/stock_counts/stock_counts_screen.dart';
 
 import 'p2p_harness.dart';
 

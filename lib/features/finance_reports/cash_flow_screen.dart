@@ -9,6 +9,7 @@ import '../../widgets/states.dart';
 import '../auth/session.dart';
 import '../reports/report_period.dart';
 import '../reports/report_widgets.dart';
+import 'finance_exports.dart';
 import 'finance_models.dart';
 import 'finance_repository.dart';
 
@@ -57,7 +58,7 @@ class _CashFlowState extends ConsumerState<CashFlowScreen> {
       title: 'Cash flow',
       subtitle:
           'Indirect method: profit adjusted to the change in cash and bank',
-      export: null,
+      export: value.value == null ? null : cashFlowExport(value.value!),
       extraActions: [
         if (canMap)
           TextButton.icon(

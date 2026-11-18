@@ -604,7 +604,7 @@ class OutboxScreen extends ConsumerWidget {
       children: [
         PageHeader(
           title: 'Delivery log',
-          subtitle: 'Emails and WhatsApp messages sent by Progen',
+          subtitle: 'Emails and WhatsApp messages sent by OneMatrix',
           actions: [
             IconButton(
               tooltip: 'Refresh',

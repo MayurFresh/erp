@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/hotel/hotel_models.dart';
-import 'package:progen_erp/features/hotel/hotel_pdf.dart';
-import 'package:progen_erp/features/hotel/housekeeping_screen.dart';
+import 'package:onematrix/features/hotel/hotel_models.dart';
+import 'package:onematrix/features/hotel/hotel_pdf.dart';
+import 'package:onematrix/features/hotel/housekeeping_screen.dart';
 
 import 'hotel_harness.dart';
 

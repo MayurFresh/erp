@@ -23,6 +23,7 @@ class Item {
     required this.unit,
     required this.gstRate,
     required this.salePrice,
+    this.mrp,
     this.sku,
     this.barcode,
     this.hsnCode,
@@ -45,6 +46,7 @@ class Item {
     unit: asString(json['unit']),
     gstRate: asDouble(json['gstRate']),
     salePrice: asDouble(json['salePrice']),
+    mrp: asDoubleOrNull(json['mrp']),
     purchasePrice: asDoubleOrNull(json['purchasePrice']),
     trackStock: asBool(json['trackStock'], true),
     reorderLevel: asDouble(json['reorderLevel']),
@@ -63,6 +65,9 @@ class Item {
   final String unit;
   final double gstRate;
   final double salePrice;
+
+  /// Maximum retail price in rupees, printed on labels when set.
+  final double? mrp;
 
   /// Absent from responses without `items.view_cost`.
   final double? purchasePrice;
@@ -83,6 +88,7 @@ class ItemInput {
     required this.unit,
     required this.gstRate,
     required this.salePrice,
+    this.mrp,
     this.sku,
     this.barcode,
     this.hsnCode,
@@ -101,6 +107,7 @@ class ItemInput {
     unit: item.unit,
     gstRate: item.gstRate,
     salePrice: item.salePrice,
+    mrp: item.mrp,
     purchasePrice: item.purchasePrice,
     trackStock: item.trackStock,
     reorderLevel: item.reorderLevel,
@@ -115,6 +122,7 @@ class ItemInput {
   final String unit;
   final double gstRate;
   final double salePrice;
+  final double? mrp;
   final double? purchasePrice;
   final bool trackStock;
   final double reorderLevel;
@@ -133,6 +141,7 @@ class ItemInput {
     'unit': unit,
     'gstRate': gstRate,
     'salePrice': salePrice,
+    'mrp': mrp,
     if (includeCost) 'purchasePrice': purchasePrice,
     'trackStock': trackStock,
     'reorderLevel': reorderLevel,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../stock_tools/unit_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -180,10 +181,14 @@ class _PoFormScreenState extends ConsumerState<PoFormScreen>
   Future<void> _addLine() async {
     final item = await pickItem(context, ref);
     if (item == null) return;
+    final (unit, factor) = await defaultUnitFor(ref, item.id, purchase: true);
     if (mounted) {
-      setState(
-        () => _lines.add(LineDraft(item, defaultRate: item.purchasePrice)),
-      );
+      final line = LineDraft(item, defaultRate: item.purchasePrice);
+      if (unit != null) {
+        line.unit = unit;
+        line.rate.text = scaleRateText(line.rate.text, factor);
+      }
+      setState(() => _lines.add(line));
     }
     markDirty();
     schedulePreview();

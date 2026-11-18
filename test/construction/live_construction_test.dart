@@ -1,8 +1,8 @@
 // End-to-end test of the construction pack against a running backend,
 // through the app's real ApiClient, the HTTP bridge and the repositories.
-// Skipped unless PROGEN_API is set:
+// Skipped unless ONEMATRIX_API is set:
 //
-//   PROGEN_API=http://localhost:8080/api/v1 \
+//   ONEMATRIX_API=http://localhost:8080/api/v1 \
 //     flutter test test/construction/live_construction_test.dart
 //
 // It signs up a fresh business (so the demo company is untouched) and walks
@@ -16,29 +16,29 @@ import 'dart:io';
 
 import 'package:flutter/material.dart' show DateUtils;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/api_exception.dart';
-import 'package:progen_erp/core/money.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/auth/auth_models.dart';
-import 'package:progen_erp/features/auth/auth_repository.dart';
-import 'package:progen_erp/features/construction/data/construction_http.dart';
-import 'package:progen_erp/features/construction/data/construction_repository.dart';
-import 'package:progen_erp/features/construction/data/photo_source.dart';
-import 'package:progen_erp/features/construction/data/subcontract_repository.dart';
-import 'package:progen_erp/features/construction/models/boq_paste.dart';
-import 'package:progen_erp/features/construction/models/dpr_models.dart';
-import 'package:progen_erp/features/construction/models/labour_models.dart';
-import 'package:progen_erp/features/construction/models/material_models.dart';
-import 'package:progen_erp/features/construction/models/wage_math.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/api_exception.dart';
+import 'package:onematrix/core/money.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/auth/auth_models.dart';
+import 'package:onematrix/features/auth/auth_repository.dart';
+import 'package:onematrix/features/construction/data/construction_http.dart';
+import 'package:onematrix/features/construction/data/construction_repository.dart';
+import 'package:onematrix/features/construction/data/photo_source.dart';
+import 'package:onematrix/features/construction/data/subcontract_repository.dart';
+import 'package:onematrix/features/construction/models/boq_paste.dart';
+import 'package:onematrix/features/construction/models/dpr_models.dart';
+import 'package:onematrix/features/construction/models/labour_models.dart';
+import 'package:onematrix/features/construction/models/material_models.dart';
+import 'package:onematrix/features/construction/models/wage_math.dart';
 
 void main() {
-  final baseUrl = Platform.environment['PROGEN_API'];
+  final baseUrl = Platform.environment['ONEMATRIX_API'];
 
   group(
     'live construction API',
     skip: baseUrl == null || baseUrl.isEmpty
-        ? 'Set PROGEN_API (e.g. http://localhost:8080/api/v1) to run'
+        ? 'Set ONEMATRIX_API (e.g. http://localhost:8080/api/v1) to run'
         : false,
     () {
       late ApiClient api;

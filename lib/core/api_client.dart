@@ -11,7 +11,7 @@ import 'dirty_registry.dart';
 import 'json.dart';
 import 'token_store.dart';
 
-/// HTTP client for the Progen API.
+/// HTTP client for the OneMatrix API.
 ///
 /// Adds `Authorization` and `X-Company-Id`, refreshes the access token once
 /// on `401 TOKEN_EXPIRED` (concurrent refreshes share one call) and maps
@@ -45,8 +45,8 @@ class ApiClient {
   );
 
   static const _publicPaths = {'/auth/signup', '/auth/login', '/auth/refresh'};
-  static const _retriedKey = 'progen.retried';
-  static const _sentTokenKey = 'progen.sentToken';
+  static const _retriedKey = 'onematrix.retried';
+  static const _sentTokenKey = 'onematrix.sentToken';
 
   final TokenStore _store;
   final Dio _dio;

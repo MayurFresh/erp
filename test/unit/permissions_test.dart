@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/features/auth/session.dart';
-import 'package:progen_erp/features/shell/nav.dart';
-import 'package:progen_erp/router.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/features/auth/session.dart';
+import 'package:onematrix/features/shell/nav.dart';
+import 'package:onematrix/router.dart';
 
 import '../support/fixtures.dart';
 

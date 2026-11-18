@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/construction/models/labour_models.dart';
-import 'package:progen_erp/features/construction/models/wage_math.dart';
+import 'package:onematrix/features/construction/models/labour_models.dart';
+import 'package:onematrix/features/construction/models/wage_math.dart';
 
 void main() {
   group('wage maths (API.md v1.2)', () {

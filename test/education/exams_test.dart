@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/json.dart';
-import 'package:progen_erp/features/education/exam_data.dart';
-import 'package:progen_erp/features/education/report_card_pdf.dart';
+import 'package:onematrix/core/json.dart';
+import 'package:onematrix/features/education/exam_data.dart';
+import 'package:onematrix/features/education/report_card_pdf.dart';
 
 import '../support/fake_backend.dart';
 import 'education_harness.dart';

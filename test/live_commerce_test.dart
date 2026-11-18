@@ -4,23 +4,23 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/auth/auth_repository.dart';
-import 'package:progen_erp/features/controls/controls_repository.dart';
-import 'package:progen_erp/features/purchase_orders/po_repository.dart';
-import 'package:progen_erp/features/sales_orders/o2c_repository.dart';
-import 'package:progen_erp/features/stock_counts/count_repository.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/auth/auth_repository.dart';
+import 'package:onematrix/features/controls/controls_repository.dart';
+import 'package:onematrix/features/purchase_orders/po_repository.dart';
+import 'package:onematrix/features/sales_orders/o2c_repository.dart';
+import 'package:onematrix/features/stock_counts/count_repository.dart';
 
 /// v1.8 client models against the real API and the seeded demo data (seed-o2c.ts and
 /// seed-p2p.ts). Read-only, so the suite can run repeatedly.
 void main() {
-  final baseUrl = Platform.environment['PROGEN_API'];
+  final baseUrl = Platform.environment['ONEMATRIX_API'];
 
   group(
     'live commerce',
     skip: baseUrl == null || baseUrl.isEmpty
-        ? 'Set PROGEN_API (e.g. http://localhost:8080/api/v1) to run'
+        ? 'Set ONEMATRIX_API (e.g. http://localhost:8080/api/v1) to run'
         : false,
     () {
       late ApiClient api;

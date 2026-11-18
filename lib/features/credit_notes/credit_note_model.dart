@@ -27,6 +27,7 @@ class CreditNote implements TaxSummary {
     this.taxTotal = 0,
     this.roundOff = 0,
     this.total = 0,
+    this.tcsReversed = 0,
     this.costCentreId,
     this.createdAt,
     this.createdBy,
@@ -62,6 +63,7 @@ class CreditNote implements TaxSummary {
     taxTotal: asDouble(json['taxTotal']),
     roundOff: asDouble(json['roundOff']),
     total: asDouble(json['total']),
+    tcsReversed: asDouble(json['tcsReversed']),
     costCentreId: asStringOrNull(json['costCentreId']),
     createdAt: asDateTimeOrNull(json['createdAt']),
     createdBy: UserRef.maybe(json['createdBy']),
@@ -106,6 +108,9 @@ class CreditNote implements TaxSummary {
   final double roundOff;
   @override
   final double total;
+
+  /// TCS handed back with this note; 0 when the invoice collected none.
+  final double tcsReversed;
   final DateTime? createdAt;
   final UserRef? createdBy;
   final DateTime? cancelledAt;

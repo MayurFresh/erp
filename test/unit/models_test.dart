@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/features/auth/auth_models.dart';
-import 'package:progen_erp/features/invoices/invoice_model.dart';
-import 'package:progen_erp/features/items/item_model.dart';
-import 'package:progen_erp/features/stock/stock_models.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/features/auth/auth_models.dart';
+import 'package:onematrix/features/invoices/invoice_model.dart';
+import 'package:onematrix/features/items/item_model.dart';
+import 'package:onematrix/features/stock/stock_models.dart';
 
 void main() {
   group('Me.fromJson', () {

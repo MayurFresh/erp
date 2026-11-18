@@ -17,9 +17,9 @@ Many unprocessed agri produce items are GST-exempt, mandi fees and commission ag
 Table stakes: farmer master, procurement with weighment, grading, payment, stock by lot. Differentiators: input recovery against produce payment, books built in, traceability by lot, multi-unit conversion (quintal, bag).
 ## Edge cases to test
 Moisture deduction after weighment; split payment across two farmers; unit conversion rounding; partial input recovery; lot blending.
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 Parties, items with units, batch tracking (planned), stock, purchases, payments, locations.
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 Farmer party, procurement with weigh slip, grade and deduction, farmer payment with input recovery.
 ## Rough effort and priority
 M. Priority: low to medium.

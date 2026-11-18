@@ -59,10 +59,10 @@ Checked 2026-11-03. Confidence: medium for API auth, low for modules and pricing
 - No evidence of India GST handling, Indian payment methods or Indian support.
 - Pricing not published.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Model a property as a tenant-scoped entity, with one token per property if an API is ever offered.
-- Post all outlet charges to the guest folio through accounting items. Progen's journal engine can do this.
+- Post all outlet charges to the guest folio through accounting items. OneMatrix's journal engine can do this.
 - Keep payments abstract. Do not build a gateway.
 - See docs/research/industry-workflows/hospitality.md.
 

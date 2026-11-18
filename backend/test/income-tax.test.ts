@@ -202,8 +202,8 @@ describe('TDS file-ready statement', () => {
     expect(txt.headers['content-type']).toContain('text/plain');
     expect(txt.headers['content-disposition']).toContain(`PUNE12345A_140_${fy}_Q${quarter}.txt`);
     const lines = txt.text.split('\r\n').filter(Boolean);
-    expect(lines[0]).toBe('#PROGEN BETA: validate with FVU before upload');
-    expect(lines.map((l) => l.split('^')[0])).toEqual(['#PROGEN BETA: validate with FVU before upload', 'FH', 'BH', 'CD', 'DD']);
+    expect(lines[0]).toBe('#ONEMATRIX BETA: validate with FVU before upload');
+    expect(lines.map((l) => l.split('^')[0])).toEqual(['#ONEMATRIX BETA: validate with FVU before upload', 'FH', 'BH', 'CD', 'DD']);
   });
 
   it('defaults: interest on a late deposit', async () => {

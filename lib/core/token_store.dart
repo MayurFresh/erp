@@ -70,8 +70,8 @@ class SecureTokenStore implements TokenStore {
             mOptions: MacOsOptions(usesDataProtectionKeychain: false),
           );
 
-  static const _refreshKey = 'progen.refreshToken';
-  static const _companyKey = 'progen.companyId';
+  static const _refreshKey = 'onematrix.refreshToken';
+  static const _companyKey = 'onematrix.companyId';
 
   final FlutterSecureStorage _storage;
 

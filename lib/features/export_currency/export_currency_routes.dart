@@ -16,6 +16,7 @@ import 'challan_detail_screen.dart';
 import 'challan_form_screen.dart';
 import 'challans_screen.dart';
 import 'currency_screen.dart';
+import 'payables_screen.dart';
 import 'tcs_screen.dart';
 
 const NavEntry challanNavEntry = NavEntry(
@@ -35,6 +36,14 @@ const NavEntry currencyNavEntry = NavEntry(
   permission: Perm.fxView,
 );
 
+const NavEntry payablesNavEntry = NavEntry(
+  path: '/fx-payables',
+  label: 'Foreign payables',
+  icon: Icons.request_quote_outlined,
+  selectedIcon: Icons.request_quote,
+  permission: Perm.fxView,
+);
+
 const NavEntry tcsNavEntry = NavEntry(
   path: '/tcs',
   label: 'TCS on sales',
@@ -46,6 +55,7 @@ const NavEntry tcsNavEntry = NavEntry(
 const List<NavEntry> exportCurrencyNavEntries = [
   challanNavEntry,
   currencyNavEntry,
+  payablesNavEntry,
   tcsNavEntry,
 ];
 
@@ -69,6 +79,10 @@ List<RouteBase> exportCurrencyRoutes() => [
   GoRoute(
     path: '/currencies',
     pageBuilder: (c, s) => sectionPage(s, const CurrencyScreen()),
+  ),
+  GoRoute(
+    path: '/fx-payables',
+    pageBuilder: (c, s) => sectionPage(s, const ForeignPayablesScreen()),
   ),
   GoRoute(
     path: '/tcs',

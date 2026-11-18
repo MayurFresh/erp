@@ -20,7 +20,7 @@ Checked 2026-11-03. Each file follows the same sections: scope, workflow, entiti
 | Events and venues | events-venues.md | short |
 | Construction and real estate | construction-realestate.md | short |
 
-## Ranking for Progen
+## Ranking for OneMatrix
 
 India demand evidence is weak for most rows: it comes from industry-verticals.md priorities and from Indian vendor presence found in this pass, not from sales data.
 

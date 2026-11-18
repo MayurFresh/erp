@@ -74,7 +74,7 @@ Reports in Browser became mobile-responsive in 2.0. A native phone app was not e
 - Statutory updates depend on paid TSS.
 - No evidenced open webhook API.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Offer Tally export and import first. Customers keep Tally as their auditor-facing book.
 - Match voucher keyboard speed on web.

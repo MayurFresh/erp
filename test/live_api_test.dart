@@ -1,7 +1,7 @@
 // End-to-end test against a running backend, using the app's real
-// ApiClient and repositories. Skipped unless PROGEN_API is set:
+// ApiClient and repositories. Skipped unless ONEMATRIX_API is set:
 //
-//   PROGEN_API=http://localhost:8080/api/v1 flutter test test/live_api_test.dart
+//   ONEMATRIX_API=http://localhost:8080/api/v1 flutter test test/live_api_test.dart
 //
 // Uses plain `test` (not `testWidgets`) so real HTTP is allowed.
 @Timeout(Duration(minutes: 3))
@@ -10,41 +10,41 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/api_exception.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/accounts/accounts_repository.dart';
-import 'package:progen_erp/features/auth/auth_models.dart';
-import 'package:progen_erp/features/auth/auth_repository.dart';
-import 'package:progen_erp/features/company/company_repository.dart';
-import 'package:progen_erp/features/credit_notes/credit_note_model.dart';
-import 'package:progen_erp/features/credit_notes/credit_notes_repository.dart';
-import 'package:progen_erp/features/dashboard/dashboard_repository.dart';
-import 'package:progen_erp/features/documents/document_models.dart';
-import 'package:progen_erp/features/expenses/expense_model.dart';
-import 'package:progen_erp/features/expenses/expenses_repository.dart';
-import 'package:progen_erp/features/invoices/invoice_model.dart';
-import 'package:progen_erp/features/invoices/invoices_repository.dart';
-import 'package:progen_erp/features/items/item_model.dart';
-import 'package:progen_erp/features/items/items_repository.dart';
-import 'package:progen_erp/features/locations/locations_repository.dart';
-import 'package:progen_erp/features/parties/parties_repository.dart';
-import 'package:progen_erp/features/payments/payment_model.dart';
-import 'package:progen_erp/features/payments/payments_repository.dart';
-import 'package:progen_erp/features/purchases/purchase_model.dart';
-import 'package:progen_erp/features/purchases/purchases_repository.dart';
-import 'package:progen_erp/features/stock/stock_models.dart';
-import 'package:progen_erp/features/stock/stock_repository.dart';
-import 'package:progen_erp/features/transfers/transfer_model.dart';
-import 'package:progen_erp/features/transfers/transfers_repository.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/api_exception.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/accounts/accounts_repository.dart';
+import 'package:onematrix/features/auth/auth_models.dart';
+import 'package:onematrix/features/auth/auth_repository.dart';
+import 'package:onematrix/features/company/company_repository.dart';
+import 'package:onematrix/features/credit_notes/credit_note_model.dart';
+import 'package:onematrix/features/credit_notes/credit_notes_repository.dart';
+import 'package:onematrix/features/dashboard/dashboard_repository.dart';
+import 'package:onematrix/features/documents/document_models.dart';
+import 'package:onematrix/features/expenses/expense_model.dart';
+import 'package:onematrix/features/expenses/expenses_repository.dart';
+import 'package:onematrix/features/invoices/invoice_model.dart';
+import 'package:onematrix/features/invoices/invoices_repository.dart';
+import 'package:onematrix/features/items/item_model.dart';
+import 'package:onematrix/features/items/items_repository.dart';
+import 'package:onematrix/features/locations/locations_repository.dart';
+import 'package:onematrix/features/parties/parties_repository.dart';
+import 'package:onematrix/features/payments/payment_model.dart';
+import 'package:onematrix/features/payments/payments_repository.dart';
+import 'package:onematrix/features/purchases/purchase_model.dart';
+import 'package:onematrix/features/purchases/purchases_repository.dart';
+import 'package:onematrix/features/stock/stock_models.dart';
+import 'package:onematrix/features/stock/stock_repository.dart';
+import 'package:onematrix/features/transfers/transfer_model.dart';
+import 'package:onematrix/features/transfers/transfers_repository.dart';
 
 void main() {
-  final baseUrl = Platform.environment['PROGEN_API'];
+  final baseUrl = Platform.environment['ONEMATRIX_API'];
 
   group(
     'live API',
     skip: baseUrl == null || baseUrl.isEmpty
-        ? 'Set PROGEN_API (e.g. http://localhost:8080/api/v1) to run'
+        ? 'Set ONEMATRIX_API (e.g. http://localhost:8080/api/v1) to run'
         : false,
     () {
       late ApiClient api;

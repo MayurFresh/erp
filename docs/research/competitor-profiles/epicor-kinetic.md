@@ -59,7 +59,7 @@ These are generic discrete-manufacturing flows. Kinetic-specific screens: UNVERI
 - No India evidence found.
 - Pricing not published.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Build in the order: BOM, work order, material issue, finished goods, cost roll-up. Skip MES and finite scheduling at first.
 - Keep AI as a read-only assistant over production data after the data model exists.

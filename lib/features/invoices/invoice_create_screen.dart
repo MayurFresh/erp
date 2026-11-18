@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../stock_tools/unit_picker.dart';
 import '../controls/cost_centre_widgets.dart';
 import '../controls/custom_fields_section.dart';
 import 'package:flutter/material.dart';
@@ -142,6 +143,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
           qty: parseNumber(line.qty.text)!,
           rate: parseNumber(line.rate.text) ?? 0,
           discountAmount: fixed[i],
+          unit: line.unit,
         ),
     ];
   }
@@ -204,13 +206,15 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen>
   Future<void> _addLine() async {
     final item = await pickItem(context, ref);
     if (item == null) return;
+    final (unit, factor) = await defaultUnitFor(ref, item.id, purchase: false);
     if (mounted) {
-      setState(
-        () => _lines.add(
-          LineDraft(item, defaultRate: item.salePrice)
-            ..autoRate = item.salePrice,
-        ),
-      );
+      final line = LineDraft(item, defaultRate: item.salePrice)
+        ..autoRate = item.salePrice;
+      if (unit != null) {
+        line.unit = unit;
+        line.rate.text = scaleRateText(line.rate.text, factor);
+      }
+      setState(() => _lines.add(line));
     }
     schedulePreview();
     _reprice();

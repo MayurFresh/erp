@@ -15,6 +15,10 @@ import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { requireFiles } from './files.ts';
 import { createInvoice } from './invoices.ts';
+import { lockItems } from '../accounting/costing.ts';
+import { postJournal } from '../accounting/journal.ts';
+import { systemAccounts } from '../accounting/accounts.ts';
+import { takeStock } from './mfg-common.ts';
 import { defaultLocation, round2 } from './services-common.ts';
 
 /*
@@ -49,14 +53,72 @@ const listQuery = pagingQuery.extend({
 });
 const coverQuery = z.object({ partyId: z.uuid(), serialNo: z.string().max(60).optional(), itemId: z.uuid().optional(), on: dateField.optional() });
 const visitQuery = z.object({
-  from: dateField.optional(), to: dateField.optional(), status: z.enum(['scheduled', 'done', 'skipped']).optional(),
+  from: dateField.optional(), to: dateField.optional(), status: z.enum(['scheduled', 'done', 'skipped', 'cancelled']).optional(),
   technicianId: z.uuid().optional(), contractId: z.uuid().optional(),
 });
+const partBody = z.object({ itemId: z.uuid().optional(), name: z.string().trim().min(1).max(120), qty: qtyField.refine((v) => v > 0) });
+const partsBody = z.object({ partsUsed: z.array(partBody).max(50), locationId: z.uuid().optional() });
 const completeBody = z.object({
+  locationId: z.uuid().optional(),
   doneDate: dateField.optional(), technicianId: z.uuid().optional(), notes: optionalText(2000),
   partsUsed: z.array(z.object({ itemId: z.uuid().optional(), name: z.string().trim().min(1).max(120), qty: qtyField.refine((v) => v > 0) })).max(50).default([]),
   signatureName: optionalText(100), signatureFileId: z.uuid().optional(), photoFileIds: z.array(z.uuid()).max(8).default([]),
 });
+
+// Parts used on a visit ----------------------------------------------------------------------------
+
+/** Takes the stocked parts of a visit out of the chosen location. Parts without an item, or for items that are not stocked, are only recorded. */
+async function issueVisitParts(
+  tx: Tx, ctx: RequestContext, visitId: string, number: string, parts: z.infer<typeof partBody>[], locationId: string | undefined,
+): Promise<string | null> {
+  const ids = [...new Set(parts.flatMap((p) => (p.itemId ? [p.itemId] : [])))];
+  if (!ids.length) return null;
+  const items = await tx.selectFrom('items').select(['id', 'track_stock']).where('company_id', '=', ctx.companyId).where('id', 'in', ids).execute();
+  for (const id of ids) if (!items.some((i) => i.id === id)) throw badRequest('Item not found.', { partsUsed: 'Item not found' });
+  const stocked = parts.filter((p) => p.itemId && items.find((i) => i.id === p.itemId)?.track_stock);
+  if (!stocked.length) return null;
+  if (!locationId) throw badRequest('Choose the location the parts came from.', { locationId: 'Required when stocked parts are used' });
+  ctx.requireLocation(locationId);
+  const loc = await tx.selectFrom('locations').select(['id', 'name']).where('id', '=', locationId).where('company_id', '=', ctx.companyId).executeTakeFirst();
+  if (!loc) throw badRequest('Location not found.', { locationId: 'Not found' });
+  const costed = await takeStock(tx, ctx, loc, stocked.map((p) => ({ itemId: p.itemId!, qty: p.qty })), 'service_visit', visitId, `Parts used on visit of ${number}`);
+  await postPartsJournal(tx, ctx, visitId, loc.id, round2(costed.reduce((t, c) => t + c.value, 0)), `Parts used on visit of ${number}`);
+  return loc.id;
+}
+
+/** Same entry as stock issued to work: material consumed against inventory. A negative value is the reversal. */
+async function postPartsJournal(tx: Tx, ctx: RequestContext, visitId: string, locationId: string, value: number, narration: string) {
+  if (value === 0) return;
+  const acc = await systemAccounts(tx, ctx);
+  await postJournal(tx, auditOf(ctx), {
+    date: todayIst(), voucherType: 'issue', voucherId: visitId, number: null, narration,
+    lines: [
+      { accountId: acc.material_consumed, amount: value, locationId },
+      { accountId: acc.inventory, amount: -value, locationId },
+    ],
+  });
+}
+
+/** Puts back whatever the visit still holds out of stock, at the cost it left at. Safe to call twice. */
+async function reverseVisitStock(tx: Tx, ctx: RequestContext, visitId: string, number: string) {
+  const net = (await sql<{ item_id: string; location_id: string; qty: string; value: string }>`
+    select item_id, location_id, sum(qty) as qty, sum(value) as value from stock_moves
+    where company_id = ${ctx.companyId} and ref_id = ${visitId} and ref_type in ('service_visit','service_visit_reverse')
+    group by item_id, location_id having sum(qty) <> 0`.execute(tx)).rows;
+  if (!net.length) return;
+  await lockItems(tx, ctx.companyId, net.map((n) => n.item_id));
+  await tx.insertInto('stock_moves').values(net.map((n) => {
+    const qty = -Number(n.qty); const value = -Number(n.value);
+    return {
+      tenant_id: ctx.tenantId, company_id: ctx.companyId, location_id: n.location_id, item_id: n.item_id, qty, rate: null,
+      cost_rate: qty ? Math.round((value / qty) * 10000) / 10000 : 0, value, ref_type: 'service_visit_reverse', ref_id: visitId,
+      note: `Parts returned from visit of ${number}`, created_by: ctx.userId,
+    };
+  })).execute();
+  const byLoc = new Map<string, number>();
+  for (const n of net) byLoc.set(n.location_id, (byLoc.get(n.location_id) ?? 0) + Number(n.value));
+  for (const [loc, value] of byLoc) await postPartsJournal(tx, ctx, visitId, loc, round2(value), `Parts returned from visit of ${number}`);
+}
 
 // Schedules ---------------------------------------------------------------------------------------
 
@@ -135,8 +197,9 @@ async function renewalDaysOf(tx: Tx, companyId: string) {
 
 function visitJson(v: { id: string; contract_id: string; number: string; party_name: string; due_date: string; status: string;
   technician_id: string | null; technician_name: string | null; done_date: string | null; notes?: string | null; parts_used?: unknown;
-  signature_name?: string | null; photo_file_ids?: string[]; signature_file_id?: string | null; skip_reason?: string | null }) {
+  signature_name?: string | null; photo_file_ids?: string[]; signature_file_id?: string | null; skip_reason?: string | null; parts_location_id?: string | null }) {
   return {
+    partsLocationId: v.parts_location_id ?? null,
     id: v.id, contractId: v.contract_id, contractNumber: v.number, partyName: v.party_name, dueDate: v.due_date, status: v.status,
     overdue: v.status === 'scheduled' && String(v.due_date) < todayIst(), technicianId: v.technician_id, technicianName: v.technician_name,
     doneDate: v.done_date, notes: v.notes ?? null, partsUsed: v.parts_used ?? [], signatureName: v.signature_name ?? null,
@@ -147,7 +210,7 @@ function visitJson(v: { id: string; contract_id: string; number: string; party_n
 const visitSelect = (tx: Tx, companyId: string) => tx.selectFrom('service_visits as v').innerJoin('service_contracts as c', 'c.id', 'v.contract_id')
   .innerJoin('parties as p', 'p.id', 'c.party_id').leftJoin('users as u', 'u.id', 'v.technician_id')
   .select(['v.id', 'v.contract_id', 'c.number', 'p.name as party_name', 'v.due_date', 'v.status', 'v.technician_id', 'u.name as technician_name',
-    'v.done_date', 'v.notes', 'v.parts_used', 'v.signature_name', 'v.photo_file_ids', 'v.signature_file_id', 'v.skip_reason'])
+    'v.done_date', 'v.notes', 'v.parts_used', 'v.signature_name', 'v.photo_file_ids', 'v.signature_file_id', 'v.skip_reason', 'v.parts_location_id'])
   .where('v.company_id', '=', companyId);
 
 async function detail(tx: Tx, ctx: { companyId: string }, id: string) {
@@ -328,7 +391,7 @@ export async function serviceContractRoutes(app: FastifyInstance): Promise<void>
     const id = parse(z.uuid(), req.params.visitId);
     const b = parse(completeBody, req.body);
     return ctx.tx(async (tx) => {
-      const v = await tx.selectFrom('service_visits').select(['id', 'status']).where('id', '=', id).where('company_id', '=', ctx.companyId).forUpdate().executeTakeFirst();
+      const v = await tx.selectFrom('service_visits as sv').innerJoin('service_contracts as sc', 'sc.id', 'sv.contract_id').select(['sv.id', 'sv.status', 'sc.number']).where('sv.id', '=', id).where('sv.company_id', '=', ctx.companyId).forUpdate('sv').executeTakeFirst();
       if (!v) throw notFound('Visit');
       if (v.status !== 'scheduled') throw conflict('This visit is already closed.', 'BAD_STATE');
       const today = todayIst();
@@ -339,12 +402,48 @@ export async function serviceContractRoutes(app: FastifyInstance): Promise<void>
         const u = await tx.selectFrom('users').select('id').where('id', '=', b.technicianId).where('is_active', '=', true).executeTakeFirst();
         if (!u) throw badRequest('Technician not found.', { technicianId: 'Not found' });
       }
+      const partsLoc = await issueVisitParts(tx, ctx, id, v.number, b.partsUsed, b.locationId);
       await tx.updateTable('service_visits').set({
+        parts_location_id: partsLoc,
         status: 'done', done_date: b.doneDate ?? today, technician_id: b.technicianId ?? ctx.userId, notes: b.notes ?? null,
         parts_used: JSON.stringify(b.partsUsed), signature_name: b.signatureName ?? null, signature_file_id: b.signatureFileId ?? null,
         photo_file_ids: b.photoFileIds,
       } as never).where('id', '=', id).execute();
       await writeAudit(tx, auditOf(ctx), 'service_visit', id, 'complete', null, { doneDate: b.doneDate ?? today });
+      return visitJson(await visitSelect(tx, ctx.companyId).where('v.id', '=', id).executeTakeFirstOrThrow());
+    });
+  });
+
+  // Changes the parts of a finished visit: what was issued goes back, then the new list is issued.
+  app.patch<{ Params: { visitId: string } }>('/service-contracts/visits/:visitId/parts', async (req) => {
+    const ctx = req.ctx; manage(ctx);
+    const id = parse(z.uuid(), req.params.visitId);
+    const b = parse(partsBody, req.body);
+    return ctx.tx(async (tx) => {
+      const v = await tx.selectFrom('service_visits as sv').innerJoin('service_contracts as sc', 'sc.id', 'sv.contract_id').select(['sv.id', 'sv.status', 'sc.number'])
+        .where('sv.id', '=', id).where('sv.company_id', '=', ctx.companyId).forUpdate('sv').executeTakeFirst();
+      if (!v) throw notFound('Visit');
+      if (v.status !== 'done') throw conflict('Parts can be changed on a finished visit only.', 'BAD_STATE');
+      await reverseVisitStock(tx, ctx, id, v.number);
+      const loc = await issueVisitParts(tx, ctx, id, v.number, b.partsUsed, b.locationId);
+      await tx.updateTable('service_visits').set({ parts_used: JSON.stringify(b.partsUsed), parts_location_id: loc } as never).where('id', '=', id).execute();
+      await writeAudit(tx, auditOf(ctx), 'service_visit', id, 'parts', null, { parts: b.partsUsed.length });
+      return visitJson(await visitSelect(tx, ctx.companyId).where('v.id', '=', id).executeTakeFirstOrThrow());
+    });
+  });
+
+  // Cancels a finished visit and puts its parts back.
+  app.post<{ Params: { visitId: string } }>('/service-contracts/visits/:visitId/cancel', async (req) => {
+    const ctx = req.ctx; manage(ctx);
+    const id = parse(z.uuid(), req.params.visitId);
+    return ctx.tx(async (tx) => {
+      const v = await tx.selectFrom('service_visits as sv').innerJoin('service_contracts as sc', 'sc.id', 'sv.contract_id').select(['sv.id', 'sv.status', 'sc.number'])
+        .where('sv.id', '=', id).where('sv.company_id', '=', ctx.companyId).forUpdate('sv').executeTakeFirst();
+      if (!v) throw notFound('Visit');
+      if (v.status !== 'done') throw conflict('Only a finished visit can be cancelled.', 'BAD_STATE');
+      await reverseVisitStock(tx, ctx, id, v.number);
+      await tx.updateTable('service_visits').set({ status: 'cancelled', parts_location_id: null } as never).where('id', '=', id).execute();
+      await writeAudit(tx, auditOf(ctx), 'service_visit', id, 'cancel', null, null);
       return visitJson(await visitSelect(tx, ctx.companyId).where('v.id', '=', id).executeTakeFirstOrThrow());
     });
   });

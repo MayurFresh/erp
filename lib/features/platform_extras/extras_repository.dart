@@ -115,7 +115,13 @@ class ScheduledReport {
 
   String get when {
     const days = [
-      'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
     ];
     return switch (frequency) {
       'weekly' => 'Every ${days[(weekday ?? 1) % 7]} at $time',
@@ -194,7 +200,9 @@ class SmsSettings {
     enabled: j['enabled'] as bool? ?? false,
     dltEntityId: j['dltEntityId'] as String?,
     senderId: j['senderId'] as String?,
-    templates: asJsonList(j['templates']).map(SmsTemplateSetting.fromJson).toList(),
+    templates: asJsonList(
+      j['templates'],
+    ).map(SmsTemplateSetting.fromJson).toList(),
   );
 
   final String driver;
@@ -214,6 +222,7 @@ class GatewayField {
 
 class GatewaySettings {
   const GatewaySettings({
+    this.provider = 'razorpay',
     required this.isActive,
     this.accountId,
     this.mode,
@@ -222,6 +231,7 @@ class GatewaySettings {
   });
 
   factory GatewaySettings.fromJson(Json j) => GatewaySettings(
+    provider: j['provider'] as String? ?? 'razorpay',
     isActive: j['isActive'] as bool? ?? false,
     accountId: j['accountId'] as String?,
     mode: j['mode'] as String?,
@@ -237,6 +247,7 @@ class GatewaySettings {
     ],
   );
 
+  final String provider;
   final bool isActive;
   final String? accountId;
   final String? mode;
@@ -339,13 +350,13 @@ final smsSettingsProvider = FutureProvider.autoDispose<SmsSettings>((ref) {
   return ref.watch(extrasRepositoryProvider).smsSettings();
 });
 
-final gatewaySettingsProvider = FutureProvider.autoDispose<GatewaySettings>((
-  ref,
-) {
-  ref.watch(activeCompanyIdProvider);
-  ref.watch(extrasRevisionProvider);
-  return ref.watch(extrasRepositoryProvider).gateway();
-});
+/// One entry for each provider the server knows (Razorpay and Cashfree).
+final gatewaySettingsProvider =
+    FutureProvider.autoDispose<List<GatewaySettings>>((ref) {
+      ref.watch(activeCompanyIdProvider);
+      ref.watch(extrasRevisionProvider);
+      return ref.watch(extrasRepositoryProvider).gateways();
+    });
 
 final paymentLinksProvider = FutureProvider.autoDispose
     .family<List<PaymentLink>, String?>((ref, status) {
@@ -366,15 +377,25 @@ class ExtrasRepository {
     (await _api.getJson('/scheduled-reports'))['data'],
   ).map(ScheduledReport.fromJson).toList();
 
-  Future<List<CatalogueReport>> catalogue() async => asJsonList(
-    (await _api.getJson('/scheduled-reports/catalogue'))['data'],
-  ).map((j) => CatalogueReport(j['key'] as String, j['label'] as String, j['allowed'] as bool? ?? true)).toList();
+  Future<List<CatalogueReport>> catalogue() async =>
+      asJsonList((await _api.getJson('/scheduled-reports/catalogue'))['data'])
+          .map(
+            (j) => CatalogueReport(
+              j['key'] as String,
+              j['label'] as String,
+              j['allowed'] as bool? ?? true,
+            ),
+          )
+          .toList();
 
   Future<ScheduledReport> saveReport(ScheduledReport r) async =>
       ScheduledReport.fromJson(
         r.id == null
             ? await _api.postJson('/scheduled-reports', body: r.toJson())
-            : await _api.patchJson('/scheduled-reports/${r.id}', body: r.toJson()),
+            : await _api.patchJson(
+                '/scheduled-reports/${r.id}',
+                body: r.toJson(),
+              ),
       );
 
   Future<void> deleteReport(String id) async {
@@ -398,15 +419,18 @@ class ExtrasRepository {
     await _api.postJson('/sms/test', body: {'phone': phone});
   }
 
-  Future<GatewaySettings> gateway() async {
+  Future<List<GatewaySettings>> gateways() async {
     final list = asJsonList((await _api.getJson('/payment-gateways'))['data']);
-    return GatewaySettings.fromJson(list.isEmpty ? <String, dynamic>{} : list.first);
+    final all = list.map(GatewaySettings.fromJson).toList();
+    return all.isEmpty ? [const GatewaySettings(isActive: false)] : all;
   }
 
-  Future<GatewaySettings> saveGateway(Json body) async =>
-      GatewaySettings.fromJson(
-        await _api.patchJson('/payment-gateways/razorpay', body: body),
-      );
+  Future<GatewaySettings> saveGateway(
+    Json body, {
+    String provider = 'razorpay',
+  }) async => GatewaySettings.fromJson(
+    await _api.patchJson('/payment-gateways/$provider', body: body),
+  );
 
   Future<List<PaymentLink>> links({String? status, String? invoiceId}) async =>
       asJsonList(
@@ -416,17 +440,26 @@ class ExtrasRepository {
         ))['data'],
       ).map(PaymentLink.fromJson).toList();
 
-  Future<PaymentLink> createLink(String invoiceId, {int days = 7}) async =>
-      PaymentLink.fromJson(
-        await _api.postJson(
-          '/invoices/$invoiceId/payment-links',
-          body: {'expiresInDays': days},
-        ),
-      );
+  Future<PaymentLink> createLink(
+    String invoiceId, {
+    int days = 7,
+    String? provider,
+  }) async => PaymentLink.fromJson(
+    await _api.postJson(
+      '/invoices/$invoiceId/payment-links',
+      body: {'expiresInDays': days, 'provider': ?provider},
+    ),
+  );
 
   Future<PaymentLink> cancelLink(String id) async =>
       PaymentLink.fromJson(await _api.postJson('/payment-links/$id/cancel'));
 
   Future<int> sendLink(String id, List<String> channels) async =>
-      ((await _api.postJson('/payment-links/$id/send', body: {'channels': channels}))['queued'] as num?)?.toInt() ?? 0;
+      ((await _api.postJson(
+                '/payment-links/$id/send',
+                body: {'channels': channels},
+              ))['queued']
+              as num?)
+          ?.toInt() ??
+      0;
 }

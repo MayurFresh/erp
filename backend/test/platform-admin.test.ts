@@ -213,8 +213,8 @@ describe('platform admin', () => {
     const api = await superAdmin();
     const me = await api('GET', '/me');
     const adminId = me.body.user.id as string;
-    const tenants = (await api('GET', '/platform/tenants?q=Progen Platform')).body.data;
-    const own = tenants.find((t: { name: string }) => t.name === 'Progen Platform');
+    const tenants = (await api('GET', '/platform/tenants?q=OneMatrix Platform')).body.data;
+    const own = tenants.find((t: { name: string }) => t.name === 'OneMatrix Platform');
     expect(own.hasPlatformAdmin).toBe(true);
     for (const url of ['deactivate', 'reset-link']) {
       const res = await api('POST', `/platform/users/${adminId}/${url}`);

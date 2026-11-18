@@ -1,16 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/accounts/account_model.dart';
-import 'package:progen_erp/features/auth/auth_models.dart';
-import 'package:progen_erp/features/credit_notes/credit_note_model.dart';
-import 'package:progen_erp/features/dashboard/dashboard_repository.dart';
-import 'package:progen_erp/features/documents/document_models.dart';
-import 'package:progen_erp/features/expenses/expense_model.dart';
-import 'package:progen_erp/features/invoices/invoice_model.dart';
-import 'package:progen_erp/features/parties/party_model.dart';
-import 'package:progen_erp/features/payments/payment_model.dart';
-import 'package:progen_erp/features/purchases/purchase_model.dart';
-import 'package:progen_erp/features/stock/stock_models.dart';
-import 'package:progen_erp/features/transfers/transfer_model.dart';
+import 'package:onematrix/features/accounts/account_model.dart';
+import 'package:onematrix/features/auth/auth_models.dart';
+import 'package:onematrix/features/credit_notes/credit_note_model.dart';
+import 'package:onematrix/features/dashboard/dashboard_repository.dart';
+import 'package:onematrix/features/documents/document_models.dart';
+import 'package:onematrix/features/expenses/expense_model.dart';
+import 'package:onematrix/features/invoices/invoice_model.dart';
+import 'package:onematrix/features/parties/party_model.dart';
+import 'package:onematrix/features/payments/payment_model.dart';
+import 'package:onematrix/features/purchases/purchase_model.dart';
+import 'package:onematrix/features/stock/stock_models.dart';
+import 'package:onematrix/features/transfers/transfer_model.dart';
 
 import '../support/fake_backend.dart';
 

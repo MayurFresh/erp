@@ -1,10 +1,10 @@
-# Self-filing income tax and TDS: research for Progen ERP
+# Self-filing income tax and TDS: research for OneMatrix
 
 Researched 2026-10-30. Scope: what a small business, proprietor, firm or professional can file without a CA, what files and packs the app can produce, and where a CA is legally needed.
 
 Conventions: **UNVERIFIED** = only a secondary source, or my own prior knowledge, with no official page read. "Old" = Income-tax Act 1961 / Rules 1962. "New" = Income-tax Act 2025 / Rules 2026, in force from 1 Apr 2026. Returns for FY 2025-26 (AY 2026-27) are filed under the old Act; tax year 2026-27 onward is the new Act. Not repeated here: the TDS section master and Act transition ([statutory-core.md](statutory-core.md)); salary TDS, PF and ESI ([payroll-hr.md](payroll-hr.md)).
 
-What Progen already has (API.md §2 and §5): `tds_deductions`, `tds_challans`, and a quarterly statement as JSON/CSV labelled "Form 140". That CSV is not an FVU-ready file. Section 1.4 below says what is missing.
+What OneMatrix already has (API.md §2 and §5): `tds_deductions`, `tds_challans`, and a quarterly statement as JSON/CSV labelled "Form 140". That CSV is not an FVU-ready file. Section 1.4 below says what is missing.
 
 Most pages below are secondary (blogs, news). The official pages that could be read are marked "official". Several incometaxindia.gov.in pages returned HTTP 403 to automated fetch, so form PDFs there were not read.
 
@@ -77,7 +77,7 @@ Structure of the 26Q file (read from the [Oracle JD Edwards 26Q field map](https
 
 Rules that bite: CD total deposit must equal the sum of its parts; DD totals must reconcile to CD (control totals); PAN must be valid-format or use the placeholders; amounts are integers in CD and 2-decimal in DD; challan BSR code, serial and date must match the bank's record (TRACES matches them against OLTAS).
 
-Gap to Progen's current statement export: our CSV has deduction rows and challan BSR/serial, so the data is nearly there. Missing for an FVU-ready file: deductor master data (TAN, PAN, address, responsible person, deductor category), the deductee code, the section code mapping, per-challan grouping of deductees, control-total checks, and the line-numbered `^` writer. Correction statements (below) need the previous token and PRN data.
+Gap to OneMatrix's current statement export: our CSV has deduction rows and challan BSR/serial, so the data is nearly there. Missing for an FVU-ready file: deductor master data (TAN, PAN, address, responsible person, deductor category), the deductee code, the section code mapping, per-challan grouping of deductees, control-total checks, and the line-numbered `^` writer. Correction statements (below) need the previous token and PRN data.
 
 Do not try to implement the FVU. It is a Java utility from Protean, and the file is only valid after the FVU passes it. The app writes the .txt; the user runs the FVU (or we bundle a "validate" step as instructions).
 
@@ -140,7 +140,7 @@ ITR-3 and ITR-5 (and ITR-6) need these from the ledger; this is from the standar
 - P&L: sales/turnover (split by GST if relevant), other income, opening and closing stock, purchases, direct expenses, employee costs, interest, depreciation, rent, repairs, professional fees, other expenses; net profit.
 - Part A-OI: nature of business and business code.
 - Schedules: depreciation (block-wise, Schedule DPM/DOA), partner details, TDS/TCS credit, advance and self-assessment tax paid, deduction schedules (chapter VI-A), unabsorbed losses, quantitative details for traders and manufacturers, and the audit-info fields (auditor, 3CD date and number) when audited.
-- Progen gaps: account-to-ITR-line mapping, depreciation per IT block, stock valuation method, GST turnover split, and disallowances (see 4, 5).
+- OneMatrix gaps: account-to-ITR-line mapping, depreciation per IT block, stock valuation method, GST turnover split, and disallowances (see 4, 5).
 
 ### 2.5 Individual and HUF: old vs new regime, current tax year
 
@@ -184,7 +184,7 @@ Sources: [e-filing ERI registration help](https://www.incometax.gov.in/iec/fopor
 | Type 2 | Uses Department-approved utilities or services **through API** | Undertaking, bank guarantee, audit report; sandbox testing |
 | Type 3 | Develops offline software utilities | Undertaking, bank guarantee, audit report; sandbox testing |
 
-- Eligible applicants: companies incorporated in India, firms of CA/advocates/CS/cost accountants, LLPs, individual CA/advocate/CS/cost accountant, and government DDOs. Type 3 also allows an individual with a PAN. Resident applicants only. So Progen's operating company would qualify.
+- Eligible applicants: companies incorporated in India, firms of CA/advocates/CS/cost accountants, LLPs, individual CA/advocate/CS/cost accountant, and government DDOs. Type 3 also allows an individual with a PAN. Resident applicants only. So OneMatrix's operating company would qualify.
 - Steps: register on the e-filing portal (Register > Others > e-Return Intermediary), validate PAN/TAN with OTP, upload attachments (each 5 MB or less), wait for approval, set a password. Type 2/3 test in a sandbox: test details come from erihelp@incometax.gov.in; submit a test status report; share a public key certificate (SHA-2, 2048-bit RSA) per Protean.
 - Type 1 and Type 2 ERIs can file returns and statutory forms for clients and add clients (PAN users) with client consent (client-activation flow). APIs: the API specifications are published on the e-filing portal for ERIs. The names of the prefill, ITR-submit and e-verify endpoints are not in anything I could read. **UNVERIFIED**.
 - Bank guarantee amount, fee, and approval timeline: not stated in the sources. **UNVERIFIED**. Plan on weeks to months (prior knowledge, not a source).
@@ -268,7 +268,7 @@ The deemed-notice legal basis and curable defaults come from [calcguru](https://
 
 ---
 
-## Build recommendation for Progen
+## Build recommendation for OneMatrix
 
 Priorities are ordered by value for self-filers against effort and risk.
 

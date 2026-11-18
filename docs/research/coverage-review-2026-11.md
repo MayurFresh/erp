@@ -1,8 +1,8 @@
 # Coverage review, November 2026
 
-What Progen has, what rivals have that Progen lacks, which Indian rules changed, and the build order. Based on a code audit and web research on 2026-11-13. Rows marked "unconfirmed" came from secondary sources and need a CA or an official notice before the numbers go into the app.
+What OneMatrix has, what rivals have that OneMatrix lacks, which Indian rules changed, and the build order. Based on a code audit and web research on 2026-11-13. Rows marked "unconfirmed" came from secondary sources and need a CA or an official notice before the numbers go into the app.
 
-## Where Progen is already ahead
+## Where OneMatrix is already ahead
 
 - One product covers accounting, GST and TDS filing, stock, purchases, manufacturing, payroll and 13 sector modules. Rivals sell these as separate apps (Zoho Books + Inventory + Payroll + CRM) or leave them out (Vyapar, myBillBook have no manufacturing, payroll depth or sector modules).
 - GSTR-1, 3B, 2B reconciliation and GSTR-9 built in; MSME 45-day dues report; fixed assets with Companies Act and IT block depreciation; consolidation across companies.

@@ -1,3 +1,4 @@
+import '../../core/entered_unit.dart';
 import '../../core/json.dart';
 
 /// Order states in lifecycle order, with the label shown to people.
@@ -41,6 +42,7 @@ class SalesOrderLine {
     this.qtyCancelled = 0,
     this.qtyOpen = 0,
     this.qtyShort = 0,
+    this.entered,
   });
 
   factory SalesOrderLine.fromJson(Json j) => SalesOrderLine(
@@ -65,8 +67,10 @@ class SalesOrderLine {
     qtyCancelled: asDouble(j['qtyCancelled']),
     qtyOpen: asDouble(j['qtyOpen']),
     qtyShort: asDouble(j['qtyShort']),
+    entered: EnteredUnit.fromJson(j),
   );
 
+  final EnteredUnit? entered;
   final String id;
   final int lineNo;
   final String itemId;
@@ -291,6 +295,7 @@ class OrderLineInput {
     this.rate,
     this.discountPct,
     this.allowBackorder = false,
+    this.unit,
   });
 
   final String itemId;
@@ -299,12 +304,16 @@ class OrderLineInput {
   final double? discountPct;
   final bool allowBackorder;
 
+  /// Alternate unit that [qty] and [rate] are in; null means the item's own unit.
+  final String? unit;
+
   Json toJson() => {
     'itemId': itemId,
     'qty': qty,
     if (rate != null) 'rate': rate,
     if (discountPct != null) 'discountPct': discountPct,
     'allowBackorder': allowBackorder,
+    if (unit != null) 'unit': unit,
   };
 }
 

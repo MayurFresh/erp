@@ -8,7 +8,7 @@ import { todayIst } from '../lib/dates.ts';
  */
 
 export interface Layer { qty: number; rate: number; date: string }
-export interface MoveFacts { qty: number; value: number; /** IST date of the move, YYYY-MM-DD */ d: string }
+export interface MoveFacts { qty: number; value: number; /** IST date of the move, YYYY-MM-DD */ d: string; /** age date carried by a transfer receipt; the layer keeps it */ ld?: string }
 export interface ValuationSetting { method: 'average' | 'fifo'; effectiveFrom: string | null }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -42,7 +42,12 @@ export function replayLayers(moves: MoveFacts[], rebaseBefore?: string): Layer[]
   for (const m of moves) {
     if (!rebased && m.d >= rebaseBefore!) rebase();
     if (!rebased) ledger += m.value;
-    if (m.qty > 0) layers.push({ qty: m.qty, rate: m.value / m.qty, date: m.d });
+    if (m.qty > 0) {
+      const layer = { qty: m.qty, rate: m.value / m.qty, date: m.ld ?? m.d };
+      // A transferred layer keeps its original date, so it goes in date order among the layers.
+      const at = m.ld ? layers.findIndex((x) => x.date > layer.date) : -1;
+      if (at < 0) layers.push(layer); else layers.splice(at, 0, layer);
+    }
     else if (m.qty < 0) {
       let need = -m.qty;
       while (need > 0.0005 && layers.length) {
@@ -67,13 +72,13 @@ const MOVE_ORDER = sql`created_at, (qty < 0), id`;
 export async function companyLayers(tx: Tx, companyId: string, itemIds: string[], setting: ValuationSetting): Promise<Map<string, Layer[]>> {
   const out = new Map<string, Layer[]>();
   if (!itemIds.length) return out;
-  const rows = await sql<{ item_id: string; qty: number; value: number; d: string }>`
-    select item_id, qty::float8 as qty, value::float8 as value, ((created_at at time zone 'Asia/Kolkata')::date)::text as d
+  const rows = await sql<{ item_id: string; qty: number; value: number; d: string; ld: string | null }>`
+    select item_id, qty::float8 as qty, value::float8 as value, ((created_at at time zone 'Asia/Kolkata')::date)::text as d, layer_date::text as ld
     from stock_moves where company_id = ${companyId} and item_id in (${sql.join(itemIds)})
     order by ${MOVE_ORDER}`.execute(tx);
   const by = new Map<string, MoveFacts[]>();
   for (const id of itemIds) by.set(id, []);
-  for (const r of rows.rows) by.get(r.item_id)!.push({ qty: Number(r.qty), value: Number(r.value), d: r.d });
+  for (const r of rows.rows) by.get(r.item_id)!.push({ qty: Number(r.qty), value: Number(r.value), d: r.d, ...(r.ld ? { ld: r.ld } : {}) });
   for (const [id, moves] of by) out.set(id, replayLayers(moves, setting.effectiveFrom ?? undefined));
   return out;
 }
@@ -103,15 +108,43 @@ export async function groupedMoves(tx: Tx, companyId: string, opts: { asOf: stri
   let where = sql`company_id = ${companyId} and ((created_at at time zone 'Asia/Kolkata')::date) <= ${opts.asOf}::date`;
   if (opts.locationIds) where = sql`${where} and location_id in (${sql.join(opts.locationIds)})`;
   if (opts.locationId) where = sql`${where} and location_id = ${opts.locationId}`;
-  const rows = await sql<{ item_id: string; location_id: string; qty: number; value: number; d: string }>`
-    select item_id, location_id, qty::float8 as qty, value::float8 as value, ((created_at at time zone 'Asia/Kolkata')::date)::text as d
+  const rows = await sql<{ item_id: string; location_id: string; qty: number; value: number; d: string; ld: string | null }>`
+    select item_id, location_id, qty::float8 as qty, value::float8 as value, ((created_at at time zone 'Asia/Kolkata')::date)::text as d, layer_date::text as ld
     from stock_moves where ${where} order by ${MOVE_ORDER}`.execute(tx);
   const grouped = new Map<string, MoveGroup>();
   for (const r of rows.rows) {
     const k = `${r.item_id}:${r.location_id}`;
     const g = grouped.get(k) ?? { itemId: r.item_id, locationId: r.location_id, moves: [] };
-    g.moves.push({ qty: Number(r.qty), value: Number(r.value), d: r.d });
+    g.moves.push({ qty: Number(r.qty), value: Number(r.value), d: r.d, ...(r.ld ? { ld: r.ld } : {}) });
     grouped.set(k, g);
   }
   return [...grouped.values()];
+}
+
+export interface Slice { qty: number; date: string; rate: number }
+
+/** Takes qty off the oldest layers (in place) and says which layer dates it came from. What the layers cannot cover is left out. */
+export function takeSlices(layers: Layer[], qty: number): Slice[] {
+  const out: Slice[] = [];
+  let need = qty;
+  while (need > 0.0005 && layers.length) {
+    const l = layers[0]!;
+    const take = Math.min(l.qty, need);
+    const last = out[out.length - 1];
+    if (last && last.date === l.date && Math.abs(last.rate - l.rate) < 0.00005) last.qty = round3(last.qty + take);
+    else out.push({ qty: round3(take), date: l.date, rate: l.rate });
+    l.qty = round3(l.qty - take);
+    need = round3(need - take);
+    if (l.qty <= 0.0005) layers.shift();
+  }
+  return out;
+}
+
+/** The receipt layers standing at one location per item, for dating a transfer. */
+export async function locationLayers(tx: Tx, companyId: string, locationId: string, itemIds: string[]): Promise<Map<string, Layer[]>> {
+  const groups = await groupedMoves(tx, companyId, { asOf: todayIst(), locationId });
+  const out = new Map<string, Layer[]>();
+  for (const id of itemIds) out.set(id, []);
+  for (const g of groups) if (out.has(g.itemId)) out.set(g.itemId, replayLayers(g.moves));
+  return out;
 }

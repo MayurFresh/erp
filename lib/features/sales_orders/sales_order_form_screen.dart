@@ -22,6 +22,7 @@ import '../parties/party_picker.dart';
 import '../pricing/bill_discount.dart';
 import '../pricing/price_prefill.dart';
 import 'o2c_repository.dart';
+import '../stock_tools/unit_picker.dart';
 import 'sales_order_models.dart';
 
 class _Line with PricedLine {
@@ -38,6 +39,9 @@ class _Line with PricedLine {
   final TextEditingController discount;
   bool allowBackorder = false;
   bool freeAdded = false;
+
+  /// Alternate unit the quantity and rate are entered in; null is the item's own unit.
+  String? unit;
 
   @override
   TextEditingController get priceRateField => rate;
@@ -136,10 +140,12 @@ class _OrderFormState extends ConsumerState<_OrderForm>
               reserved: 0,
               available: 0,
             ),
-            qty: l.qtyOrdered,
-            rate: l.rate,
+            qty: l.entered?.qty ?? l.qtyOrdered,
+            rate: l.entered?.rate ?? l.rate,
             discount: l.discountPct,
-          )..allowBackorder = l.allowBackorder,
+          )
+            ..allowBackorder = l.allowBackorder
+            ..unit = l.entered?.unit,
         );
       }
     }
@@ -209,8 +215,15 @@ class _OrderFormState extends ConsumerState<_OrderForm>
       ),
     );
     if (item == null || !mounted) return;
+    final (unit, factor) = await defaultUnitFor(ref, item.itemId, purchase: false);
+    if (!mounted) return;
+    final line = _Line(item)..autoRate = item.salePrice;
+    if (unit != null) {
+      line.unit = unit;
+      line.rate.text = scaleRateText(line.rate.text, factor);
+    }
     setState(() {
-      _lines.add(_Line(item)..autoRate = item.salePrice);
+      _lines.add(line);
       _linesError = null;
     });
     markDirty();
@@ -287,6 +300,7 @@ class _OrderFormState extends ConsumerState<_OrderForm>
               ? parseNumber(l.discount.text) ?? 0
               : discountPctFor(fixed[i], l.gross),
           allowBackorder: l.allowBackorder,
+          unit: l.unit,
         ),
     ];
   }
@@ -605,13 +619,25 @@ class _LineEditor extends StatelessWidget {
                     : theme.colorScheme.onSurfaceVariant,
               ),
             ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: LineUnitPicker(
+              itemId: item.itemId,
+              value: line.unit,
+              onChanged: (u) => line.unit = u,
+              onRateScale: (r) {
+                line.rate.text = scaleRateText(line.rate.text, r);
+                onChanged();
+              },
+            ),
+          ),
           const SizedBox(height: 8),
           FormRow(
             breakpoint: 480,
             children: [
               field(
                 line.qty,
-                'Quantity (${item.unit})',
+                'Quantity (${line.unit ?? item.unit})',
                 required: true,
                 decimals: 3,
               ),

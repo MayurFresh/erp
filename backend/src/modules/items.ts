@@ -28,6 +28,7 @@ const createBody = z.object({
   unit: z.string().trim().min(1).max(20),
   gstRate: percentField,
   salePrice: moneyField,
+  mrp: moneyField.nullable().optional(),
   purchasePrice: moneyField.optional(),
   trackStock: z.boolean().optional(),
   reorderLevel: qtyField.refine((v) => v >= 0, 'Cannot be negative').optional(),
@@ -46,7 +47,7 @@ const listQuery = pagingQuery.extend({ activeOnly: z.enum(['true', 'false']).opt
 export function itemJson(ctx: RequestContext, i: Selectable<ItemTable>, avg?: Map<string, number>) {
   return {
     id: i.id, companyId: i.company_id, name: i.name, sku: i.sku, barcode: i.barcode, hsnCode: i.hsn_code, unit: i.unit,
-    gstRate: i.gst_rate, salePrice: i.sale_price,
+    gstRate: i.gst_rate, salePrice: i.sale_price, mrp: i.mrp,
     ...(ctx.can('items.view_cost') ? { purchasePrice: i.purchase_price, avgCost: avg?.get(i.id) ?? i.purchase_price } : {}),
     trackStock: i.track_stock, reorderLevel: i.reorder_level, isActive: i.is_active, custom: i.custom ?? {},
     defaultPurchaseUnit: i.default_purchase_unit, defaultSaleUnit: i.default_sale_unit,
@@ -121,7 +122,7 @@ export async function itemRoutes(app: FastifyInstance) {
         const custom = await validateCustom(tx, ctx.companyId, 'item', body.custom);
         const row = await tx.insertInto('items').values({
           tenant_id: ctx.tenantId, company_id: ctx.companyId, name: body.name, sku: body.sku ?? null, barcode: body.barcode ?? null,
-          hsn_code: body.hsnCode ?? null, unit: body.unit, gst_rate: body.gstRate, sale_price: body.salePrice,
+          hsn_code: body.hsnCode ?? null, unit: body.unit, gst_rate: body.gstRate, sale_price: body.salePrice, mrp: body.mrp ?? null,
           purchase_price: ctx.can('items.view_cost') ? body.purchasePrice ?? 0 : 0,
           track_stock: body.trackStock ?? true, reorder_level: body.reorderLevel ?? 0, custom,
         }).returningAll().executeTakeFirstOrThrow();
@@ -154,7 +155,7 @@ export async function itemRoutes(app: FastifyInstance) {
         const after = await tx.updateTable('items').set({
           custom,
           name: body.name, sku: body.sku, barcode: body.barcode, hsn_code: body.hsnCode, unit: body.unit, gst_rate: body.gstRate,
-          sale_price: body.salePrice, purchase_price: ctx.can('items.view_cost') ? body.purchasePrice : undefined,
+          sale_price: body.salePrice, mrp: body.mrp, purchase_price: ctx.can('items.view_cost') ? body.purchasePrice : undefined,
           track_stock: body.trackStock, reorder_level: body.reorderLevel, is_active: body.isActive, updated_at: new Date(),
         }).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
         await writeAudit(tx, auditOf(ctx), 'item', id, 'update', before, after);

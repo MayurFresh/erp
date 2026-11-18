@@ -7,7 +7,7 @@ export async function seedPlatform(o: { api: ApiFn; as: (email: string) => Promi
   const { api, apiFor } = o;
   if (!apiFor) return;
   const existing = (await api('GET', '/companies')).data as { id: string; name: string }[];
-  const name = 'Progen Infra Projects LLP';
+  const name = 'OneMatrix Infra Projects LLP';
   const second = existing.find((c) => c.name === name)
     ?? await api('POST', '/companies', { name, legalName: name, stateCode: '24' });
 
@@ -20,7 +20,7 @@ export async function seedPlatform(o: { api: ApiFn; as: (email: string) => Promi
   const have = (await api('GET', '/intercompany-entries')) as { total: number };
   if (have.total > 0) return;
   await api('POST', '/intercompany-entries', {
-    date: addDays(todayIst(), -10), amount: 25000, narration: 'Office rent paid on behalf of Progen Infra Projects LLP',
+    date: addDays(todayIst(), -10), amount: 25000, narration: 'Office rent paid on behalf of OneMatrix Infra Projects LLP',
     from: { companyId: (await api('GET', '/company')).id, accountId: bank.id },
     to: { companyId: second.id, accountId: rent.id },
   });

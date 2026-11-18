@@ -61,6 +61,7 @@ import { payrollStatutoryRoutes } from './modules/payroll-statutory.ts';
 import { payrollFnfRoutes } from './modules/payroll-fnf.ts';
 import { claimRoutes } from './modules/claims.ts';
 import { loanRoutes } from './modules/loans.ts';
+import { gratuityProvisionRoutes } from './modules/gratuity-provision.ts';
 import { donationRoutes } from './modules/donations.ts';
 import { hotelRoutes } from './modules/hotel.ts';
 import { educationRoutes } from './modules/education.ts';
@@ -375,6 +376,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
         await payrollFnfRoutes(secured);
         await claimRoutes(secured);
         await loanRoutes(secured);
+        await gratuityProvisionRoutes(secured);
         await donationRoutes(secured);
         await hotelRoutes(secured);
         await educationRoutes(secured);

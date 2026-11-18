@@ -14,6 +14,7 @@ export function configureDataKey(cfg: { DATA_KEY?: string; JWT_SECRET: string })
     dataKey = key;
     return false;
   }
+  // The salt keeps the old product name on purpose: changing it would make every sealed secret unreadable.
   dataKey = Buffer.from(hkdfSync('sha256', cfg.JWT_SECRET, 'progen', 'data-key-v1', 32));
   return true;
 }

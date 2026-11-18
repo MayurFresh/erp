@@ -1,9 +1,11 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api_client.dart';
 import '../../core/json.dart';
 import '../../core/providers.dart';
 import '../auth/session.dart';
+import '../construction/data/photo_source.dart';
 import 'helpdesk_models.dart';
 
 /// Bumped after any helpdesk or contract write so lists and details reload.
@@ -152,6 +154,24 @@ class HelpdeskRepository {
 
   Future<Json> completeVisit(String visitId, Json body) =>
       _api.postJson('/service-contracts/visits/$visitId/complete', body: body);
+
+  /// `POST /files` (multipart, field `file`); returns the file id.
+  Future<String> uploadImage(PickedPhoto photo) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(
+        photo.bytes,
+        filename: photo.name,
+        contentType: DioMediaType.parse(photo.mimeType),
+      ),
+    });
+    return asString(asJson(await _api.post('/files', body: form))['id']);
+  }
+
+  Future<Json> changeVisitParts(String visitId, Json body) =>
+      _api.patchJson('/service-contracts/visits/$visitId/parts', body: body);
+
+  Future<Json> cancelVisit(String visitId) =>
+      _api.postJson('/service-contracts/visits/$visitId/cancel', body: {});
 
   Future<Json> skipVisit(String visitId, String reason) => _api.postJson(
     '/service-contracts/visits/$visitId/skip',

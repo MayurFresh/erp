@@ -1,4 +1,4 @@
-package com.example.progen_erp
+package site.onematrix.app
 
 import io.flutter.embedding.android.FlutterActivity
 

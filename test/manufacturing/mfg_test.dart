@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/manufacturing/bom_screen.dart'
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/manufacturing/bom_screen.dart'
     show PickerFieldBox;
-import 'package:progen_erp/features/manufacturing/mfg_models.dart';
-import 'package:progen_erp/features/manufacturing/mfg_pdf.dart';
+import 'package:onematrix/features/manufacturing/mfg_models.dart';
+import 'package:onematrix/features/manufacturing/mfg_pdf.dart';
 
 import '../support/fake_backend.dart';
 import 'mfg_harness.dart';

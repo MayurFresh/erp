@@ -146,9 +146,19 @@ class ChargeDraft {
     this.creditAccountName,
     this.partyId,
     this.partyName,
+    this.sourceType = 'direct',
+    this.sourceId,
+    this.sourceLabel,
+    this.sourceAmount,
   });
 
   String kind;
+  /// `direct`, `expense` or `vendor_bill`. A source supplies the credit side.
+  String sourceType;
+  String? sourceId;
+  String? sourceLabel;
+  /// Largest amount the source can give (its value before GST).
+  double? sourceAmount;
   double amount;
   double igstAmount;
   String? creditAccountId;
@@ -156,13 +166,25 @@ class ChargeDraft {
   String? partyId;
   String? partyName;
 
-  bool get hasCreditSide => creditAccountId != null || partyId != null;
+  bool get hasSource => sourceId != null && sourceType != 'direct';
+
+  bool get hasCreditSide =>
+      hasSource || creditAccountId != null || partyId != null;
+
+  void clearSource() {
+    sourceType = 'direct';
+    sourceId = null;
+    sourceLabel = null;
+    sourceAmount = null;
+  }
 
   Json toJson() => {
     'kind': kind,
     'amount': amount,
     if (igstAmount > 0) 'igstAmount': igstAmount,
-    if (partyId != null) 'partyId': partyId else 'creditAccountId': creditAccountId,
+    if (hasSource) ...{'sourceType': sourceType, 'sourceId': sourceId}
+    else if (partyId != null) 'partyId': partyId
+    else 'creditAccountId': creditAccountId,
   };
 }
 

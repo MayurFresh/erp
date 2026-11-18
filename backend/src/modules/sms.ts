@@ -75,7 +75,7 @@ export async function smsRoutes(app: FastifyInstance, deps: AppDeps) {
     const s = await ctx.tx((tx) => current(tx, ctx.companyId));
     const t = s.templates[b.template ?? 'payment_link'] ?? s.templates.payment_link;
     const ref = await sendSms({
-      to: b.phone, text: t?.text ?? 'Test message from Progen.',
+      to: b.phone, text: t?.text ?? 'Test message from OneMatrix.',
       dlt: { entityId: s.dlt_entity_id, senderId: s.sender_id, templateId: t?.dltTemplateId ?? null },
     }, deps.config, req.log).catch((e: Error) => { throw badRequest(e.message); });
     return { ok: true, driver: deps.config.SMS_DRIVER, reference: ref };

@@ -18,9 +18,9 @@ GST exemption for healthcare services and taxable medicines, drug licence and ba
 Table stakes: registration, appointments, OPD bill, receipts, pharmacy stock, reports. Differentiators: books and GST built in, TPA claim tracking, access audit log, batch and expiry on pharmacy.
 ## Edge cases to test
 Refund after a pharmacy return; package bill with split tax treatment; patient merge of duplicates; consent withdrawn; audit trail for record access.
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 Parties, items with batch and expiry (planned), invoices, credit notes, stock, audit, approvals, files.
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 Patient as a party, appointments, OPD billing, pharmacy stock. No clinical notes.
 ## Rough effort and priority
 M. Priority: low to medium (pharmacy distributor pack comes first, per industry-verticals.md).

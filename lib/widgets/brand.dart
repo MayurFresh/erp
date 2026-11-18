@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// The Progen mark: a rounded square holding a "P" built from a stem and a
-/// bowl, with a short ledger rule under the bowl. Drawn in code so it scales
-/// and follows the theme.
+/// The OneMatrix mark: a rounded square holding a 3 by 3 grid with the
+/// diagonal filled, the identity matrix ("ones on the diagonal"). Drawn in
+/// code so it scales and follows the theme.
 class LogoMarkPainter extends CustomPainter {
   const LogoMarkPainter({
     required this.background,
@@ -31,32 +31,24 @@ class LogoMarkPainter extends CustomPainter {
       );
     }
     final u = side / 100;
-    final o = tile.topLeft;
-    Offset p(double x, double y) => o + Offset(x * u, y * u);
-    final stroke = Paint()
-      ..color = foreground
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 11 * u
-      ..strokeCap = StrokeCap.butt
-      ..strokeJoin = StrokeJoin.miter;
-    // Stem.
-    canvas.drawLine(p(35, 24), p(35, 78), stroke);
-    // Bowl.
-    final bowl = Path()
-      ..moveTo(p(29.5, 29.5).dx, p(29.5, 29.5).dy)
-      ..lineTo(p(54, 29.5).dx, p(54, 29.5).dy)
-      ..arcToPoint(
-        p(54, 55),
-        radius: Radius.circular(12.75 * u),
-        clockwise: true,
-      )
-      ..lineTo(p(35, 55).dx, p(35, 55).dy);
-    canvas.drawPath(bowl, stroke);
-    // Ledger rule.
-    canvas.drawRect(
-      Rect.fromPoints(p(50, 71), p(72, 78)),
-      Paint()..color = foreground,
-    );
+    // Grid of 3 cells, 17 units each with 6 unit gaps, centred: 63 units.
+    const cell = 17.0, gap = 6.0, start = (100 - (cell * 3 + gap * 2)) / 2;
+    final on = Paint()..color = foreground;
+    final off = Paint()..color = foreground.withValues(alpha: foreground.a * 0.3);
+    for (var row = 0; row < 3; row++) {
+      for (var col = 0; col < 3; col++) {
+        final r = Rect.fromLTWH(
+          tile.left + (start + col * (cell + gap)) * u,
+          tile.top + (start + row * (cell + gap)) * u,
+          cell * u,
+          cell * u,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(r, Radius.circular(3 * u)),
+          row == col ? on : off,
+        );
+      }
+    }
   }
 
   @override
@@ -77,7 +69,7 @@ class LogoMark extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
-      label: 'Progen',
+      label: 'OneMatrix',
       child: CustomPaint(
         size: Size.square(size),
         painter: LogoMarkPainter(
@@ -89,7 +81,7 @@ class LogoMark extends StatelessWidget {
   }
 }
 
-/// Mark plus the word "Progen".
+/// Mark plus the word "OneMatrix".
 class Wordmark extends StatelessWidget {
   const Wordmark({
     super.key,
@@ -117,7 +109,7 @@ class Wordmark extends StatelessWidget {
         ),
         SizedBox(width: size * 0.32),
         Text(
-          'Progen',
+          'OneMatrix',
           style: theme.textTheme.titleLarge?.copyWith(
             fontSize: size * 0.68,
             fontWeight: FontWeight.w600,

@@ -10,7 +10,7 @@ import { migrate, withDatabase } from '../src/db/migrate.ts';
 export interface TestEnv { app: FastifyInstance; db: Db }
 
 /** Uploads made by tests go to the OS temp folder, not backend/uploads. */
-export const TEST_UPLOAD_DIR = join(tmpdir(), 'progen-erp-test-uploads');
+export const TEST_UPLOAD_DIR = join(tmpdir(), 'onematrix-test-uploads');
 
 /** Fresh app on the test database, which is migrated and emptied first. */
 export async function setupTestApp(): Promise<TestEnv> {

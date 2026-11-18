@@ -1,7 +1,7 @@
 // Live checks of the accounting, reports and settings repositories against
-// a running backend. Skipped unless PROGEN_API is set:
+// a running backend. Skipped unless ONEMATRIX_API is set:
 //
-//   PROGEN_API=http://localhost:8080/api/v1 flutter test --reporter expanded test/admin/live_admin_test.dart
+//   ONEMATRIX_API=http://localhost:8080/api/v1 flutter test --reporter expanded test/admin/live_admin_test.dart
 //
 // Read-only against the demo company (owner@demo.in); posting and
 // cancelling a journal happens in a freshly signed-up company.
@@ -11,23 +11,23 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_client.dart';
-import 'package:progen_erp/core/token_store.dart';
-import 'package:progen_erp/features/accounting/accounting_models.dart';
-import 'package:progen_erp/features/accounting/accounting_repository.dart';
-import 'package:progen_erp/features/auth/auth_models.dart';
-import 'package:progen_erp/features/auth/auth_repository.dart';
-import 'package:progen_erp/features/reports/report_models.dart';
-import 'package:progen_erp/features/reports/reports_repository.dart';
-import 'package:progen_erp/features/settings/settings_repository.dart';
+import 'package:onematrix/core/api_client.dart';
+import 'package:onematrix/core/token_store.dart';
+import 'package:onematrix/features/accounting/accounting_models.dart';
+import 'package:onematrix/features/accounting/accounting_repository.dart';
+import 'package:onematrix/features/auth/auth_models.dart';
+import 'package:onematrix/features/auth/auth_repository.dart';
+import 'package:onematrix/features/reports/report_models.dart';
+import 'package:onematrix/features/reports/reports_repository.dart';
+import 'package:onematrix/features/settings/settings_repository.dart';
 
 void main() {
-  final baseUrl = Platform.environment['PROGEN_API'];
+  final baseUrl = Platform.environment['ONEMATRIX_API'];
 
   group(
     'live admin API',
     skip: baseUrl == null || baseUrl.isEmpty
-        ? 'Set PROGEN_API (e.g. http://localhost:8080/api/v1) to run'
+        ? 'Set ONEMATRIX_API (e.g. http://localhost:8080/api/v1) to run'
         : false,
     () {
       late ApiClient api;

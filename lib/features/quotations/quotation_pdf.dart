@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../core/amount_in_words.dart';
 import '../../core/india_states.dart';
+import '../../core/entered_unit.dart';
 import '../../core/money.dart';
 import '../../core/pdf_brand.dart';
 import '../../core/pdf_doc.dart';
@@ -65,8 +66,8 @@ Future<Uint8List> buildQuotationPdf(
           [
             '${i + 1}',
             l.description.isEmpty ? l.itemName : l.description,
-            '${formatQty(l.qty)} ${l.unit}',
-            formatAmount(l.rate),
+            lineQtyText(l.qty, l.unit, l.entered),
+            lineRateText(l.rate, l.entered),
             l.discountAmount > 0
                 ? formatAmount(l.discountAmount)
                 : l.discountPct > 0

@@ -3,12 +3,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/pdf_brand.dart';
-import 'package:progen_erp/core/pdf_fonts.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/invoices/invoice_model.dart';
-import 'package:progen_erp/features/invoices/invoice_pdf.dart';
-import 'package:progen_erp/features/parties/party_model.dart';
+import 'package:onematrix/core/pdf_brand.dart';
+import 'package:onematrix/core/pdf_fonts.dart';
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/invoices/invoice_model.dart';
+import 'package:onematrix/features/invoices/invoice_pdf.dart';
+import 'package:onematrix/features/parties/party_model.dart';
 
 import '../support/fake_backend.dart';
 
@@ -24,7 +24,7 @@ void main() {
     'bankName': 'HDFC Bank',
     'bankAccountNo': '50100123456789',
     'bankIfsc': 'HDFC0001234',
-    'upiId': 'progen@hdfcbank',
+    'upiId': 'onematrix@hdfcbank',
     'invoiceTerms': 'Payment within 30 days. Interest at 18% p.a. on late payment.',
   });
   final party = Party.fromJson(FakeBackend.customer);

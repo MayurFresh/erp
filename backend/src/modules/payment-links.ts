@@ -7,9 +7,9 @@ import { postJournal } from '../accounting/journal.ts';
 import { withTenant, type Db, type Tx } from '../db/database.ts';
 import { seal, unseal } from '../lib/crypto.ts';
 import { AppError, badRequest, conflict, notFound } from '../lib/errors.ts';
-import {
-  cancelPaymentLink, createPaymentLink, GatewayError, isTestMode, parseEvent, verifySignature, type GatewayCreds,
-} from '../lib/gateways/razorpay.ts';
+import * as rzp from '../lib/gateways/razorpay.ts';
+import * as cf from '../lib/gateways/cashfree.ts';
+import { GatewayError, type GatewayCreds } from '../lib/gateways/razorpay.ts';
 import { documentRoute } from '../lib/openapi.ts';
 import { notify } from '../lib/notify.ts';
 import { todayIst } from '../lib/dates.ts';
@@ -18,11 +18,22 @@ import { auditOf, writeAudit } from './audit.ts';
 import { createPayment } from './payments.ts';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const FIELDS = [
-  { key: 'keyId', label: 'Key id', secret: false },
-  { key: 'keySecret', label: 'Key secret', secret: true },
-  { key: 'webhookSecret', label: 'Webhook secret', secret: true },
-] as const;
+const PROVIDERS = ['razorpay', 'cashfree'] as const;
+type Provider = (typeof PROVIDERS)[number];
+const providerParam = z.enum(PROVIDERS);
+const FIELDS: Record<Provider, { key: keyof GatewayCreds; label: string; secret: boolean }[]> = {
+  razorpay: [
+    { key: 'keyId', label: 'Key id', secret: false },
+    { key: 'keySecret', label: 'Key secret', secret: true },
+    { key: 'webhookSecret', label: 'Webhook secret', secret: true },
+  ],
+  // Cashfree signs webhooks with the secret key, so there is no separate webhook secret.
+  cashfree: [
+    { key: 'keyId', label: 'App id', secret: false },
+    { key: 'keySecret', label: 'Secret key', secret: true },
+  ],
+};
+const lib = (p: string) => (p === 'cashfree' ? cf : rzp);
 
 type Gw = { id: string; tenant_id: string; company_id: string; provider: string; credentials: string | null; account_id: string | null; is_active: boolean; last_error: string | null };
 
@@ -31,12 +42,12 @@ function openCreds(g: { credentials: string | null }): GatewayCreds | null {
   try { return JSON.parse(unseal(g.credentials)) as GatewayCreds; } catch { return null; }
 }
 
-const gatewayJson = (g: Gw | undefined, cfg: AppDeps['config']) => {
+const gatewayJson = (g: Gw | undefined, cfg: AppDeps['config'], provider: Provider) => {
   const have = (g && openCreds(g)) || ({} as Partial<GatewayCreds>);
   return {
-    id: g?.id ?? null, provider: 'razorpay', isActive: g?.is_active ?? false, accountId: g?.account_id ?? null,
-    mode: have.keyId ? (isTestMode({ keyId: have.keyId }) ? 'test' : 'live') : null,
-    credentials: FIELDS.map((f) => ({ key: f.key, label: f.label, secret: f.secret, set: Boolean((have as any)[f.key]) })),
+    id: g?.id ?? null, provider, isActive: g?.is_active ?? false, accountId: g?.account_id ?? null,
+    mode: have.keyId ? (lib(provider).isTestMode({ keyId: have.keyId }) ? 'test' : 'live') : null,
+    credentials: FIELDS[provider].map((f) => ({ key: f.key, label: f.label, secret: f.secret, set: Boolean((have as any)[f.key]) })),
     webhookUrl: g ? `${cfg.PUBLIC_API_URL}/api/v1/webhooks/payment-gateways/${g.id}` : null, lastError: g?.last_error ?? null,
   };
 };
@@ -48,7 +59,7 @@ const settingsBody = z.object({
   accountId: z.uuid().nullish(),
   isActive: z.boolean().optional(),
 });
-const createBody = z.object({ expiresInDays: z.number().int().min(1).max(180).default(7), notify: z.boolean().optional() }).default({ expiresInDays: 7 });
+const createBody = z.object({ expiresInDays: z.number().int().min(1).max(180).default(7), notify: z.boolean().optional(), provider: providerParam.optional() }).default({ expiresInDays: 7 });
 const listQuery = z.object({
   status: z.enum(['created', 'paid', 'expired', 'cancelled', 'failed']).optional(), invoiceId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0),
@@ -80,26 +91,27 @@ async function oneLink(tx: Tx, companyId: string, id: string): Promise<Link> {
   return r;
 }
 
-async function gatewayOf(tx: Tx, companyId: string): Promise<Gw | undefined> {
-  return (await sql<Gw>`select * from payment_gateways where company_id = ${companyId} and provider = 'razorpay'`.execute(tx)).rows[0];
+async function gatewayOf(tx: Tx, companyId: string, provider: Provider = 'razorpay'): Promise<Gw | undefined> {
+  return (await sql<Gw>`select * from payment_gateways where company_id = ${companyId} and provider = ${provider}`.execute(tx)).rows[0];
 }
 
 export async function paymentLinkRoutes(app: FastifyInstance, deps: AppDeps) {
   app.get('/payment-gateways', async (req) => {
     const ctx = req.ctx;
     ctx.require('integrations.manage');
-    return ctx.tx(async (tx) => ({ data: [gatewayJson(await gatewayOf(tx, ctx.companyId), deps.config)] }));
+    return ctx.tx(async (tx) => ({ data: await Promise.all(PROVIDERS.map(async (p) => gatewayJson(await gatewayOf(tx, ctx.companyId, p), deps.config, p))) }));
   });
 
-  app.route({ method: ['PUT', 'PATCH'], url: '/payment-gateways/razorpay', handler: async (req) => {
+  app.route({ method: ['PUT', 'PATCH'], url: '/payment-gateways/:provider', handler: async (req) => {
     const ctx = req.ctx;
     ctx.require('integrations.manage');
+    const provider = parse(providerParam, (req.params as { provider: string }).provider);
     const b = parse(settingsBody, req.body);
     return ctx.tx(async (tx) => {
-      const cur = await gatewayOf(tx, ctx.companyId);
+      const cur = await gatewayOf(tx, ctx.companyId, provider);
       const have = (cur && openCreds(cur)) || ({} as Partial<GatewayCreds>);
       const merged = { ...have, ...Object.fromEntries(Object.entries({ keyId: b.keyId, keySecret: b.keySecret, webhookSecret: b.webhookSecret }).filter(([, v]) => v)) } as Partial<GatewayCreds>;
-      const complete = Boolean(merged.keyId && merged.keySecret && merged.webhookSecret);
+      const complete = Boolean(merged.keyId && merged.keySecret && (provider === 'cashfree' || merged.webhookSecret));
       const accountId = b.accountId !== undefined ? b.accountId : cur?.account_id ?? null;
       if (accountId) {
         const a = await tx.selectFrom('accounts').select('subtype').where('id', '=', accountId).where('company_id', '=', ctx.companyId).executeTakeFirst();
@@ -109,20 +121,21 @@ export async function paymentLinkRoutes(app: FastifyInstance, deps: AppDeps) {
       if (active && (!complete || !accountId)) throw badRequest('Add the keys, the webhook secret and the bank account before turning this on.', { isActive: 'Setup is not complete' });
       const sealed = Object.keys(merged).length ? seal(JSON.stringify(merged)) : null;
       await sql`insert into payment_gateways (tenant_id, company_id, provider, credentials, account_id, is_active, created_by)
-        values (${ctx.tenantId}, ${ctx.companyId}, 'razorpay', ${sealed}, ${accountId}, ${active}, ${ctx.userId})
+        values (${ctx.tenantId}, ${ctx.companyId}, ${provider}, ${sealed}, ${accountId}, ${active}, ${ctx.userId})
         on conflict (company_id, provider) do update set credentials = excluded.credentials, account_id = excluded.account_id, is_active = excluded.is_active`.execute(tx);
       await writeAudit(tx, auditOf(ctx), 'payment_gateway', ctx.companyId, 'update', null, { fields: Object.keys(b), isActive: active });
-      return gatewayJson(await gatewayOf(tx, ctx.companyId), deps.config);
+      return gatewayJson(await gatewayOf(tx, ctx.companyId, provider), deps.config, provider);
     });
   } });
 
-  app.delete('/payment-gateways/razorpay', async (req) => {
+  app.delete<{ Params: { provider: string } }>('/payment-gateways/:provider', async (req) => {
     const ctx = req.ctx;
     ctx.require('integrations.manage');
+    const provider = parse(providerParam, req.params.provider);
     return ctx.tx(async (tx) => {
-      await sql`update payment_gateways set credentials = null, is_active = false where company_id = ${ctx.companyId} and provider = 'razorpay'`.execute(tx);
+      await sql`update payment_gateways set credentials = null, is_active = false where company_id = ${ctx.companyId} and provider = ${provider}`.execute(tx);
       await writeAudit(tx, auditOf(ctx), 'payment_gateway', ctx.companyId, 'revoke_credentials', null, null);
-      return gatewayJson(await gatewayOf(tx, ctx.companyId), deps.config);
+      return gatewayJson(await gatewayOf(tx, ctx.companyId, provider), deps.config, provider);
     });
   });
 
@@ -132,7 +145,12 @@ export async function paymentLinkRoutes(app: FastifyInstance, deps: AppDeps) {
     const id = parse(z.uuid(), req.params.id);
     const b = parse(createBody, req.body ?? {});
     return ctx.tx(async (tx) => {
-      const gw = await gatewayOf(tx, ctx.companyId);
+      let provider: Provider = b.provider ?? 'razorpay';
+      let gw = await gatewayOf(tx, ctx.companyId, provider);
+      if (!b.provider && !gw?.is_active) {
+        const other = await gatewayOf(tx, ctx.companyId, 'cashfree');
+        if (other?.is_active) { gw = other; provider = 'cashfree'; }
+      }
       const creds = gw?.is_active && gw.account_id ? openCreds(gw) : null;
       if (!gw || !creds) throw conflict('Set up online payments in settings first.', 'NO_GATEWAY');
       const inv = (await sql<any>`select v.id, v.number, v.status, v.party_id, v.location_id, (v.total - v.amount_paid)::float8 as due, p.name, p.phone, p.email
@@ -146,11 +164,11 @@ export async function paymentLinkRoutes(app: FastifyInstance, deps: AppDeps) {
       if (open) return reply.status(200).send(linkJson(await oneLink(tx, ctx.companyId, open.id)));
       const expiresAt = new Date(Date.now() + b.expiresInDays * 86_400_000);
       const row = (await sql<{ id: string }>`insert into payment_links (tenant_id, company_id, gateway_id, invoice_id, party_id, provider, reference_id, amount,
-        expires_at, customer_phone, customer_email, created_by) values (${ctx.tenantId}, ${ctx.companyId}, ${gw.id}, ${id}, ${inv.party_id}, 'razorpay', 'pending',
+        expires_at, customer_phone, customer_email, created_by) values (${ctx.tenantId}, ${ctx.companyId}, ${gw.id}, ${id}, ${inv.party_id}, ${provider}, 'pending',
         ${due}, ${expiresAt}, ${inv.phone}, ${inv.email}, ${ctx.userId}) returning id`.execute(tx)).rows[0]!;
       const reference = row.id.replaceAll('-', '').slice(0, 32);
       try {
-        const made = await createPaymentLink(creds, {
+        const made = await lib(provider).createPaymentLink(creds, {
           amountPaise: Math.round(due * 100), referenceId: reference, description: `Invoice ${inv.number}`,
           expireBy: Math.floor(expiresAt.getTime() / 1000), customer: { name: inv.name, contact: inv.phone, email: inv.email },
         });
@@ -192,11 +210,11 @@ export async function paymentLinkRoutes(app: FastifyInstance, deps: AppDeps) {
     return ctx.tx(async (tx) => {
       const l = await oneLink(tx, ctx.companyId, id);
       if (l.status !== 'created') throw conflict('Only an open link can be cancelled.');
-      const row = (await sql<any>`select provider_link_id, gateway_id from payment_links where id = ${id}`.execute(tx)).rows[0];
-      const gw = await gatewayOf(tx, ctx.companyId);
+      const row = (await sql<any>`select provider_link_id, gateway_id, provider from payment_links where id = ${id}`.execute(tx)).rows[0];
+      const gw = (await sql<Gw>`select * from payment_gateways where id = ${row.gateway_id}`.execute(tx)).rows[0];
       const creds = gw ? openCreds(gw) : null;
       if (creds && row.provider_link_id) {
-        try { await cancelPaymentLink(creds, row.provider_link_id); } catch (e) {
+        try { await lib(row.provider).cancelPaymentLink(creds, row.provider_link_id); } catch (e) {
           if (!(e instanceof GatewayError)) throw new AppError(502, 'GATEWAY_ERROR', 'The payment provider could not be reached. Try again.');
           // A link the provider already closed is closed here too.
         }
@@ -271,19 +289,22 @@ export async function paymentWebhookRoutes(app: FastifyInstance, db: Db) {
     async (req, reply) => {
       const id = z.uuid().safeParse(req.params.gatewayId);
       if (!id.success) throw notFound('Gateway');
-      const t = (await sql<{ tenant_id: string; company_id: string; is_active: boolean; credentials: string | null }>
+      const t = (await sql<{ tenant_id: string; company_id: string; provider: string; is_active: boolean; credentials: string | null }>
         `select * from gateway_webhook_target(${id.data}::uuid)`.execute(db)).rows[0];
       if (!t || !t.credentials) throw notFound('Gateway');
       const creds = openCreds(t);
       const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
-      const sig = req.headers['x-razorpay-signature'];
-      if (!creds || !verifySignature(raw, Array.isArray(sig) ? sig[0] : sig, creds.webhookSecret)) {
+      const h = (n: string) => { const v = req.headers[n]; return Array.isArray(v) ? v[0] : v; };
+      const valid = !creds ? false : t.provider === 'cashfree'
+        ? cf.verifySignature(raw, h('x-webhook-signature'), h('x-webhook-timestamp'), creds.keySecret)
+        : rzp.verifySignature(raw, h('x-razorpay-signature'), creds.webhookSecret);
+      if (!valid) {
         await sql`select gateway_webhook_reject(${id.data}::uuid)`.execute(db);
         return reply.status(401).send({ error: { code: 'BAD_SIGNATURE', message: 'The signature did not match.' } });
       }
       let payload: unknown;
       try { payload = JSON.parse(raw.toString('utf8')); } catch { throw badRequest('The body is not JSON.'); }
-      const ev = parseEvent(payload);
+      const ev = t.provider === 'cashfree' ? cf.parseEvent(payload) : rzp.parseEvent(payload);
       const result = await withTenant(db, t.tenant_id, async (tx) => {
         const gw = (await sql<any>`select id, tenant_id, company_id, account_id from payment_gateways where id = ${id.data}`.execute(tx)).rows[0];
         if (!gw) return 'unknown_gateway';
@@ -302,5 +323,5 @@ export async function paymentWebhookRoutes(app: FastifyInstance, db: Db) {
     });
 }
 
-documentRoute('PATCH', '/payment-gateways/razorpay', { body: settingsBody });
+documentRoute('PATCH', '/payment-gateways/:provider', { body: settingsBody });
 documentRoute('POST', '/payment-links/:id/send', { body: sendBody });

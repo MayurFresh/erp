@@ -63,11 +63,11 @@ Checked 2026-11-03. Confidence: low to medium. The vendor site shows product nam
 - Merchant count claims conflict (150k vs 15,000).
 - Accounting depth beyond GST billing: UNVERIFIED.
 
-## What Progen should take from it
+## What OneMatrix should take from it
 
 - Start with the table and KOT loop and GST bill. These are table stakes in India.
 - Add a delivery-aggregator inbox only after the POS loop works. See UrbanPiper in vertical-competitor-master.csv.
-- Post daily sales and stock consumption into the ledger. Competitors export to Tally. Progen is the books.
+- Post daily sales and stock consumption into the ledger. Competitors export to Tally. OneMatrix is the books.
 - See docs/research/industry-workflows/restaurant-food.md and docs/research/industry-verticals.md section 4.
 
 ## Unknowns needing a demo

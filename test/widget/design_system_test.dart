@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/theme.dart';
-import 'package:progen_erp/widgets/activity_timeline.dart';
-import 'package:progen_erp/widgets/illustrations.dart';
-import 'package:progen_erp/widgets/key_value_list.dart';
-import 'package:progen_erp/widgets/kpi_tile.dart';
-import 'package:progen_erp/widgets/money_text.dart';
-import 'package:progen_erp/widgets/skeleton.dart';
-import 'package:progen_erp/widgets/states.dart';
-import 'package:progen_erp/widgets/status_chip.dart';
+import 'package:onematrix/core/theme.dart';
+import 'package:onematrix/widgets/activity_timeline.dart';
+import 'package:onematrix/widgets/illustrations.dart';
+import 'package:onematrix/widgets/key_value_list.dart';
+import 'package:onematrix/widgets/kpi_tile.dart';
+import 'package:onematrix/widgets/money_text.dart';
+import 'package:onematrix/widgets/skeleton.dart';
+import 'package:onematrix/widgets/states.dart';
+import 'package:onematrix/widgets/status_chip.dart';
 
 import '../support/app_harness.dart';
 
@@ -124,7 +124,7 @@ void main() {
   for (final w in [320.0, 1440.0]) {
     testWidgets('sign-in fits at ${w.toInt()} px', (t) async {
       final h = await bootApp(t, Size(w, 800), restore: false);
-      expect(find.text('Progen'), findsWidgets);
+      expect(find.text('OneMatrix'), findsWidgets);
       expect(find.byType(TextField), findsWidgets);
       h.expectClean('sign-in $w');
     });

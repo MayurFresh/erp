@@ -51,10 +51,10 @@ Checked 2026-11-03. Builds on ../industry-verticals.md section 9 (logistics and 
 - E-way bill extended after breakdown.
 - Trip crossing a financial year end.
 
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 - Parties, invoices, credit notes, e-way bill and e-invoice, TDS module, expenses, fixed assets (vehicles), shipments and fulfilment modules, files (POD scans), approvals.
 
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 - Booking, LR with e-way bill, trip expenses, freight bill, hired-vehicle payable with TDS, vehicle document reminders.
 
 ## Rough effort and priority

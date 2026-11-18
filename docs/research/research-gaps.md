@@ -77,7 +77,7 @@ Needs a vendor demo, the vendor's quote, or the owner's seller accounts.
 - OPEN: Official prices for Unicommerce, EasyEcom, Vinculum. Third-party figures conflict.
 - CONFLICT: Cin7 Core Advanced is 1199 USD on cin7.com/pricing (2026-11-03). The existing pricing-matrix.csv row says 999 USD. Update the old row.
 - CONFLICT: Shippo Pro shows 17 USD on the page and 19 USD in structured data.
-- NOTE: Meesho, Myntra, AJIO, Nykaa, JioMart and Snapdeal have no public API. Existing combined rows kept. Access is through partners, so Progen needs CSV import first.
+- NOTE: Meesho, Myntra, AJIO, Nykaa, JioMart and Snapdeal have no public API. Existing combined rows kept. Access is through partners, so OneMatrix needs CSV import first.
 - NOTE: No separate rows added for Meesho, Myntra, AJIO, Nykaa, JioMart. Existing rows already say partner-gated.
 - NOTE: One GSP row added with status Sandbox available, pointing to gst-einvoice-ewaybill.md section 10.
 
@@ -96,4 +96,4 @@ Needs a vendor demo, the vendor's quote, or the owner's seller accounts.
 - Indian rule details (GST slabs on hotel tariff, restaurant ITC rules, Form C, AIS-140, DPDP consent, mandi rules) are linked to industry-verticals.md and were not re-verified in this pass.
 - QAD, Plex, Infor, Tulip, Bynder, Frame.io, Kantata, Deltek, Ellucian, Tekion: only third-party or search-summary evidence. Treat rows in vertical-competitor-master.csv as low confidence.
 - Hardware and payments (POS terminals, UPI, card settlement) were not researched.
-- Progen's own construction pack was compared by module names in code only. Feature depth was not tested.
+- OneMatrix's own construction pack was compared by module names in code only. Feature depth was not tested.

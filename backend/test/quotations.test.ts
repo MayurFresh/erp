@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ensureStages } from '../src/modules/crm-common.ts';
 import { withTenant } from '../src/db/database.ts';
+import { todayIst } from '../src/lib/dates.ts';
 import { client, setupTestApp, teardown, uniqueEmail, type TestEnv } from './helpers.ts';
 
 let env: TestEnv;
@@ -86,7 +87,8 @@ describe('quotations', () => {
     expect(q.total).toBe(826);
     expect(q.lines).toHaveLength(2);
     expect(q.lines[0]).toMatchObject({ lineNo: 1, itemName: 'Item GD1', taxable: 200, tax: 36, total: 236, rate: 100, gstRate: 18 });
-    expect(q.expired).toBe(false);
+    // The fixed quote date passes its validity on 2026-11-17, so expiry follows today's date.
+    expect(q.expired).toBe(q.validUntil < todayIst());
     expect(q.createdBy.name).toBe('Owner One');
   });
 

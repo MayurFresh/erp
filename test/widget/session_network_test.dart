@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/api_exception.dart';
+import 'package:onematrix/core/api_exception.dart';
 
 import '../support/app_harness.dart';
 import '../support/fake_backend.dart';

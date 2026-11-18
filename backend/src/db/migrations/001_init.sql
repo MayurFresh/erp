@@ -1,4 +1,4 @@
--- Progen ERP initial schema.
+-- OneMatrix initial schema.
 -- Every business table carries tenant_id and is protected by row-level security:
 -- the app sets `app.tenant_id` at the start of each transaction and can only
 -- see or write rows of that tenant.

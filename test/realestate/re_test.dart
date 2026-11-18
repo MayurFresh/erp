@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart' show Key;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/payments/payment_model.dart';
-import 'package:progen_erp/features/realestate/demand_pdf.dart';
-import 'package:progen_erp/features/realestate/re_models.dart';
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/payments/payment_model.dart';
+import 'package:onematrix/features/realestate/demand_pdf.dart';
+import 'package:onematrix/features/realestate/re_models.dart';
 
 import 're_harness.dart';
 
@@ -126,7 +126,7 @@ void main() {
   test('demand letter PDF builds', () async {
     final bytes = await buildDemandPdf(
       Demand.fromJson(demandJson),
-      const Company(id: 'c1', name: 'Progen', stateCode: '29'),
+      const Company(id: 'c1', name: 'OneMatrix', stateCode: '29'),
     );
     expect(String.fromCharCodes(bytes.sublist(0, 5)), '%PDF-');
     expect(bytes.length, greaterThan(1000));

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/money.dart';
+import 'package:onematrix/core/money.dart';
 
 void main() {
   group('formatMoney', () {

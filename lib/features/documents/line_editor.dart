@@ -8,6 +8,7 @@ import '../../widgets/form_support.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/states.dart';
 import '../items/item_model.dart';
+import '../stock_tools/unit_picker.dart';
 import 'document_models.dart';
 import 'document_widgets.dart';
 import '../pricing/price_prefill.dart';
@@ -18,6 +19,9 @@ class LineDraft with PricedLine {
     : qty = TextEditingController(text: '1'),
       rate = TextEditingController(text: formatPlain(defaultRate)),
       discount = TextEditingController();
+
+  /// Alternate unit the quantity and rate are entered in; null is the item's own unit.
+  String? unit;
 
   /// The scheme's free goods were already added as a separate line.
   bool freeAdded = false;
@@ -56,6 +60,7 @@ class LineDraft with PricedLine {
     qty: parseNumber(qty.text)!,
     rate: parseNumber(rate.text),
     discountPct: parseNumber(discount.text),
+    unit: unit,
   );
 
   void dispose() {
@@ -185,6 +190,15 @@ class LineEditor extends StatelessWidget {
           ].join(' · '),
           style: small,
           overflow: TextOverflow.ellipsis,
+        ),
+        LineUnitPicker(
+          itemId: item.id,
+          value: line.unit,
+          onChanged: (u) => line.unit = u,
+          onRateScale: (r) {
+            line.rate.text = scaleRateText(line.rate.text, r);
+            onChanged();
+          },
         ),
       ],
     );

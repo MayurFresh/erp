@@ -11,7 +11,7 @@ State on 2026-11-03, v1.8. Master plan reference: section 11.
 | Robustness and fuzz | `backend/test/robustness.test.ts` | vitest | hostile ids, bodies, queries on every route; races; idempotency |
 | Flutter unit | `test/unit/`, `test/construction/wage_math_test.dart`, `boq_paste_test.dart`, models tests | flutter_test | in the 401 |
 | Flutter widget (against fake backends) | `test/widget/`, `test/admin/`, `test/platform/`, `test/controls/`, `test/construction/`, `test/realestate/`, `test/sales_orders/`, `test/purchase_orders/`, `test/compliance/`, `test/gst_filing/`, `test/income_tax/`, `test/fixed_assets/`, `test/tax/` | flutter_test | in the 401 |
-| Live contract tests (real client against the running API and seeded data) | `test/live_api_test.dart`, `live_commerce_test.dart`, `live_selffiling_test.dart`, `live_enterprise_test.dart`, `test/admin/live_admin_test.dart`, `test/construction/live_construction_test.dart` | flutter_test | 22, skipped unless `PROGEN_API` is set |
+| Live contract tests (real client against the running API and seeded data) | `test/live_api_test.dart`, `live_commerce_test.dart`, `live_selffiling_test.dart`, `live_enterprise_test.dart`, `test/admin/live_admin_test.dart`, `test/construction/live_construction_test.dart` | flutter_test | 22, skipped unless `ONEMATRIX_API` is set |
 | Static checks | `tsc --noEmit`, `flutter analyze` | tsc, dart | clean |
 | Build check | `flutter build web --release` | flutter | passes |
 
@@ -26,7 +26,7 @@ Backend tests hit a real database, not mocks. Every API test file starts from an
 | One backend file | `npx vitest run test/o2c.test.ts` | `backend/` |
 | Flutter analyze | `flutter analyze` | repo root |
 | Flutter tests | `flutter test` | repo root |
-| Live tests | `PROGEN_API=http://localhost:8080/api/v1 flutter test test/live_commerce_test.dart` (repeat per file, or pass the six files) | repo root |
+| Live tests | `ONEMATRIX_API=http://localhost:8080/api/v1 flutter test test/live_commerce_test.dart` (repeat per file, or pass the six files) | repo root |
 | Web build | `flutter build web --release` | repo root |
 
 ## Test database pattern
@@ -45,7 +45,7 @@ Parallel agents must not share a test database, because step 2 wipes it. Each ag
 
 1. `npm run db:setup`, then `npm run db:seed` in `backend/` (creates owner@demo.in and the demo roles through the real handlers).
 2. `npm start` in `backend/` (port 8080 by default).
-3. Run `flutter test` with `PROGEN_API` set as above. Without it the 22 live tests skip.
+3. Run `flutter test` with `ONEMATRIX_API` set as above. Without it the 22 live tests skip.
 
 Live tests change data in the seeded database. Run them on a development database only.
 

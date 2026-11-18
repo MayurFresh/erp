@@ -102,6 +102,38 @@ async function revaluationRows(tx: Tx, ctx: RequestContext, asOf: string, given:
   return { rows, total: round2(rows.reduce((s, r) => s + r.adjustment, 0)) };
 }
 
+/** Open foreign-currency purchase bills (tagged in purchase_fx): what we still owe, in rupees and in the bill's currency. */
+async function openForeignPayables(tx: Tx, ctx: RequestContext) {
+  const rows = await db(tx).selectFrom('purchases as p').innerJoin('purchase_fx as f', 'f.purchase_id', 'p.id')
+    .select(['p.id', 'p.number', 'p.bill_date', 'p.total', 'p.amount_paid', 'p.party_id', 'f.currency_code', 'f.exchange_rate', 'f.fc_total'])
+    .where('p.company_id', '=', ctx.companyId).where('p.status', '=', 'posted').whereRef('p.amount_paid', '<', 'p.total')
+    .orderBy('p.bill_date').orderBy('p.number').execute();
+  return rows.map((r: any) => {
+    const total = Number(r.total); const inr = round2(total - Number(r.amount_paid)); const fcTotal = Number(r.fc_total);
+    return {
+      purchaseId: r.id as string, number: r.number as string, date: d10(r.bill_date)!, partyId: r.party_id as string, currency: r.currency_code as string,
+      rate: Number(r.exchange_rate), fcTotal, inrOutstanding: inr, fcOutstanding: Math.round(fcTotal * inr / total * 10_000) / 10_000,
+    };
+  });
+}
+
+/** Payables at the closing rate. Adjustment > 0 means we now owe more (a loss). */
+async function payableRevaluationRows(tx: Tx, ctx: RequestContext, asOf: string, given: Record<string, number> | undefined) {
+  const open = (await openForeignPayables(tx, ctx)).filter((o) => o.date <= asOf);
+  const rates = new Map<string, number>();
+  for (const code of new Set(open.map((o) => o.currency))) {
+    const r = given?.[code] ?? (await rateOn(tx, ctx.companyId, code, asOf))?.rate;
+    if (!r) throw badRequest(`No closing rate for ${code} on or before ${asOf}. Enter one.`, { rates: `Missing ${code}` });
+    rates.set(code, r);
+  }
+  const rows = open.map((o) => {
+    const closing = rates.get(o.currency)!;
+    const revalued = round2(o.fcOutstanding * closing);
+    return { ...o, closingRate: closing, carrying: o.inrOutstanding, revalued, adjustment: round2(revalued - o.inrOutstanding) };
+  }).filter((r) => r.adjustment !== 0);
+  return { rows, total: round2(rows.reduce((s, r) => s + r.adjustment, 0)) };
+}
+
 export async function exportCurrencyRoutes(app: FastifyInstance) {
   // Settings and LUT.
   const getSettings = async (req: any) => {
@@ -359,15 +391,15 @@ export async function exportCurrencyRoutes(app: FastifyInstance) {
   app.get('/fx/revaluations', async (req) => {
     const ctx = req.ctx; ctx.require('fx.view');
     return ctx.tx(async (tx) => ({
-      data: (await db(tx).selectFrom('fx_revaluations').select(['id', 'as_of', 'total_adjustment', 'status', 'created_at']).where('company_id', '=', ctx.companyId).orderBy('as_of', 'desc').execute())
-        .map((r) => ({ id: r.id, asOf: d10(r.as_of), totalAdjustment: Number(r.total_adjustment), status: r.status, createdAt: r.created_at })),
+      data: (await db(tx).selectFrom('fx_revaluations').select(['id', 'as_of', 'kind', 'total_adjustment', 'status', 'created_at']).where('company_id', '=', ctx.companyId).orderBy('as_of', 'desc').execute())
+        .map((r: any) => ({ id: r.id, asOf: d10(r.as_of), kind: r.kind as string, totalAdjustment: Number(r.total_adjustment), status: r.status, createdAt: r.created_at })),
     }));
   });
   app.post('/fx/revaluation', async (req, reply) => {
     const ctx = req.ctx; ctx.require('fx.manage');
     const b = parse(revalBody, req.body);
     const out = await ctx.tx(async (tx) => {
-      const dup = await db(tx).selectFrom('fx_revaluations').select('id').where('company_id', '=', ctx.companyId).where('as_of', '=', b.asOf).where('status', '=', 'posted').executeTakeFirst();
+      const dup = await db(tx).selectFrom('fx_revaluations').select('id').where('company_id', '=', ctx.companyId).where('as_of', '=', b.asOf).where('kind', '=', 'receivable').where('status', '=', 'posted').executeTakeFirst();
       if (dup) throw conflict(`A revaluation as of ${b.asOf} is already posted.`, 'ALREADY_POSTED');
       const r = await revaluationRows(tx, ctx, b.asOf, b.rates);
       if (!r.rows.length) throw badRequest('Nothing to revalue: no open foreign invoice changes at these rates.', { asOf: 'Nothing to post' });
@@ -387,6 +419,61 @@ export async function exportCurrencyRoutes(app: FastifyInstance) {
       // Journal lines for the same party are separate lines; reversed the next day so the books return to cost.
       await reverseVoucher(tx, auditOf(ctx), row.id, addDays(b.asOf, 1), `Reversal of revaluation as of ${b.asOf}`);
       await writeAudit(tx, auditOf(ctx), 'fx_revaluation', row.id, 'create', null, { asOf: b.asOf, total: r.total });
+      return { id: row.id, asOf: b.asOf, totalAdjustment: r.total, reversedOn: addDays(b.asOf, 1), rows: r.rows };
+    });
+    return reply.status(201).send(out);
+  });
+
+  // Foreign-currency payables.
+  const tagBody = z.object({ currency: codeField, rate: rateField });
+  const tagPayable = async (req: any) => {
+    const ctx = req.ctx; ctx.require('fx.manage');
+    const id = parse(z.uuid(), req.params.purchaseId);
+    const b = parse(tagBody, req.body);
+    return ctx.tx(async (tx: Tx) => {
+      const p = await db(tx).selectFrom('purchases').select(['id', 'total', 'status']).where('id', '=', id).where('company_id', '=', ctx.companyId).executeTakeFirst();
+      if (!p) throw notFound('Purchase bill');
+      if (p.status !== 'posted') throw conflict('That bill is cancelled.', 'INVALID_STATE');
+      const fcTotal = Math.round(Number(p.total) / b.rate * 10_000) / 10_000;
+      await db(tx).insertInto('purchase_fx').values({ tenant_id: ctx.tenantId, company_id: ctx.companyId, purchase_id: id, currency_code: b.currency, exchange_rate: b.rate, fc_total: fcTotal })
+        .onConflict((oc: any) => oc.column('purchase_id').doUpdateSet({ currency_code: b.currency, exchange_rate: b.rate, fc_total: fcTotal })).execute();
+      return { purchaseId: id, currency: b.currency, rate: b.rate, fcTotal };
+    });
+  };
+  app.put('/fx/payables/:purchaseId', tagPayable);
+  app.patch('/fx/payables/:purchaseId', tagPayable);
+  app.get('/fx/payables', async (req) => {
+    const ctx = req.ctx; ctx.require('fx.view');
+    return ctx.tx(async (tx) => ({ data: await openForeignPayables(tx, ctx) }));
+  });
+  app.post('/fx/payables/revaluation/preview', async (req) => {
+    const ctx = req.ctx; ctx.require('fx.view');
+    const b = parse(revalBody, req.body);
+    return ctx.tx((tx) => payableRevaluationRows(tx, ctx, b.asOf, b.rates));
+  });
+  app.post('/fx/payables/revaluation', async (req, reply) => {
+    const ctx = req.ctx; ctx.require('fx.manage');
+    const b = parse(revalBody, req.body);
+    const out = await ctx.tx(async (tx) => {
+      const dup = await db(tx).selectFrom('fx_revaluations').select('id').where('company_id', '=', ctx.companyId).where('as_of', '=', b.asOf).where('kind', '=', 'payable').where('status', '=', 'posted').executeTakeFirst();
+      if (dup) throw conflict(`A payables revaluation as of ${b.asOf} is already posted.`, 'ALREADY_POSTED');
+      const r = await payableRevaluationRows(tx, ctx, b.asOf, b.rates);
+      if (!r.rows.length) throw badRequest('Nothing to revalue: no open foreign bill changes at these rates.', { asOf: 'Nothing to post' });
+      const acc = await systemAccounts(tx, ctx);
+      const fx = await fxAccount(tx, ctx);
+      const row = await db(tx).insertInto('fx_revaluations').values({
+        tenant_id: ctx.tenantId, company_id: ctx.companyId, as_of: b.asOf, kind: 'payable', total_adjustment: r.total, detail: JSON.stringify(r.rows), created_by: ctx.userId,
+      }).returning('id').executeTakeFirstOrThrow();
+      // A higher liability is a credit to payables and a loss (debit) to the exchange account.
+      await postJournal(tx, auditOf(ctx), {
+        date: b.asOf, voucherType: 'journal', voucherId: row.id, number: `REVP/${b.asOf}`, narration: `Revaluation of foreign payables as of ${b.asOf}`,
+        lines: [
+          ...r.rows.map((x) => ({ accountId: acc.payables, amount: -x.adjustment, partyId: x.partyId })),
+          { accountId: fx, amount: r.total },
+        ],
+      });
+      await reverseVoucher(tx, auditOf(ctx), row.id, addDays(b.asOf, 1), `Reversal of payables revaluation as of ${b.asOf}`);
+      await writeAudit(tx, auditOf(ctx), 'fx_revaluation', row.id, 'create', null, { asOf: b.asOf, kind: 'payable', total: r.total });
       return { id: row.id, asOf: b.asOf, totalAdjustment: r.total, reversedOn: addDays(b.asOf, 1), rows: r.rows };
     });
     return reply.status(201).send(out);

@@ -118,7 +118,7 @@ class PdfKit {
     title: title == null ? null : clean(title),
     subject: subject == null ? null : clean(subject),
     author: clean(brand.companyName),
-    creator: 'Progen ERP',
+    creator: 'OneMatrix',
   );
 
   pw.PageTheme pageTheme({

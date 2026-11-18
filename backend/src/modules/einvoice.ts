@@ -10,6 +10,7 @@ import { documentAge, EINVOICE_WINDOW_DAYS, EWB_MAX_DOC_AGE_DAYS, ewbValidity } 
 import { parse } from '../lib/validate.ts';
 import { auditOf, writeAudit } from './audit.ts';
 import { loadInvoice } from './invoices.ts';
+import { loadExt } from '../lib/export-currency.ts';
 import { documentRoute } from '../lib/openapi.ts';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -54,7 +55,8 @@ async function loadForUpdate(tx: Tx, ctx: RequestContext, id: string, lock: bool
     tx.selectFrom('parties').selectAll().where('id', '=', invoice.party_id).executeTakeFirstOrThrow(),
     tx.selectFrom('invoice_lines').selectAll().where('invoice_id', '=', id).orderBy('line_no').execute(),
   ]);
-  return { invoice, company: co, location, party, lines };
+  const ext = await loadExt(tx, id);
+  return { invoice, company: co, location, party, lines, ext };
 }
 
 function validated(d: Awaited<ReturnType<typeof loadForUpdate>>) {
@@ -85,7 +87,7 @@ export async function einvoiceRoutes(app: FastifyInstance) {
       if (!d.company.einvoice_enabled) throw conflict('E-invoicing is not turned on for this company.', 'EINVOICE_DISABLED');
       if (d.invoice.status === 'cancelled') throw conflict('This invoice is cancelled.', 'CONFLICT');
       if (d.invoice.irn_status === 'active') throw conflict('This invoice already has an active IRN.', 'IRN_ACTIVE');
-      if (!d.party.gstin) throw badRequest('The customer has no GSTIN; B2C invoices are not e-invoiced.', { 'party.gstin': 'Missing' });
+      if (!d.party.gstin && !d.ext?.category?.startsWith('export')) throw badRequest('The customer has no GSTIN; B2C invoices are not e-invoiced.', { 'party.gstin': 'Missing' });
       validated(d);
 
       const sandbox = d.company.einvoice_mode === 'sandbox';

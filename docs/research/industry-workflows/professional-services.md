@@ -52,10 +52,10 @@ Checked 2026-11-03. Builds on ../industry-verticals.md section 8 (professional s
 - Credit note for a written-off timesheet.
 - Staff rate change in the middle of a project.
 
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 - Parties, invoices and credit notes, TDS, expenses, approvals, projects (construction projects exist and cost centres), custom fields, audit, payments.
 
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 - Timesheets with approval, invoice from approved time or milestone, retainer, project profitability report. Reuse the projects table.
 
 ## Rough effort and priority

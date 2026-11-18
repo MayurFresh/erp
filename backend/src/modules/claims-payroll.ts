@@ -16,13 +16,31 @@ export async function onPayrollApproved(tx: Tx, ctx: RequestContext, run: { id: 
   const inLine = new Set(employeeIds);
 
   const insts = await tx.selectFrom('loan_installments as i').innerJoin('employee_loans as l', 'l.id', 'i.loan_id')
-    .select(['i.id', 'i.loan_id', 'i.principal', 'i.interest', 'i.amount', 'i.adjustment_id', 'l.employee_id'])
+    .select(['i.id', 'i.loan_id', 'i.principal', 'i.interest', 'i.amount', 'i.paid_amount', 'i.adjustment_id', 'l.employee_id'])
     .where('i.run_id', '=', run.id).where('i.status', '=', 'in_run').execute();
+  const lineAdj = new Map<string, { id?: string; amount: number }[]>();
+  for (const l of await tx.selectFrom('payroll_lines').select(['employee_id', 'adjustments']).where('run_id', '=', run.id).execute()) lineAdj.set(l.employee_id, l.adjustments as { id?: string; amount: number }[]);
   let principal = 0, interest = 0;
   const loanIds = new Set<string>();
   for (const i of insts) {
     if (!inLine.has(i.employee_id)) {
       if (i.adjustment_id) await tx.deleteFrom('payroll_adjustments').where('id', '=', i.adjustment_id).execute();
+      continue;
+    }
+    // Net pay may have limited the recovery (payroll.ts): the line holds the amount actually taken.
+    const lineAdjs = lineAdj.get(i.employee_id) ?? [];
+    const took = round2(lineAdjs.find((a) => a.id === i.adjustment_id)?.amount ?? i.amount);
+    if (took < i.amount) {
+      const intPart = Math.min(took, i.interest), prinPart = round2(took - intPart);
+      principal += prinPart; interest += intPart; loanIds.add(i.loan_id);
+      if (i.adjustment_id) {
+        if (took > 0) await tx.updateTable('payroll_adjustments').set({ amount: took }).where('id', '=', i.adjustment_id).execute();
+        else await tx.deleteFrom('payroll_adjustments').where('id', '=', i.adjustment_id).execute();
+      }
+      await tx.updateTable('loan_installments').set({
+        status: 'due', run_id: null, adjustment_id: null, paid_amount: round2(i.paid_amount + took), principal: round2(i.principal - prinPart),
+        interest: round2(i.interest - intPart), amount: round2(i.amount - took),
+      }).where('id', '=', i.id).execute();
       continue;
     }
     principal += i.principal; interest += i.interest; loanIds.add(i.loan_id);

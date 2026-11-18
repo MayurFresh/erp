@@ -1,6 +1,6 @@
 # Industry catalogue
 
-All verticals named in master plan §5.1 Layer C (14 groups), mapped to the state of Progen on 2026-11-03. Statuses: shipped (in the code), partial (some of the group's features exist), planned (vX.Y) (on the roadmap in `docs/plan/ubos-discovery-and-plan.md` §4), later (no release assigned; needs domain research first, master plan §I).
+All verticals named in master plan §5.1 Layer C (14 groups), mapped to the state of OneMatrix on 2026-11-03. Statuses: shipped (in the code), partial (some of the group's features exist), planned (vX.Y) (on the roadmap in `docs/plan/ubos-discovery-and-plan.md` §4), later (no release assigned; needs domain research first, master plan §I).
 
 Priority column comes from `docs/research/industry-verticals.md` (vertical summary) where that note covers the vertical. Blank means not researched there.
 

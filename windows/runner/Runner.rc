@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "progen_erp" "\0"
+            VALUE "CompanyName", "OneMatrix" "\0"
+            VALUE "FileDescription", "OneMatrix" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "progen_erp" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "progen_erp.exe" "\0"
-            VALUE "ProductName", "progen_erp" "\0"
+            VALUE "InternalName", "onematrix" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 OneMatrix. All rights reserved." "\0"
+            VALUE "OriginalFilename", "onematrix.exe" "\0"
+            VALUE "ProductName", "OneMatrix" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

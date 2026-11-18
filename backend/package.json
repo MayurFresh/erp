@@ -1,8 +1,8 @@
 {
-  "name": "progen-erp-backend",
+  "name": "onematrix-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Progen ERP API (Fastify + PostgreSQL)",
+  "description": "OneMatrix API (Fastify + PostgreSQL)",
   "type": "module",
   "engines": {
     "node": ">=22.18"

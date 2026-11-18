@@ -17,9 +17,9 @@ GST on education services is mostly exempt but some items are taxable; fee recei
 Table stakes: admissions, fee collection and receipts, attendance, report cards, parent app. Differentiators: fees posted to the ledger, instalment and late-fee rules, concession approvals, transport and hostel fees.
 ## Edge cases to test
 Mid-year admission with prorated fee; sibling discount; fee refund on withdrawal; cheque bounce; fee head changes after demand raised.
-## What Progen can reuse from its core
+## What OneMatrix can reuse from its core
 Parties, invoices and receipts, series, approvals, custom fields, notifications, reports.
-## Smallest useful Progen slice
+## Smallest useful OneMatrix slice
 Student as a party, fee structure, demand, receipt, dues report. No exams.
 ## Rough effort and priority
 S to M. Priority: low.

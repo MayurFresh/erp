@@ -301,7 +301,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 alignment: WrapAlignment.start,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Text('New to Progen?'),
+                  const Text('New to OneMatrix?'),
                   TextButton(
                     onPressed: _busy ? null : () => context.go('/signup'),
                     child: const Text('Create a business account'),

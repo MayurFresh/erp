@@ -37,7 +37,7 @@ export const TEMPLATES: Record<TemplateId, TemplateDef> = {
     label: 'Password reset', inApp: false, email: true, whatsapp: false, mandatory: true, defaultEmail: true,
     render: (d) => ({
       title: 'Reset your password',
-      subject: 'Reset your Progen password',
+      subject: 'Reset your OneMatrix password',
       body: `Hello ${d.name},\n\nUse this link within 30 minutes to set a new password:\n${d.link}\n\n`
         + 'If you did not ask for this, ignore this email; your password stays the same.',
     }),
@@ -47,7 +47,7 @@ export const TEMPLATES: Record<TemplateId, TemplateDef> = {
     render: (d) => ({
       title: d.enabled ? 'Two-factor sign-in turned on' : 'Two-factor sign-in turned off',
       subject: d.enabled ? 'Two-factor sign-in is now on' : 'Two-factor sign-in was turned off',
-      body: `Hello ${d.name},\n\nTwo-factor sign-in was turned ${d.enabled ? 'on' : 'off'} for your Progen account`
+      body: `Hello ${d.name},\n\nTwo-factor sign-in was turned ${d.enabled ? 'on' : 'off'} for your OneMatrix account`
         + `${d.by ? ` by ${d.by}` : ''}.\n\nIf this wasn't you, contact your administrator now.`,
     }),
   },

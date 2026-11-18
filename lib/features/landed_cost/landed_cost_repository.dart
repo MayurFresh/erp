@@ -67,6 +67,15 @@ class LandedCostRepository {
     return asJsonList(page['data']);
   }
 
+  /// Expenses or vendor bills that no posted landed cost has used yet.
+  Future<List<Json>> sources(String type, String q) async {
+    final page = await _api.getJson(
+      '/landed-costs/sources',
+      query: {'type': type, 'q': q, 'limit': 30},
+    );
+    return asJsonList(page['data']);
+  }
+
   Future<List<Json>> accounts() async {
     final page = await _api.getJson('/accounts', query: {'limit': 200});
     return asJsonList(page['data']);

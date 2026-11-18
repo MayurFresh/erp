@@ -425,7 +425,7 @@ const PNG = Buffer.from(
 
 /** POSTs one file to /files as a real multipart/form-data body. */
 async function upload(token: string, bytes: Buffer, filename: string, contentType: string, field = 'file') {
-  const boundary = `----progen${Math.random().toString(16).slice(2)}`;
+  const boundary = `----onematrix${Math.random().toString(16).slice(2)}`;
   const payload = Buffer.concat([
     Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${filename}"\r\n`
       + `Content-Type: ${contentType}\r\n\r\n`),

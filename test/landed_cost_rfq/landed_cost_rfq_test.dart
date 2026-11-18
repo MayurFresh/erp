@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/landed_cost/landed_cost_form_screen.dart';
-import 'package:progen_erp/features/landed_cost/landed_cost_models.dart';
-import 'package:progen_erp/features/landed_cost/landed_cost_screens.dart';
-import 'package:progen_erp/features/landed_cost/landed_cost_widgets.dart';
-import 'package:progen_erp/features/rfq/rfq_form_screen.dart';
-import 'package:progen_erp/features/rfq/rfq_models.dart';
-import 'package:progen_erp/features/rfq/rfq_screens.dart';
+import 'package:onematrix/features/landed_cost/landed_cost_form_screen.dart';
+import 'package:onematrix/features/landed_cost/landed_cost_models.dart';
+import 'package:onematrix/features/landed_cost/landed_cost_screens.dart';
+import 'package:onematrix/features/landed_cost/landed_cost_widgets.dart';
+import 'package:onematrix/features/rfq/rfq_form_screen.dart';
+import 'package:onematrix/features/rfq/rfq_models.dart';
+import 'package:onematrix/features/rfq/rfq_screens.dart';
 
 import '../quotations/quotation_fixtures.dart';
 

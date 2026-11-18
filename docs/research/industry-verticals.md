@@ -6,7 +6,7 @@ Scope: Part A covers 13 industries (law, GST, calculations, ERP features, core-v
 
 Reading the tables:
 - "Core" means settings, fields or reports in the shared core. "Pack" means a separate module with its own screens and permissions.
-- Priority is the build priority of that vertical for Progen: high, medium or low. It reflects market size, compliance risk and how badly the core fails without it.
+- Priority is the build priority of that vertical for OneMatrix: high, medium or low. It reflects market size, compliance risk and how badly the core fails without it.
 
 ## 0. Cross-industry facts used throughout
 
@@ -89,7 +89,7 @@ Must-have ERP features:
 - Salesperson targets and incentive reports; outstanding collection by salesperson.
 - Returns: damaged, expired and near-expiry, with credit note and ITC reversal.
 
-Core or pack: **Core for schemes, price lists, credit limits, cheque register (priority: high). A "Distribution / Field sales" pack for beat, van and secondary-sales (priority: medium).** Marg and Busy are strong here, so this is where Progen is most often compared head to head.
+Core or pack: **Core for schemes, price lists, credit limits, cheque register (priority: high). A "Distribution / Field sales" pack for beat, van and secondary-sales (priority: medium).** Marg and Busy are strong here, so this is where OneMatrix is most often compared head to head.
 
 ## 3. Retail and POS
 
@@ -342,7 +342,7 @@ Must-have ERP features:
 - HUID capture at sale and mandatory print on the invoice; BIS registration number; cash and PAN alerts; KYC capture above limits.
 - Stock in weight and in pieces, both; metal-wise reports.
 
-Core or pack: **Separate pack (Jewellery). Priority: medium.** The weight-based, multi-unit stock and the karigar ledger do not fit the core. Marg and a few niche tools dominate; a focused Progen pack can compete.
+Core or pack: **Separate pack (Jewellery). Priority: medium.** The weight-based, multi-unit stock and the karigar ledger do not fit the core. Marg and a few niche tools dominate; a focused OneMatrix pack can compete.
 
 ## 11. Automobile dealers and service workshops
 
@@ -437,13 +437,13 @@ Core or pack: **Separate pack (Non-profit). Priority: medium** (high compliance 
 | 12 | Agri and mandi | No | Agri/Mandi | Low to medium |
 | 13 | NGOs and trusts | Partly (fund dimension) | Non-profit | Medium |
 
-Shared building blocks that several packs need, so build them once in core: batch and expiry (pharma, FMCG, food, agri inputs); serial and tag tracking (jewellery, vehicles, electronics); multi-unit conversion (agri, jewellery, pharma strips); per-line rate by unit price (apparel, hotels); weighing-scale input; challan and ageing tracker (job work, van sales, jewellery karigar); fund or project dimension (NGO, education, construction, which Progen already has as projects); document expiry reminders (licences, fleet, FSSAI, drug licence, FCRA).
+Shared building blocks that several packs need, so build them once in core: batch and expiry (pharma, FMCG, food, agri inputs); serial and tag tracking (jewellery, vehicles, electronics); multi-unit conversion (agri, jewellery, pharma strips); per-line rate by unit price (apparel, hotels); weighing-scale input; challan and ageing tracker (job work, van sales, jewellery karigar); fund or project dimension (NGO, education, construction, which OneMatrix already has as projects); document expiry reminders (licences, fleet, FSSAI, drug licence, FCRA).
 
 ## PART B. User pain points
 
 Method and caveat: searches reached review aggregators (Capterra, G2, Software Advice, Techjockey), vendor comparison pages, and a few complaint boards. No Reddit threads, CA-forum threads, Play Store or App Store review pages, or YouTube comments were reached, so "how common" is a qualitative label from the number of independent reviews that mention the theme, not a measured rate. Vendor pages are biased and are labelled. Treat each row as a hypothesis to validate with a short customer survey, and see the ratings caution at the end.
 
-| # | Pain | Products named | How common (qualitative) | Source | Progen fix |
+| # | Pain | Products named | How common (qualitative) | Source | OneMatrix fix |
 | --- | --- | --- | --- | --- | --- |
 | 1 | No true offline mode, or offline works but sync conflicts are unclear. Cloud-only tools stop working with a bad connection. | Zoho Books (no offline); Vyapar (offline, sync edge cases) | Frequent for cloud tools; occasional for hybrid | https://vyaparapp.in/comparison-with-other-apps?brand=zoho (vendor claim); https://profitbooks.net/vyapar-review/ | Offline-first mobile and POS with a local queue; visible sync state per document; clear conflict rule (server number series, last-writer on master data, merge on lines); a "pending to sync" screen. |
 | 2 | Data loss or mismatch after a crash or reinstall, and terms that put the loss on the user. | Vyapar | Occasional but severe | https://www.softwareadvice.com/accounting/vyapar-profile/reviews; https://www.capterra.com/p/180579/Vyapar/reviews/ | Automatic cloud backup with point-in-time restore, per-tenant export any time, and a daily "backup healthy" status. Never rely on the phone as the only copy. |
@@ -463,7 +463,7 @@ Method and caveat: searches reached review aggregators (Capterra, G2, Software A
 
 Notes on reading Part B:
 - Odoo India: no independent user complaint data was found. Odoo's own documentation shows e-invoicing needs NIC credentials entered and a journal option enabled, and a third-party guide says most failures come from configuration (https://www.odoo.com/documentation/17.0/applications/finance/fiscal_localizations/india.html). The pain "needs a partner and weeks to set up" is a hypothesis, **UNVERIFIED**.
-- Zoho Books: reviewers also say its India GST compliance is strong; Progen should not claim to beat it there.
+- Zoho Books: reviewers also say its India GST compliance is strong; OneMatrix should not claim to beat it there.
 - Ratings are mixed and sites disagree (Marg scored 3.2 on Software Advice and 4.7 on Techjockey; Busy 4.2 on Capterra with support the lowest category). Sample sizes are small.
 
 ## Quick wins for the core (prioritised)

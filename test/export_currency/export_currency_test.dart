@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/features/company/company_model.dart';
-import 'package:progen_erp/features/export_currency/challan_detail_screen.dart';
-import 'package:progen_erp/features/export_currency/challan_pdf.dart';
-import 'package:progen_erp/features/export_currency/challans_screen.dart';
-import 'package:progen_erp/features/export_currency/currency_screen.dart';
-import 'package:progen_erp/features/export_currency/export_currency_routes.dart';
-import 'package:progen_erp/features/export_currency/export_fields_card.dart';
-import 'package:progen_erp/features/export_currency/export_models.dart';
-import 'package:progen_erp/features/export_currency/tcs_screen.dart';
-import 'package:progen_erp/features/invoices/invoice_model.dart';
+import 'package:onematrix/features/company/company_model.dart';
+import 'package:onematrix/features/export_currency/challan_detail_screen.dart';
+import 'package:onematrix/features/export_currency/challan_pdf.dart';
+import 'package:onematrix/features/export_currency/challans_screen.dart';
+import 'package:onematrix/features/export_currency/currency_screen.dart';
+import 'package:onematrix/features/export_currency/export_currency_routes.dart';
+import 'package:onematrix/features/export_currency/export_fields_card.dart';
+import 'package:onematrix/features/export_currency/export_models.dart';
+import 'package:onematrix/features/export_currency/tcs_screen.dart';
+import 'package:onematrix/features/invoices/invoice_model.dart';
 
 import '../controls/controls_harness.dart';
 
@@ -39,7 +39,7 @@ Map<String, Object?> challanJson({String status = 'open', double pending = 7}) =
   'toLocationName': null,
   'partyId': 'p1',
   'consignee': {'name': 'Acme Traders', 'address': 'Surat', 'gstin': '24AAAAA0000A1Z5', 'stateCode': '24'},
-  'consignor': {'name': 'Progen Traders', 'gstin': '24BBBBB0000B1Z5', 'stateCode': '24'},
+  'consignor': {'name': 'OneMatrix Traders', 'gstin': '24BBBBB0000B1Z5', 'stateCode': '24'},
   'vehicleNo': 'GJ01AB1234',
   'transporter': null,
   'ewbNo': null,
@@ -97,13 +97,14 @@ void main() {
   });
 
   test('routes and nav entries', () {
-    expect(exportCurrencyRoutes(), hasLength(5));
+    expect(exportCurrencyRoutes(), hasLength(6));
     expect(challanNavEntry.path, '/delivery-challans');
-    expect(exportCurrencyNavEntries, hasLength(3));
+    expect(exportCurrencyNavEntries, hasLength(4));
+    expect(payablesNavEntry.path, '/fx-payables');
   });
 
   test('challan PDF builds', () async {
-    const company = Company(id: 'c1', name: 'Progen Traders', stateCode: '24');
+    const company = Company(id: 'c1', name: 'OneMatrix Traders', stateCode: '24');
     final bytes = await buildChallanPdf(Challan.fromJson(challanJson()), company);
     expect(bytes.length, greaterThan(500));
     expect(challanFileName(Challan.fromJson(challanJson())), 'DC-26-27-00001.pdf');

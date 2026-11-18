@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/money.dart';
-import 'package:progen_erp/features/pos/pos_cart.dart';
-import 'package:progen_erp/features/pos/pos_models.dart';
-import 'package:progen_erp/features/pos/pos_receipt_pdf.dart';
+import 'package:onematrix/core/money.dart';
+import 'package:onematrix/features/pos/pos_cart.dart';
+import 'package:onematrix/features/pos/pos_models.dart';
+import 'package:onematrix/features/pos/pos_receipt_pdf.dart';
 
 import 'pos_harness.dart';
 

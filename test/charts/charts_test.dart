@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:progen_erp/core/money.dart';
-import 'package:progen_erp/widgets/charts/charts.dart';
+import 'package:onematrix/core/money.dart';
+import 'package:onematrix/widgets/charts/charts.dart';
 
 Widget host(
   Widget child, {

@@ -68,7 +68,7 @@ export function buildOpenApi(routes: RouteInfo[], opts: { version?: string; serv
   return {
     openapi: '3.1.0',
     info: {
-      title: 'Progen ERP API', version: opts.version ?? '1.11.0',
+      title: 'OneMatrix API', version: opts.version ?? '1.11.0',
       description: 'Routes are listed from the running server. Request bodies are described where a zod schema is registered with documentRoute; see docs/API.md for the rest. Money is in rupees, dates are YYYY-MM-DD.',
     },
     servers: [{ url: opts.serverUrl ?? '/api/v1' }],

@@ -1,6 +1,6 @@
-import 'package:progen_erp/core/permissions.dart';
-import 'package:progen_erp/features/auth/auth_models.dart';
-import 'package:progen_erp/features/auth/session.dart';
+import 'package:onematrix/core/permissions.dart';
+import 'package:onematrix/features/auth/auth_models.dart';
+import 'package:onematrix/features/auth/session.dart';
 
 const testUser = User(id: 'u1', name: 'Asha Rao', email: 'asha@demo.in');
 
